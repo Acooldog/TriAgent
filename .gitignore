@@ -25,3 +25,20 @@ A_kuwo.code-workspace
 
 # 保存加密变体的文件夹
 safeChange/
+
+# AI workflow state and private agent configuration
+AGENTS.md
+CLAUDE.md
+CONTEXT.md
+CONTEXT-MAP.md
+docs/agents/
+plan/
+snapshots/
+.codex/
+.claude/
+.gemini/
+.cursor/
+.ai/
+.workflow/
+_CodexWorkFlow_*/
+*_workflow_*/
