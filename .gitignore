@@ -34,6 +34,7 @@ CONTEXT-MAP.md
 docs/agents/
 plan/
 snapshots/
+.scratch/
 .codex/
 .claude/
 .gemini/
