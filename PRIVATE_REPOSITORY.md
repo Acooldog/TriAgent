@@ -8,3 +8,4 @@ This repository contains private capability providers and their implementation d
 - Before publishing any shared code, run the public boundary check in the public worktree.
 - Ordinary Agent-core changes must be mirrored in both repositories, tested and reviewed separately before either branch is integrated.
 - Provider-specific implementation changes may remain private-only.
+- Before handing off, accepting or tagging any task, update this repository's `README.md` and verify that its entry points, dependencies, private capability scope and validation commands are accurate.
