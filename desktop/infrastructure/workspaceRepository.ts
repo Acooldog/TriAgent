@@ -92,9 +92,16 @@ async function readDirectories(directory: string): Promise<string[]> {
   try {
     const entries = await readdir(directory, { withFileTypes: true });
     return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
-  } catch {
-    return [];
+  } catch (error) {
+    if (isMissingDirectoryError(error)) {
+      return [];
+    }
+    throw error;
   }
+}
+
+function isMissingDirectoryError(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
 
 function comparablePath(value: string): string {

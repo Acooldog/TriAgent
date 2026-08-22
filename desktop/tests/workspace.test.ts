@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { test } from "node:test";
 import { WorkspaceService } from "../application/workspaceService";
@@ -50,6 +50,25 @@ test("service exposes ready state and creates/selects empty sessions", async () 
     const created = await service.createSession();
     assert.equal(created.selectedSessionId, "fixed-session");
     assert.equal((await service.selectSession("fixed-session")).selectedSessionId, "fixed-session");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("reports an initialization error when the session directory is unavailable", async () => {
+  const root = await createTestRoot("trimusic-agent-unavailable-");
+  const data = path.join(root, "data");
+  const service = new WorkspaceService(
+    new FileSystemWorkspaceRepository(),
+    new JsonSettingsRepository(path.join(root, "settings", "settings.json")),
+    path.join(root, "install"),
+  );
+  try {
+    await mkdir(data, { recursive: true });
+    await writeFile(path.join(data, "session"), "not-a-directory", "utf8");
+    const state = await service.chooseWorkspaceRoot(data);
+    assert.equal(state.status, "error");
+    assert.match(state.message, /不可用|错误|失败/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
