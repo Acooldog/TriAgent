@@ -1,0 +1,37 @@
+:root {
+  color: #172033;
+  background: #f4f7fb;
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  font-synthesis: none;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 720px; min-height: 100vh; }
+button { border: 0; border-radius: 6px; cursor: pointer; font: inherit; }
+button:disabled { cursor: not-allowed; opacity: .55; }
+.shell { margin: 0 auto; max-width: 1100px; padding: 36px 48px 52px; }
+.topbar, .panel-heading { align-items: center; display: flex; justify-content: space-between; gap: 24px; }
+.topbar { margin-bottom: 28px; }
+.eyebrow { color: #55719f; font-size: 12px; font-weight: 700; letter-spacing: 1.5px; margin: 0 0 8px; }
+h1, h2, p { margin-top: 0; }
+h1 { font-size: 30px; letter-spacing: 0; margin-bottom: 0; }
+h2 { font-size: 18px; margin-bottom: 6px; }
+.panel-heading p { color: #6c7890; font-size: 14px; margin-bottom: 0; }
+.status { border-radius: 999px; font-size: 13px; font-weight: 700; padding: 7px 12px; }
+.status-ready { background: #d9f4e6; color: #12633d; }
+.status-needs-workspace { background: #fff1c9; color: #805b00; }
+.status-error { background: #ffe0df; color: #a32b2b; }
+.workspace-panel, .sessions-panel { background: #fff; border: 1px solid #dfe6f0; border-radius: 8px; box-shadow: 0 8px 24px #1b35530d; padding: 24px; }
+.workspace-panel { margin-bottom: 18px; }
+.panel-heading button { background: #2858c5; color: #fff; padding: 10px 16px; white-space: nowrap; }
+.workspace-path { background: #f5f7fa; border: 1px solid #e4e9f1; border-radius: 5px; color: #3d4d67; display: block; font-size: 13px; margin: 20px 0 12px; overflow-wrap: anywhere; padding: 12px; }
+.message { font-size: 13px; margin-bottom: 0; }
+.message-error { color: #a32b2b; }
+.message-ready { color: #246244; }
+.message-needs-workspace { color: #805b00; }
+.empty-state { background: #f7f9fc; border: 1px dashed #cad4e3; color: #6c7890; margin-top: 20px; padding: 28px; text-align: center; }
+.session-list { display: grid; gap: 10px; margin-top: 20px; }
+.session-row { background: #f7f9fc; border: 1px solid #e0e7f0; display: grid; gap: 5px; padding: 14px 16px; text-align: left; }
+.session-row:hover, .session-row.selected { background: #edf3ff; border-color: #8caaf0; }
+.session-title { color: #1d3569; font-weight: 700; }
+.session-meta { color: #748198; font-size: 12px; overflow-wrap: anywhere; }

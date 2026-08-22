@@ -18,6 +18,7 @@ build_hotfix/
 _log/
 plugins/
 output/
+.tmp/
 
 *.exe
 A_kuwo.code-workspace
