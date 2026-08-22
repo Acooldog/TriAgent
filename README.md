@@ -2,6 +2,10 @@
 
 # QKKDecrypt | QQ 酷狗酷我网易云音乐解密工具
 
+### TriMusicAgent Task 4: session persistence
+
+The Electron Agent core mirrors the public session contract: append-only `conversation.jsonl`, redacted `config.json`, task state files, `events.jsonl`, logs, artifact references, and recoverable checkpoints. Startup restores stopped state and the UI displays a collapsible operation timeline. Context compression preserves raw messages, optionally writes Markdown when the token-cost threshold is met, and falls back without replacing the original conversation.
+
 <img src="./封面/封面.png" width="320" alt="QKKDecrypt cover">
 
 
