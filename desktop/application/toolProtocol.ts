@@ -43,7 +43,6 @@ export class ToolProtocolError extends Error {
 export function validateManifest(manifest: unknown): asserts manifest is ToolManifest {
   if (!isRecord(manifest)) throw new ToolProtocolError("manifest-fields", "工具 manifest 必须是对象。");
   if (!Array.isArray(manifest.capabilities) || !Array.isArray(manifest.events) || typeof manifest.cancellation !== "boolean") throw new ToolProtocolError("manifest-fields", "工具 manifest 的能力、事件或取消声明无效。");
-  if (!Array.isArray(manifest.capabilities) || !Array.isArray(manifest.events) || typeof manifest.cancellation !== "boolean") throw new ToolProtocolError("manifest-fields", "工具 manifest 的能力、事件或取消声明无效。");
   if (manifest.protocol_version !== TOOL_PROTOCOL_VERSION) throw new ToolProtocolError("protocol-version", "工具协议版本不兼容。");
   for (const field of ["tool_id", "version", "name", "description"] as const) {
     if (!isNonEmptyString(manifest[field])) throw new ToolProtocolError("manifest-field", `工具 manifest 缺少 ${field}。`);
