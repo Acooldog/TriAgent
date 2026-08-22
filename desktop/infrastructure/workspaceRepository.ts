@@ -68,7 +68,7 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
         for (const day of await readDirectories(path.join(sessionsRoot, year, month))) {
           const dayDir = path.join(sessionsRoot, year, month, day);
           for (const id of await readDirectories(dayDir)) {
-            const session = await this.readSession(path.join(dayDir, id), id, path.relative(root, path.join(dayDir, id)));
+            const session = await this.readSession(path.join(dayDir, id), path.relative(root, path.join(dayDir, id)));
             if (session) result.push(session);
           }
         }
@@ -77,14 +77,18 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
     return result.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   }
 
-  private async readSession(directory: string, fallbackId: string, fallbackPath: string): Promise<SessionInfo | null> {
+  private async readSession(directory: string, fallbackPath: string): Promise<SessionInfo | null> {
+    let payload: Partial<SessionInfo>;
     try {
-      const payload = JSON.parse(await readFile(path.join(directory, "session.json"), "utf8")) as Partial<SessionInfo>;
-      if (typeof payload.id !== "string" || typeof payload.createdAt !== "string") return null;
-      return { id: payload.id, createdAt: payload.createdAt, relativePath: payload.relativePath ?? fallbackPath };
-    } catch {
-      return { id: fallbackId, createdAt: new Date(0).toISOString(), relativePath: fallbackPath };
+      payload = JSON.parse(await readFile(path.join(directory, "session.json"), "utf8")) as Partial<SessionInfo>;
+    } catch (error) {
+      if (isMissingFileError(error)) return null;
+      throw error;
     }
+    if (typeof payload.id !== "string" || typeof payload.createdAt !== "string") {
+      throw new Error(`会话文件格式无效：${path.join(directory, "session.json")}`);
+    }
+    return { id: payload.id, createdAt: payload.createdAt, relativePath: payload.relativePath ?? fallbackPath };
   }
 }
 
@@ -101,7 +105,15 @@ async function readDirectories(directory: string): Promise<string[]> {
 }
 
 function isMissingDirectoryError(error: unknown): boolean {
-  return error instanceof Error && "code" in error && error.code === "ENOENT";
+  return isFileSystemError(error, "ENOENT");
+}
+
+function isMissingFileError(error: unknown): boolean {
+  return isFileSystemError(error, "ENOENT");
+}
+
+function isFileSystemError(error: unknown, code: string): boolean {
+  return error instanceof Error && "code" in error && error.code === code;
 }
 
 function comparablePath(value: string): string {

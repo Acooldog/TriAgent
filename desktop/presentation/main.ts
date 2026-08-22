@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import path from "node:path";
 import { WorkspaceService, type WorkspaceState } from "../application/workspaceService";
+import { WindowsRegistrySettingsRepository } from "../infrastructure/registrySettingsRepository";
 import { JsonSettingsRepository } from "../infrastructure/settingsRepository";
 import { FileSystemWorkspaceRepository } from "../infrastructure/workspaceRepository";
 
@@ -9,6 +10,11 @@ let workspaceService: WorkspaceService;
 
 function installationDirectory(): string {
   return app.isPackaged ? path.dirname(app.getPath("exe")) : app.getAppPath();
+}
+
+function settingsRepository(): WindowsRegistrySettingsRepository | JsonSettingsRepository {
+  if (process.platform === "win32") return new WindowsRegistrySettingsRepository();
+  return new JsonSettingsRepository(path.join(app.getPath("userData"), "settings.json"));
 }
 
 function publishState(state: WorkspaceState): WorkspaceState {
@@ -60,7 +66,7 @@ async function createWindow(): Promise<void> {
 async function bootstrap(): Promise<void> {
   workspaceService = new WorkspaceService(
     new FileSystemWorkspaceRepository(),
-    new JsonSettingsRepository(path.join(app.getPath("userData"), "settings.json")),
+    settingsRepository(),
     installationDirectory(),
   );
   registerIpc();

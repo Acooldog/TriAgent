@@ -52,7 +52,12 @@ export class WorkspaceService {
   }
 
   public async initialize(): Promise<WorkspaceState> {
-    const savedRoot = await this.settings.loadWorkspaceRoot();
+    let savedRoot: string | null;
+    try {
+      savedRoot = await this.settings.loadWorkspaceRoot();
+    } catch (error) {
+      return this.setError(error, "读取工作数据根目录设置失败，请重新选择。", null);
+    }
     if (!savedRoot) {
       return this.getState();
     }

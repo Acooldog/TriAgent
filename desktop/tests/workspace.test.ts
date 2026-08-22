@@ -73,3 +73,23 @@ test("reports an initialization error when the session directory is unavailable"
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("reports an initialization error when a session file is malformed", async () => {
+  const root = await createTestRoot("trimusic-agent-malformed-");
+  const data = path.join(root, "data");
+  const sessionDir = path.join(data, "session", "2026", "08", "22", "broken-session");
+  const service = new WorkspaceService(
+    new FileSystemWorkspaceRepository(),
+    new JsonSettingsRepository(path.join(root, "settings", "settings.json")),
+    path.join(root, "install"),
+  );
+  try {
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(path.join(sessionDir, "session.json"), "{broken", "utf8");
+    const state = await service.chooseWorkspaceRoot(data);
+    assert.equal(state.status, "error");
+    assert.match(state.message, /不可用|格式无效|错误|失败/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

@@ -14,6 +14,26 @@
 - UI 版本：面向普通用户的桌面工作台
 - 架构保持三层：`Presentation / Application / Infrastructure`
 
+### TriMusicAgent Electron MVP
+
+Electron Agent 工作区目前处于 MVP 阶段，开发入口为：
+
+```powershell
+npm run start:electron
+```
+
+它提供工作数据根目录选择、空会话创建与会话选择。运行数据必须写入用户选择的非 `C:` 盘、且不能是安装目录；会话按 `session/YYYY/MM/DD/<session-id>/` 保存。Windows 下最近使用的工作数据根目录保存在当前用户注册表，不写入安装目录或 `C:` 盘文件。
+
+Electron 相关验证命令：
+
+```powershell
+npm run build:electron
+npm run typecheck:electron
+npm run test:electron
+```
+
+模型接入、权限审批、工具协议、日志事件和打包交付将在后续 MVP 任务中逐步接入；当前 Electron 壳不代表这些能力已经完成。
+
 当前仓库源码统一按 **GPLv3** 发布；UI 路线采用 **PySide6 + QFluentWidgets** 的非商业 GPLv3 路线持续重构。
 
 ## 分支说明
@@ -40,7 +60,7 @@
 - `网易云音乐`
   - 文件级离线解密
 
-## UI 路线
+## Python UI 路线
 
 UI 版本继续使用 **PySide6**，并逐步引入 **QFluentWidgets** 做导航、卡片和桌面风格控件，目标体验参考 Steam++：
 - 左侧导航栏
