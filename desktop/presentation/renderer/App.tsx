@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactElement } from "react";
 import type { WorkspaceState } from "../../application/workspaceService";
 import type { WorkerEvent } from "../../application/workerProtocol";
+import type { ModelConfig, ModelEvent } from "../../application/modelProtocol";
 import "./styles.css";
 
 const EMPTY_STATE: WorkspaceState = {
@@ -17,6 +18,11 @@ export function App(): ReactElement {
   const [workerEvents, setWorkerEvents] = useState<WorkerEvent[]>([]);
   const [workerTaskId, setWorkerTaskId] = useState<string | null>(null);
   const [workerBusy, setWorkerBusy] = useState(false);
+  const [modelConfig, setModelConfig] = useState<ModelConfig>({ baseUrl: "https://open.bigmodel.cn/api/paas/v4", model: "glm-4.5", apiKey: "", thinking: "enabled", maxTokens: 4096, temperature: 0.6 });
+  const [modelPrompt, setModelPrompt] = useState("请用一句话介绍你自己。");
+  const [modelEvents, setModelEvents] = useState<ModelEvent[]>([]);
+  const [modelRequestId, setModelRequestId] = useState<string | null>(null);
+  const [modelBusy, setModelBusy] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -32,6 +38,12 @@ export function App(): ReactElement {
         }
       }
     });
+    const unsubscribeModel = window.triMusicAgent.onModelEvent(({ event }) => {
+      if (active) {
+        setModelEvents((current) => [...current.slice(-39), event]);
+        if (event.type === "response_completed" || event.type === "error") { setModelBusy(false); setModelRequestId(null); }
+      }
+    });
     void window.triMusicAgent.getInitializationState().then((nextState) => {
       if (active) setState(nextState);
     });
@@ -39,6 +51,7 @@ export function App(): ReactElement {
       active = false;
       unsubscribe();
       unsubscribeWorker();
+      unsubscribeModel();
     };
   }, []);
 
@@ -73,6 +86,28 @@ export function App(): ReactElement {
         </div>
         <code className="workspace-path">{state.workspaceRoot ?? "尚未选择"}</code>
         <p className={`message message-${state.status}`}>{state.message}</p>
+      </section>
+
+      <section className="sessions-panel model-panel">
+        <div className="panel-heading">
+          <div>
+            <h2>模型服务</h2>
+            <p>通用 OpenAI-compatible 接口；GLM 只是当前示例配置。</p>
+          </div>
+          <div className="worker-actions">
+            <button type="button" onClick={() => { setModelBusy(true); void window.triMusicAgent.startModel(modelConfig, [{ role: "user", content: modelPrompt }], "standard").then(({ requestId }) => setModelRequestId(requestId)).catch(() => setModelBusy(false)); }} disabled={modelBusy || !modelConfig.apiKey}>测试模型</button>
+            <button type="button" onClick={() => { if (modelRequestId) void window.triMusicAgent.cancelModel(modelRequestId); }} disabled={!modelRequestId}>停止</button>
+          </div>
+        </div>
+        <div className="model-fields">
+          <label>Base URL<input value={modelConfig.baseUrl} onChange={(event) => setModelConfig({ ...modelConfig, baseUrl: event.target.value })} /></label>
+          <label>模型名<input value={modelConfig.model} onChange={(event) => setModelConfig({ ...modelConfig, model: event.target.value })} /></label>
+          <label>API Key<input type="password" value={modelConfig.apiKey ?? ""} onChange={(event) => setModelConfig({ ...modelConfig, apiKey: event.target.value })} autoComplete="off" /></label>
+          <label>测试提示词<input value={modelPrompt} onChange={(event) => setModelPrompt(event.target.value)} /></label>
+          <label>Thinking<select value={modelConfig.thinking ?? "disabled"} onChange={(event) => setModelConfig({ ...modelConfig, thinking: event.target.value as ModelConfig["thinking"] })}><option value="enabled">enabled</option><option value="disabled">disabled</option></select></label>
+          <label>Temperature<input type="number" min="0" max="2" step="0.1" value={modelConfig.temperature ?? 0.6} onChange={(event) => setModelConfig({ ...modelConfig, temperature: Number(event.target.value) })} /></label>
+        </div>
+        <div className="model-events">{modelEvents.length === 0 ? <div className="empty-state">尚无模型事件。</div> : modelEvents.map((event, index) => <div className="model-event" key={`${event.type}-${index}`}><strong>{event.type}</strong><span>{event.type === "text_delta" || event.type === "reasoning_delta" ? event.text : event.type === "error" ? event.message : event.type === "tool_call_accepted" ? event.toolCall.name : ""}</span></div>)}</div>
       </section>
 
       <section className="sessions-panel">

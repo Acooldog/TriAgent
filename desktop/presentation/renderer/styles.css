@@ -42,3 +42,11 @@ h2 { font-size: 18px; margin-bottom: 6px; }
 .worker-event { align-items: center; background: #f7f9fc; border: 1px solid #e0e7f0; border-radius: 6px; display: grid; gap: 8px; grid-template-columns: 1fr auto auto; padding: 10px 12px; }
 .worker-event span { color: #246244; font-size: 12px; }
 .worker-event small { color: #748198; font-size: 11px; }
+.model-panel { margin-top: 18px; }
+.model-fields { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 20px; }
+.model-fields label { color: #3d4d67; display: grid; font-size: 12px; gap: 6px; }
+.model-fields input, .model-fields select { background: #fff; border: 1px solid #d7dfeb; border-radius: 5px; color: #172033; font: inherit; padding: 9px 10px; }
+.model-events { display: grid; gap: 8px; margin-top: 20px; }
+.model-event { background: #f7f9fc; border: 1px solid #e0e7f0; border-radius: 6px; display: grid; gap: 8px; grid-template-columns: 150px 1fr; padding: 10px 12px; }
+.model-event strong { color: #1d3569; font-size: 12px; }
+.model-event span { color: #3d4d67; font-size: 12px; overflow-wrap: anywhere; }
