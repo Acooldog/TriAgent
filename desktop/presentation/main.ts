@@ -1,12 +1,16 @@
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import path from "node:path";
 import { WorkspaceService, type WorkspaceState } from "../application/workspaceService";
+import { WorkerService } from "../application/workerService";
+import type { WorkerEvent, WorkerOperation } from "../application/workerProtocol";
+import { PythonWorkerClient } from "../infrastructure/pythonWorker";
 import { WindowsRegistrySettingsRepository } from "../infrastructure/registrySettingsRepository";
 import { JsonSettingsRepository } from "../infrastructure/settingsRepository";
 import { FileSystemWorkspaceRepository } from "../infrastructure/workspaceRepository";
 
 let mainWindow: BrowserWindow | null = null;
 let workspaceService: WorkspaceService;
+let workerService: WorkerService;
 
 function installationDirectory(): string {
   return app.isPackaged ? path.dirname(app.getPath("exe")) : app.getAppPath();
@@ -20,6 +24,11 @@ function settingsRepository(): WindowsRegistrySettingsRepository | JsonSettingsR
 function publishState(state: WorkspaceState): WorkspaceState {
   mainWindow?.webContents.send("app:initialization-state", state);
   return state;
+}
+
+function publishWorkerEvent(event: WorkerEvent): WorkerEvent {
+  mainWindow?.webContents.send("worker:event", event);
+  return event;
 }
 
 function registerIpc(): void {
@@ -40,6 +49,31 @@ function registerIpc(): void {
     if (typeof sessionId !== "string") return workspaceService.getState();
     return publishState(await workspaceService.selectSession(sessionId));
   });
+  ipcMain.handle("worker:start", async (_event, operation: unknown, payload: unknown) => {
+    if (operation !== "ping" && operation !== "decrypt") throw new Error("worker operation is unsupported");
+    if (typeof payload !== "object" || payload === null || Array.isArray(payload)) throw new Error("worker payload must be an object");
+    let handle;
+    try {
+      handle = workerService.start(operation as WorkerOperation, payload as Record<string, unknown>, publishWorkerEvent);
+    } catch (error) {
+      throw new Error(error instanceof Error ? error.message : "worker start failed");
+    }
+    void handle.completion.catch((error: unknown) => {
+      const errorCode = typeof error === "object" && error !== null && "code" in error && typeof error.code === "string" ? error.code : "worker-failed";
+      publishWorkerEvent({
+        protocol_version: "1",
+        request_id: handle.requestId,
+        task_id: handle.taskId,
+        event_type: "worker_finished",
+        status: errorCode === "worker-cancelled" ? "cancelled" : "failed",
+        payload: {},
+        error: { code: errorCode, message: error instanceof Error ? error.message : "worker failed" },
+        emitted_at: new Date().toISOString(),
+      });
+    });
+    return { requestId: handle.requestId, taskId: handle.taskId };
+  });
+  ipcMain.handle("worker:cancel", (_event, taskId: unknown) => typeof taskId === "string" && workerService.cancel(taskId));
 }
 
 async function createWindow(): Promise<void> {
@@ -64,6 +98,7 @@ async function createWindow(): Promise<void> {
 }
 
 async function bootstrap(): Promise<void> {
+  workerService = new WorkerService(new PythonWorkerClient({ workerScript: path.join(app.getAppPath(), "src", "Presentation", "worker.py") }));
   workspaceService = new WorkspaceService(
     new FileSystemWorkspaceRepository(),
     settingsRepository(),

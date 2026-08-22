@@ -12,7 +12,7 @@
 `QKKDecrypt` 是一个面向本地文件处理场景的桌面/控制台工具集：
 - 控制台版本：批处理、自动化、脚本化操作
 - UI 版本：面向普通用户的桌面工作台
-- 架构保持三层：`Presentation / Application / Infrastructure`
+- 架构保持三层：`Presentation / Application / Infrastructure`；模块遵循 SOLID，并以低耦合、高内聚为边界原则
 
 ### TriMusicAgent Electron MVP
 
@@ -32,7 +32,7 @@ npm run typecheck:electron
 npm run test:electron
 ```
 
-模型接入、权限审批、工具协议、日志事件和打包交付将在后续 MVP 任务中逐步接入；当前 Electron 壳不代表这些能力已经完成。
+任务 2 已接入 Python worker JSON Lines 事件桥：Electron 主进程负责 worker 启动、取消、超时、回收和 IPC 转发，Renderer 只订阅结构化事件；Python worker 通过 `request_id`、`task_id`、`event_type`、`status`、`payload` 和 `error` 报告状态。真实解密、模型接入、权限审批、工具协议和打包交付仍按 MVP 任务清单逐步接入。
 
 当前仓库源码统一按 **GPLv3** 发布；UI 路线采用 **PySide6 + QFluentWidgets** 的非商业 GPLv3 路线持续重构。
 

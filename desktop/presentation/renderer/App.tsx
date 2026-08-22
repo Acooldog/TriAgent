@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactElement } from "react";
 import type { WorkspaceState } from "../../application/workspaceService";
+import type { WorkerEvent } from "../../application/workerProtocol";
 import "./styles.css";
 
 const EMPTY_STATE: WorkspaceState = {
@@ -13,11 +14,23 @@ const EMPTY_STATE: WorkspaceState = {
 export function App(): ReactElement {
   const [state, setState] = useState<WorkspaceState>(EMPTY_STATE);
   const [busy, setBusy] = useState(false);
+  const [workerEvents, setWorkerEvents] = useState<WorkerEvent[]>([]);
+  const [workerTaskId, setWorkerTaskId] = useState<string | null>(null);
+  const [workerBusy, setWorkerBusy] = useState(false);
 
   useEffect(() => {
     let active = true;
     const unsubscribe = window.triMusicAgent.onInitializationState((nextState) => {
       if (active) setState(nextState);
+    });
+    const unsubscribeWorker = window.triMusicAgent.onWorkerEvent((event) => {
+      if (active) {
+        setWorkerEvents((current) => [...current.slice(-19), event]);
+        if (event.event_type === "worker_finished" || event.status === "failed" || event.status === "cancelled") {
+          setWorkerTaskId(null);
+          setWorkerBusy(false);
+        }
+      }
     });
     void window.triMusicAgent.getInitializationState().then((nextState) => {
       if (active) setState(nextState);
@@ -25,6 +38,7 @@ export function App(): ReactElement {
     return () => {
       active = false;
       unsubscribe();
+      unsubscribeWorker();
     };
   }, []);
 
@@ -89,6 +103,20 @@ export function App(): ReactElement {
             ))}
           </div>
         )}
+      </section>
+
+      <section className="sessions-panel worker-panel">
+        <div className="panel-heading">
+          <div>
+            <h2>Python worker</h2>
+            <p>通过主进程桥接结构化 JSON Lines 事件。</p>
+          </div>
+          <div className="worker-actions">
+            <button type="button" onClick={() => { setWorkerBusy(true); void window.triMusicAgent.startWorker("ping", {}).then(({ taskId }) => setWorkerTaskId(taskId)).catch(() => setWorkerBusy(false)); }} disabled={workerBusy}>测试 worker</button>
+            <button type="button" onClick={() => { if (workerTaskId) void window.triMusicAgent.cancelWorker(workerTaskId); }} disabled={workerTaskId === null}>停止</button>
+          </div>
+        </div>
+        {workerEvents.length === 0 ? <div className="empty-state">尚无 worker 事件。</div> : <div className="worker-events">{workerEvents.map((event, index) => <div className="worker-event" key={`${event.request_id}-${index}`}><strong>{event.event_type}</strong><span>{event.status}</span><small>{event.task_id}</small></div>)}</div>}
       </section>
     </main>
   );
