@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { WorkspaceState } from "../application/workspaceService";
+import type { AgentEvent, AgentPlan } from "../application/agentTaskService";
 import type { WorkerEvent } from "../application/workerProtocol";
 import type { ChatMessage, ModelConfig, ModelEvent } from "../application/modelProtocol";
 import type { CompressionOptions, CompressionResult } from "../application/contextCompression";
@@ -20,6 +21,14 @@ contextBridge.exposeInMainWorld("triMusicAgent", {
   selectSession: (sessionId: string): Promise<WorkspaceState> => ipcRenderer.invoke("session:select", sessionId),
   compressSession: (options: CompressionOptions): Promise<CompressionResult> => ipcRenderer.invoke("session:compress", options),
   restoreOriginalContext: (): Promise<WorkspaceState> => ipcRenderer.invoke("session:restore-original"),
+  planAgentTask: (prompt: string): Promise<AgentPlan> => ipcRenderer.invoke("agent:plan", prompt),
+  startAgentTask: (prompt: string, permissionMode: "restricted" | "standard" | "full"): Promise<{ taskId: string; plan: AgentPlan }> => ipcRenderer.invoke("agent:start", prompt, permissionMode),
+  cancelAgentTask: (taskId: string): Promise<boolean> => ipcRenderer.invoke("agent:cancel", taskId),
+  onAgentEvent: (listener: (event: AgentEvent) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, agentEvent: AgentEvent) => listener(agentEvent);
+    ipcRenderer.on("agent:event", handler);
+    return () => ipcRenderer.removeListener("agent:event", handler);
+  },
   startWorker: (operation: "ping" | "capability", payload: Record<string, unknown>, permissionMode: "restricted" | "standard" | "full"): Promise<{ requestId: string; taskId: string }> => ipcRenderer.invoke("worker:start", operation, payload, permissionMode),
   cancelWorker: (taskId: string): Promise<boolean> => ipcRenderer.invoke("worker:cancel", taskId),
   onWorkerEvent: (listener: (event: WorkerEvent) => void): (() => void) => {

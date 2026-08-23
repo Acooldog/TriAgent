@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { BUILT_IN_TOOL_MANIFESTS } from "../application/builtInTools";
+import { AgentTaskService, type AgentEvent } from "../application/agentTaskService";
 import { StructuredContextCompressor, type CompressionOptions } from "../application/contextCompression";
 import { DiagnosticsService, ErrorSearchService, type DiagnosticsRequest, type ErrorSearchIssue } from "../application/diagnostics";
 import { ExecutionBudget } from "../application/executionBudget";
@@ -21,6 +22,7 @@ import { WorkerService } from "../application/workerService";
 import type { WorkerEvent, WorkerOperation } from "../application/workerProtocol";
 import { FileSessionRepository } from "../infrastructure/sessionRepository";
 import { EmptyProviderGateway } from "../infrastructure/emptyProviderGateway";
+import { AuthorizedMvpProviderGateway } from "../infrastructure/authorizedMvpProviderGateway";
 import { PrivateProviderRuntimeGateway } from "../infrastructure/privateProviderRuntimeGateway";
 import { DuckDuckGoErrorSearchGateway } from "../infrastructure/duckDuckGoErrorSearch";
 import { PythonWorkerClient } from "../infrastructure/pythonWorker";
@@ -43,6 +45,7 @@ let compressor: StructuredContextCompressor;
 let diagnosticsService: DiagnosticsService;
 let errorSearchService: ErrorSearchService;
 let permissions: PermissionPolicy;
+let agentTaskService: AgentTaskService;
 const activeModelRequests = new Map<string, AbortController>();
 const activeModelTexts = new Map<string, string>();
 const activeTaskContexts = new Map<string, { root: string; session: SessionInfo }>();
@@ -218,6 +221,15 @@ function registerIpc(): void {
     persistEvent("system", "diagnostic_search_stopped", { category: issue.category, resultCount: result.results.length }, { status: result.status });
     return result;
   });
+  ipcMain.handle("agent:plan", (_event, prompt: unknown) => { if (typeof prompt !== "string") throw new Error("任务内容无效。"); return agentTaskService.createPlan(prompt); });
+  ipcMain.handle("agent:start", async (_event, prompt: unknown, mode: unknown) => {
+    if (typeof prompt !== "string" || !prompt.trim()) throw new Error("任务内容不能为空。");
+    if (mode !== "restricted" && mode !== "standard" && mode !== "full") throw new Error("权限模式无效。");
+    const handle = agentTaskService.start(prompt, mode, selectedContext() ?? undefined, (event: AgentEvent) => mainWindow?.webContents.send("agent:event", event));
+    void handle.completion.catch(() => undefined);
+    return { taskId: handle.taskId, plan: handle.plan };
+  });
+  ipcMain.handle("agent:cancel", (_event, taskId: unknown) => typeof taskId === "string" ? agentTaskService.cancel(taskId) : false);
 }
 
 async function createWindow(): Promise<void> { mainWindow = new BrowserWindow({ width: 1080, height: 720, minWidth: 760, minHeight: 520, backgroundColor: "#f4f7fb", webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, "preload.cjs") } }); await mainWindow.loadFile(path.join(__dirname, "renderer", "index.html")); publishState(workspaceService.getState()); mainWindow.on("closed", () => { mainWindow = null; }); }
@@ -227,9 +239,10 @@ async function bootstrap(): Promise<void> {
   toolRegistry = new ToolRegistry(); toolRegistry.refresh(BUILT_IN_TOOL_MANIFESTS); modelService = new ModelService(new OpenAiCompatibleClient(), toolRegistry, permissions);
   sessionPersistence = new SessionPersistenceService(new FileSessionRepository()); compressor = new StructuredContextCompressor();
   workspaceService = new WorkspaceService(new FileSystemWorkspaceRepository(), settingsRepository(), installationDirectory(), () => new Date(), randomUUID, sessionPersistence);
-  const providerRegistry = new ProviderRegistry(); providerService = new ProviderService(providerRegistry, new EmptyProviderGateway(), sessionPersistence, refreshContext);
+  const providerRegistry = new ProviderRegistry(); providerService = new ProviderService(providerRegistry, new AuthorizedMvpProviderGateway(path.join(app.getAppPath(), "src", "Presentation", "worker.py"), app.getAppPath(), process.env.TRIMUSIC_PYTHON), sessionPersistence, refreshContext);
   const approval = new ProviderRuntimeStartPolicy({ requestStartApproval: requestProviderRuntimeApproval });
   providerRuntimeService = new ProviderRuntimeService(new PrivateProviderRuntimeGateway(), providerRegistry, approval, sessionPersistence, refreshContext, (providerId, error) => { providerService.stopProvider(providerId, new ProviderContractError(error.code, error.message)); }, (event) => mainWindow?.webContents.send("provider:runtime-event", event));
+  agentTaskService = new AgentTaskService(providerRuntimeService, providerService, permissions, sessionPersistence, refreshContext);
   diagnosticsService = new DiagnosticsService(new SystemDiagnosticsGateway({ checkWorker: checkWorkerHealth, listProviderStates: () => providerRuntimeService.list() }));
   errorSearchService = new ErrorSearchService(new DuckDuckGoErrorSearchGateway(), permissions);
   registerIpc(); await workspaceService.initialize(); await providerRuntimeService.initialize(selectedContext() ?? undefined); await createWindow();

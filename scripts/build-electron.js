@@ -15,6 +15,10 @@ async function main() {
     build({ entryPoints: [path.join(desktopDir, "presentation", "renderer", "main.tsx")], bundle: true, platform: "browser", format: "iife", target: "es2022", outfile: path.join(distDir, "renderer.js") }),
   ]);
   fs.copyFileSync(path.join(desktopDir, "presentation", "renderer", "index.html"), path.join(distDir, "renderer", "index.html"));
+  const prototypeDir = path.join(desktopDir, "presentation", "renderer", "prototype");
+  if (fs.existsSync(prototypeDir)) {
+    fs.cpSync(prototypeDir, path.join(distDir, "renderer"), { recursive: true });
+  }
   console.log(`Electron build ready: ${distDir}`);
 }
 

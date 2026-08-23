@@ -165,3 +165,11 @@ npm run test:electron
 npm run build:console
 npm run build:ui
 ```
+
+## Electron 原型迁移与可解密本地 MVP
+
+正式 Electron Renderer 直接加载迁移后的原型入口和资源，保留处理台、模型服务、当前任务、音乐库、任务历史、诊断中心、设置、审批、错误恢复、会话压缩、流式输出、停止和时间线折叠交互。原型按钮通过 Presentation 层 bridge 接入 Application IPC，不再把模拟状态当作真实结果。
+
+启动：`npm run start:electron`。若本地没有 Python 虚拟环境，先创建 `.venv` 并使用 `requirements-private.txt` 安装私有运行时依赖；然后选择非 C 盘工作区、创建会话、配置通用 OpenAI-compatible 模型并提交自然语言解密任务。私有版本使用一个授权的本地 Provider 完成 KGM v3 到 MP3 的可验证闭环，输出、session、日志、时间线、产物引用、取消、失败恢复和重启停止状态均由现有持久化协议记录。
+
+酷狗能力按要求优先使用 Unlock Music 逻辑；该逻辑仅位于私有 Provider 边界，许可证核对记录见 `docs/third-party/unlock-music-license.md`。公开仓库不包含私有 Provider 的代码、资源、命令、参数或内部调用细节。任务 8 及之后的安装包、升级器、完整多格式回归和正式发布尚未执行。

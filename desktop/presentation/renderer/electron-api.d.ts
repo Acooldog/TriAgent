@@ -1,4 +1,5 @@
 import type { WorkspaceState } from "../../application/workspaceService";
+import type { AgentEvent, AgentPlan } from "../../application/agentTaskService";
 import type { WorkerEvent } from "../../application/workerProtocol";
 import type { ChatMessage, ModelConfig, ModelEvent } from "../../application/modelProtocol";
 import type { CompressionOptions, CompressionResult } from "../../application/contextCompression";
@@ -16,6 +17,10 @@ export interface TriMusicAgentApi {
   selectSession(sessionId: string): Promise<WorkspaceState>;
   compressSession(options: CompressionOptions): Promise<CompressionResult>;
   restoreOriginalContext(): Promise<WorkspaceState>;
+  planAgentTask(prompt: string): Promise<AgentPlan>;
+  startAgentTask(prompt: string, permissionMode: "restricted" | "standard" | "full"): Promise<{ taskId: string; plan: AgentPlan }>;
+  cancelAgentTask(taskId: string): Promise<boolean>;
+  onAgentEvent(listener: (event: AgentEvent) => void): () => void;
   onInitializationState(listener: (state: WorkspaceState) => void): () => void;
   onPersistenceError(listener: (error: { label: string; message: string }) => void): () => void;
   startWorker(operation: "ping" | "capability", payload: Record<string, unknown>, permissionMode: "restricted" | "standard" | "full"): Promise<{ requestId: string; taskId: string }>;

@@ -1,5 +1,7 @@
 import type { ProviderHealth, ProviderManifest } from "../application/providerProtocol";
 import type { ProviderRuntimeDescriptor, ProviderRuntimeExit, ProviderRuntimeGateway, ProviderRuntimeInstance } from "../application/providerRuntimeProtocol";
+import { MVP_PROVIDER_ID } from "../application/agentTaskService";
+import { MVP_PROVIDER_MANIFEST } from "./mvpProviderManifest";
 
 export interface PrivateProviderRuntimeBackend {
   discover(signal: AbortSignal): Promise<ProviderRuntimeDescriptor[]>;
@@ -13,7 +15,7 @@ export interface PrivateProviderRuntimeBackend {
 }
 
 export class PrivateProviderRuntimeGateway implements ProviderRuntimeGateway {
-  public constructor(private readonly backend: PrivateProviderRuntimeBackend = new UnconfiguredPrivateBackend()) {}
+  public constructor(private readonly backend: PrivateProviderRuntimeBackend = new AuthorizedRuntimeBackend()) {}
   public discover(signal: AbortSignal): Promise<ProviderRuntimeDescriptor[]> { return this.backend.discover(signal); }
   public start(providerId: string, signal: AbortSignal): Promise<ProviderRuntimeInstance> { return this.backend.start(providerId, signal); }
   public handshake(providerId: string, instanceId: string, signal: AbortSignal): Promise<ProviderManifest> { return this.backend.handshake(providerId, instanceId, signal); }
@@ -33,4 +35,17 @@ class UnconfiguredPrivateBackend implements PrivateProviderRuntimeBackend {
   public async cancel(_providerId: string, _instanceId: string): Promise<boolean> { return false; }
   public async recover(_signal: AbortSignal): Promise<ProviderRuntimeInstance[]> { return []; }
   public onExit(_listener: (event: ProviderRuntimeExit) => void): () => void { return () => undefined; }
+}
+
+class AuthorizedRuntimeBackend implements PrivateProviderRuntimeBackend {
+  private readonly instances = new Map<string, ProviderRuntimeInstance>();
+  private readonly listeners = new Set<(event: ProviderRuntimeExit) => void>();
+  public async discover(): Promise<ProviderRuntimeDescriptor[]> { return [{ providerId: MVP_PROVIDER_ID, displayName: "本地音乐解密能力", cancellation: true }]; }
+  public async start(providerId: string): Promise<ProviderRuntimeInstance> { const instance = { providerId, instanceId: `private-${Date.now()}` }; this.instances.set(providerId, instance); return instance; }
+  public async handshake(): Promise<ProviderManifest> { return MVP_PROVIDER_MANIFEST; }
+  public async checkHealth(): Promise<ProviderHealth> { return { status: "healthy" }; }
+  public async stop(providerId: string): Promise<void> { this.instances.delete(providerId); }
+  public async cancel(providerId: string): Promise<boolean> { this.instances.delete(providerId); return true; }
+  public async recover(): Promise<ProviderRuntimeInstance[]> { return [...this.instances.values()]; }
+  public onExit(listener: (event: ProviderRuntimeExit) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
 }
