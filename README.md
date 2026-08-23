@@ -2,6 +2,10 @@
 
 # QKKDecrypt | QQ 酷狗酷我网易云音乐解密工具
 
+### TriMusicAgent Task 4: session persistence
+
+The Electron Agent core mirrors the public session contract: append-only `conversation.jsonl`, redacted `config.json`, task state files, `events.jsonl`, logs, artifact references, and recoverable checkpoints. Startup restores stopped state and the UI displays a collapsible operation timeline. Context compression preserves raw messages, optionally writes Markdown when the token-cost threshold is met, and falls back without replacing the original conversation.
+
 <img src="./封面/封面.png" width="320" alt="QKKDecrypt cover">
 
 
@@ -31,6 +35,12 @@ npm run build:electron
 npm run typecheck:electron
 npm run test:electron
 ```
+
+### 会话持久化与上下文压缩
+
+每个会话保存只追加的 `conversation.jsonl`、脱敏 `config.json`、任务状态、事件、日志、产物引用和可恢复检查点。应用重启后会恢复操作时间线和停止状态；压缩检查点作为后续模型请求的活动上下文，用户可以随时恢复原始上下文。
+
+Markdown 检查点仅在估算成本明显更低时生成。API Key、认证 Token、Cookie 和其他敏感请求头不会进入持久化文件。普通 Agent 会话实现与公开仓库保持同步，私有 provider 只保留必要的专有入口差异。
 
 任务 2 已接入 Python worker JSON Lines 事件桥：Electron 主进程负责 worker 启动、取消、超时、回收和 IPC 转发，Renderer 只订阅结构化事件；Python worker 通过 `request_id`、`task_id`、`event_type`、`status`、`payload` 和 `error` 报告状态。真实解密、模型接入、权限审批、工具协议和打包交付仍按 MVP 任务清单逐步接入。
 

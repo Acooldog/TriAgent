@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { access, mkdir, readdir, readFile, realpath, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { SessionInfo, WorkspaceRepository } from "../application/workspaceService";
+import { initializeSessionFiles } from "./sessionRepository";
 
 const WINDOWS_ABSOLUTE_PATH = /^[a-zA-Z]:[\\/]/;
 
@@ -57,6 +58,7 @@ export class FileSystemWorkspaceRepository implements WorkspaceRepository {
     await mkdir(sessionDir, { recursive: false });
     const session: SessionInfo = { id, createdAt: now.toISOString(), relativePath };
     await writeFile(path.join(sessionDir, "session.json"), JSON.stringify(session, null, 2), "utf8");
+    await initializeSessionFiles(root, session);
     return session;
   }
 
