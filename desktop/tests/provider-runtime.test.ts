@@ -21,6 +21,7 @@ class FakeRuntimeGateway implements ProviderRuntimeGateway {
   public waitForStart = false;
   public startCalls = 0;
   public stopCalls = 0;
+  public cancelNeverResolves = false;
   public readonly exits: Array<ProviderRuntimeExit> = [];
   private readonly listeners = new Set<(event: ProviderRuntimeExit) => void>();
   private releaseStart!: () => void;
@@ -35,7 +36,7 @@ class FakeRuntimeGateway implements ProviderRuntimeGateway {
   public async handshake(_providerId: string, _instanceId: string, _signal: AbortSignal): Promise<ProviderManifest> { if (this.handshakeFailure) throw this.handshakeFailure; return providerManifestFixture(); }
   public async checkHealth(_providerId: string, _instanceId: string, _signal: AbortSignal): Promise<ProviderHealth> { return structuredClone(this.health); }
   public async stop(_providerId: string, _instanceId: string, _signal: AbortSignal): Promise<void> { this.stopCalls += 1; }
-  public async cancel(): Promise<boolean> { return true; }
+  public async cancel(): Promise<boolean> { if (this.cancelNeverResolves) return new Promise(() => undefined); return true; }
   public async recover(_signal: AbortSignal): Promise<ProviderRuntimeInstance[]> { return []; }
   public onExit(listener: (event: ProviderRuntimeExit) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
   public release(): void { this.releaseStart?.(); }
@@ -116,6 +117,13 @@ test("normalizes start timeout and unsupported cancellation", async () => {
   await new Promise((resolve) => setTimeout(resolve, 0));
   await assert.rejects(unsupported.service.cancel("example.provider"), (error: unknown) => error instanceof ProviderRuntimeError && error.code === "provider-runtime-cancellation-unsupported");
   unsupportedGateway.release(); await pending;
+});
+
+test("cancels startup without waiting for the runtime gateway", async () => {
+  const gateway = new FakeRuntimeGateway(); gateway.waitForStart = true; gateway.cancelNeverResolves = true; const value = createService(gateway); await value.service.initialize();
+  const pending = value.service.start({ providerId: "example.provider", permissionMode: "full" }); await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(await Promise.race([value.service.cancel("example.provider"), new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 30))]), true);
+  assert.equal((await pending).status, "stopped");
 });
 
 test("isolates late exit events and stops active calls after a crash", async () => {

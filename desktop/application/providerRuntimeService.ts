@@ -105,7 +105,8 @@ export class ProviderRuntimeService {
     if (!descriptor.cancellation) throw new ProviderRuntimeError("provider-runtime-cancellation-unsupported", "此 Provider 运行时不支持取消。", operation.kind === "recover" ? "recover" : operation.kind);
     operation.controller.abort();
     const instance = this.instances.get(providerId);
-    return instance ? this.gateway.cancel(providerId, instance.instanceId).catch(() => false) : true;
+    if (instance) void this.gateway.cancel(providerId, instance.instanceId).catch(() => false);
+    return true;
   }
 
   private async runStart(descriptor: ProviderRuntimeDescriptor, request: ProviderRuntimeStartRequest, controller: AbortController, context?: ProviderSessionContext): Promise<ProviderRuntimeState> {
@@ -135,6 +136,10 @@ export class ProviderRuntimeService {
     } catch (error) {
       const phase = error instanceof ProviderRuntimeError ? error.phase : controller.signal.aborted ? "start" : instance ? "handshake" : "start";
       const normalized = normalizeProviderRuntimeError(error, phase);
+      if (normalized.code === "provider-runtime-cancelled") {
+        this.clearRuntime(request.providerId);
+        return this.transition(request.providerId, "stopped", "provider_runtime_cancelled", {}, operationId, context, normalized.message, "如需继续使用，请重新启动 Provider。");
+      }
       if (instance) void this.gateway.stop(instance.providerId, instance.instanceId, new AbortController().signal).catch(() => undefined);
       return this.failRuntime(request.providerId, normalized, operationId, context);
     }
@@ -233,7 +238,7 @@ export class ProviderRuntimeService {
   }
 
   private scheduleRunTimeout(instance: ProviderRuntimeInstance): void { this.clearRunTimer(instance.providerId); this.runTimers.set(instance.providerId, setTimeout(() => { void this.handleRunTimeout(instance); }, this.timeouts.runMs)); }
-  private clearRuntime(providerId: string): void { this.instances.delete(providerId); this.clearRunTimer(providerId); this.nextGeneration(providerId); }
+  private clearRuntime(providerId: string): void { this.instances.delete(providerId); this.contexts.delete(providerId); this.clearRunTimer(providerId); this.nextGeneration(providerId); }
   private clearRunTimer(providerId: string): void { const timer = this.runTimers.get(providerId); if (timer) clearTimeout(timer); this.runTimers.delete(providerId); }
   private nextGeneration(providerId: string): number { const next = (this.generations.get(providerId) ?? 0) + 1; this.generations.set(providerId, next); return next; }
   private assertCurrent(providerId: string, generation: number): void { if (this.generations.get(providerId) !== generation) throw new ProviderRuntimeError("provider-runtime-stale-operation", "Provider 运行时操作已失效。", "start"); }
