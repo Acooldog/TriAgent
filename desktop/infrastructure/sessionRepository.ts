@@ -32,6 +32,19 @@ export class FileSessionRepository implements SessionStore {
     return this.enqueue(directory, () => appendJsonLine(path.join(directory, "conversation.jsonl"), message));
   }
 
+  public async recoverInterruptedTasks(root: string, session: SessionInfo): Promise<void> {
+    const directory = sessionDirectory(root, session);
+    await this.enqueue(directory, async () => {
+      const tasks = await readTaskStates(path.join(directory, "tasks"));
+      const interrupted = tasks.filter((task) => task.kind === "provider" && task.status === "running");
+      if (interrupted.length === 0) return;
+      const updatedAt = new Date().toISOString();
+      for (const task of interrupted) await writeJson(path.join(directory, "tasks", task.taskId, "state.json"), { ...task, status: "stopped", updatedAt, completedAt: updatedAt, error: { code: "provider-interrupted", message: "应用重启后，未完成的 Provider 任务已停止。" } });
+      const state = normalizeSessionState(await readJsonObject(path.join(directory, "state.json")), session.createdAt);
+      if (state.activeTaskId && interrupted.some((task) => task.taskId === state.activeTaskId)) await writeJson(path.join(directory, "state.json"), { ...state, status: "stopped", activeTaskId: null, updatedAt, stopReason: "应用重启后，未完成的 Provider 任务已停止。" });
+    });
+  }
+
   public writeConfig(root: string, session: SessionInfo, config: Record<string, unknown>): Promise<void> {
     const directory = sessionDirectory(root, session);
     return this.enqueue(directory, () => writeJson(path.join(directory, "config.json"), config));

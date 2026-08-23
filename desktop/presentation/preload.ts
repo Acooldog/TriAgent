@@ -4,6 +4,7 @@ import type { WorkerEvent } from "../application/workerProtocol";
 import type { ChatMessage, ModelConfig, ModelEvent } from "../application/modelProtocol";
 import type { CompressionOptions, CompressionResult } from "../application/contextCompression";
 import type { ToolManifest } from "../application/toolProtocol";
+import type { ProviderCall, ProviderEvent, ProviderRegistration } from "../application/providerProtocol";
 
 export interface ModelEventEnvelope {
   requestId: string;
@@ -33,6 +34,17 @@ contextBridge.exposeInMainWorld("triMusicAgent", {
   },
   listTools: (): Promise<ToolManifest[]> => ipcRenderer.invoke("tools:list"),
   refreshTools: (manifests: ToolManifest[]): Promise<ToolManifest[]> => ipcRenderer.invoke("tools:refresh", manifests),
+  listProviders: (): Promise<ProviderRegistration[]> => ipcRenderer.invoke("providers:list"),
+  refreshProviders: (): Promise<ProviderRegistration[]> => ipcRenderer.invoke("providers:refresh"),
+  checkProviderHealth: (providerId: string): Promise<ProviderRegistration> => ipcRenderer.invoke("providers:health", providerId),
+  setProviderEnabled: (providerId: string, enabled: boolean): Promise<ProviderRegistration> => ipcRenderer.invoke("providers:set-enabled", providerId, enabled),
+  invokeProvider: (call: ProviderCall): Promise<{ requestId: string; taskId: string }> => ipcRenderer.invoke("providers:invoke", call),
+  cancelProvider: (taskId: string): Promise<boolean> => ipcRenderer.invoke("providers:cancel", taskId),
+  onProviderEvent: (listener: (event: ProviderEvent) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, providerEvent: ProviderEvent) => listener(providerEvent);
+    ipcRenderer.on("provider:event", handler);
+    return () => ipcRenderer.removeListener("provider:event", handler);
+  },
   onInitializationState: (listener: (state: WorkspaceState) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, state: WorkspaceState) => listener(state);
     ipcRenderer.on("app:initialization-state", handler);
