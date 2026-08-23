@@ -12,7 +12,9 @@ export interface TriMusicAgentApi {
   createSession(): Promise<WorkspaceState>;
   selectSession(sessionId: string): Promise<WorkspaceState>;
   compressSession(options: CompressionOptions): Promise<CompressionResult>;
+  restoreOriginalContext(): Promise<WorkspaceState>;
   onInitializationState(listener: (state: WorkspaceState) => void): () => void;
+  onPersistenceError(listener: (error: { label: string; message: string }) => void): () => void;
   startWorker(operation: "ping" | "decrypt", payload: Record<string, unknown>): Promise<{ requestId: string; taskId: string }>;
   cancelWorker(taskId: string): Promise<boolean>;
   onWorkerEvent(listener: (event: WorkerEvent) => void): () => void;

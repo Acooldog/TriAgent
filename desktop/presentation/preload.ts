@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld("triMusicAgent", {
   createSession: (): Promise<WorkspaceState> => ipcRenderer.invoke("session:create"),
   selectSession: (sessionId: string): Promise<WorkspaceState> => ipcRenderer.invoke("session:select", sessionId),
   compressSession: (options: CompressionOptions): Promise<CompressionResult> => ipcRenderer.invoke("session:compress", options),
+  restoreOriginalContext: (): Promise<WorkspaceState> => ipcRenderer.invoke("session:restore-original"),
   startWorker: (operation: "ping" | "decrypt", payload: Record<string, unknown>): Promise<{ requestId: string; taskId: string }> => ipcRenderer.invoke("worker:start", operation, payload),
   cancelWorker: (taskId: string): Promise<boolean> => ipcRenderer.invoke("worker:cancel", taskId),
   onWorkerEvent: (listener: (event: WorkerEvent) => void): (() => void) => {
@@ -36,5 +37,10 @@ contextBridge.exposeInMainWorld("triMusicAgent", {
     const handler = (_event: Electron.IpcRendererEvent, state: WorkspaceState) => listener(state);
     ipcRenderer.on("app:initialization-state", handler);
     return () => ipcRenderer.removeListener("app:initialization-state", handler);
+  },
+  onPersistenceError: (listener: (error: { label: string; message: string }) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, error: { label: string; message: string }) => listener(error);
+    ipcRenderer.on("session:persistence-error", handler);
+    return () => ipcRenderer.removeListener("session:persistence-error", handler);
   },
 });
