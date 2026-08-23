@@ -65,10 +65,11 @@ test("reports an understandable unconfigured state", async () => {
 });
 
 test("enforces restricted denial and standard approval", async () => {
-  const denied = createService(new FakeRuntimeGateway(), false);
+  const deniedEvents: string[] = []; const denied = createService(new FakeRuntimeGateway(), false, [], undefined, deniedEvents);
   await denied.service.initialize();
   await assert.rejects(denied.service.start({ providerId: "example.provider", permissionMode: "restricted" }), (error: unknown) => error instanceof ProviderRuntimeError && error.code === "provider-runtime-restricted");
   await assert.rejects(denied.service.start({ providerId: "example.provider", permissionMode: "standard" }), (error: unknown) => error instanceof ProviderRuntimeError && error.code === "provider-runtime-approval-denied");
+  assert.deepEqual(deniedEvents, ["provider_runtime_discovered", "provider_runtime_start_denied", "provider_runtime_start_denied"]);
   const allowed = createService();
   await allowed.service.initialize();
   assert.equal((await allowed.service.start({ providerId: "example.provider", permissionMode: "standard" })).status, "healthy");
@@ -103,6 +104,8 @@ test("normalizes start, handshake and health failures", async () => {
   const handshakeState = await handshake.service.start({ providerId: "example.provider", permissionMode: "full" }); assert.equal(handshakeState.status, "unhealthy"); assert.doesNotMatch(handshakeState.message ?? "", /internal/);
   const health = createService(); health.gateway.health = { status: "unhealthy", message: "token=private-value" }; await health.service.initialize();
   const healthState = await health.service.start({ providerId: "example.provider", permissionMode: "full" }); assert.equal(healthState.status, "unhealthy"); assert.doesNotMatch(healthState.message ?? "", /private-value/);
+  const handshakeTimeout = createService(); handshakeTimeout.gateway.handshakeFailure = Object.assign(new Error("timeout"), { name: "TimeoutError" }); await handshakeTimeout.service.initialize();
+  const handshakeTimeoutState = await handshakeTimeout.service.start({ providerId: "example.provider", permissionMode: "full" }); assert.equal(handshakeTimeoutState.status, "unhealthy");
 });
 
 test("normalizes start timeout and unsupported cancellation", async () => {

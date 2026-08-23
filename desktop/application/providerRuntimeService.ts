@@ -12,7 +12,6 @@ export class ProviderRuntimeService {
   private readonly descriptors = new Map<string, ProviderRuntimeDescriptor>();
   private readonly states = new Map<string, ProviderRuntimeState>();
   private readonly instances = new Map<string, ProviderRuntimeInstance>();
-  private readonly manifests = new Map<string, import("./providerProtocol").ProviderManifest>();
   private readonly operations = new Map<string, RuntimeOperation>();
   private readonly generations = new Map<string, number>();
   private readonly sequences = new Map<string, number>();
@@ -110,8 +109,14 @@ export class ProviderRuntimeService {
   }
 
   private async runStart(descriptor: ProviderRuntimeDescriptor, request: ProviderRuntimeStartRequest, controller: AbortController, context?: ProviderSessionContext): Promise<ProviderRuntimeState> {
-    await this.policy.authorize(request, descriptor.displayName);
     const operationId = this.createId();
+    try {
+      await this.policy.authorize(request, descriptor.displayName);
+    } catch (error) {
+      const normalized = normalizeProviderRuntimeError(error, "start");
+      await this.emit(request.providerId, "provider_runtime_start_denied", "stopped", {}, operationId, context, normalized);
+      throw normalized;
+    }
     const generation = this.nextGeneration(request.providerId);
     if (context) this.contexts.set(request.providerId, context);
     await this.transition(request.providerId, "starting", "provider_runtime_starting", {}, operationId, context);
@@ -124,11 +129,12 @@ export class ProviderRuntimeService {
       const manifest = await this.withControllerTimeout("handshake", this.timeouts.handshakeMs, controller, (signal) => this.gateway.handshake(request.providerId, instance!.instanceId, signal));
       validateProviderManifest(manifest);
       if (manifest.provider_id !== request.providerId) throw new ProviderRuntimeError("provider-runtime-handshake-mismatch", "Provider 握手标识不匹配。", "handshake");
-      this.manifests.set(request.providerId, manifest); this.registry.upsert(manifest);
+      this.registry.upsert(manifest);
       await this.emit(request.providerId, "provider_runtime_handshake_completed", "starting", {}, operationId, context);
       return await this.completeHealth(instance, operationId, context);
     } catch (error) {
-      const normalized = normalizeProviderRuntimeError(error, controller.signal.aborted ? "start" : instance ? "handshake" : "start");
+      const phase = error instanceof ProviderRuntimeError ? error.phase : controller.signal.aborted ? "start" : instance ? "handshake" : "start";
+      const normalized = normalizeProviderRuntimeError(error, phase);
       if (instance) void this.gateway.stop(instance.providerId, instance.instanceId, new AbortController().signal).catch(() => undefined);
       return this.failRuntime(request.providerId, normalized, operationId, context);
     }
@@ -173,7 +179,7 @@ export class ProviderRuntimeService {
         const manifest = await this.withControllerTimeout("recover", this.timeouts.handshakeMs, controller, (signal) => this.gateway.handshake(instance.providerId, instance.instanceId, signal));
         this.assertCurrent(instance.providerId, generation); validateProviderManifest(manifest);
         if (manifest.provider_id !== descriptor.providerId) throw new ProviderRuntimeError("provider-runtime-handshake-mismatch", "Provider 恢复握手标识不匹配。", "recover");
-        this.manifests.set(instance.providerId, manifest); this.registry.upsert(manifest);
+        this.registry.upsert(manifest);
         const state = await this.completeHealth(instance, operationId, context, controller);
         await this.emit(instance.providerId, "provider_runtime_recovered", "healthy", {}, operationId, context);
         return state;
