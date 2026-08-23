@@ -2,6 +2,7 @@ import { spawn, type SpawnOptions } from "node:child_process";
 import type { Readable } from "node:stream";
 import { buildCancelRequest, isTerminalWorkerEvent, parseWorkerEvent, type WorkerEvent, type WorkerStartRequest } from "../application/workerProtocol";
 import type { WorkerCompletion, WorkerRunHandle, WorkerRunner } from "../application/workerService";
+import { debugError, debugInfo } from "../application/debugLogger";
 
 export type WorkerBridgeErrorCode = "worker-start-failed" | "worker-protocol-error" | "worker-cancelled" | "worker-timeout" | "worker-exited";
 
@@ -57,6 +58,7 @@ export class PythonWorkerClient implements WorkerRunner {
   }
 
   public start(request: WorkerStartRequest, onEvent: (event: WorkerEvent) => void, timeoutMs = this.defaultTimeoutMs): WorkerRunHandle {
+    debugInfo("worker", "start", { operation: request.operation, requestId: request.request_id, taskId: request.task_id, timeoutMs, pythonConfigured: Boolean(this.pythonExecutable) });
     if (this.active.has(request.task_id)) throw new WorkerBridgeError("worker-start-failed", "该 Agent 任务已有一个活动 worker。");
     let processHandle: WorkerProcess;
     try {
@@ -73,7 +75,7 @@ export class PythonWorkerClient implements WorkerRunner {
     this.active.set(request.task_id, active);
     processHandle.stdout.on("data", (chunk: Buffer | string) => this.consumeOutput(active, chunk, onEvent));
     processHandle.stderr.on("data", () => undefined);
-    processHandle.on("error", (error: Error) => this.fail(active, "worker-start-failed", error.message, true));
+    processHandle.on("error", (error: Error) => { debugError("worker", "process-error", error, { requestId: request.request_id, taskId: request.task_id }); this.fail(active, "worker-start-failed", error.message, true); });
     processHandle.on("close", (code: number | null) => {
       if (!active.settled) this.fail(active, active.cancellationRequested ? "worker-cancelled" : "worker-exited", active.cancellationRequested ? "Python worker 已取消。" : `Python worker 已退出（${code ?? "未知"}）。`, false);
     });
@@ -82,6 +84,7 @@ export class PythonWorkerClient implements WorkerRunner {
   }
 
   public cancel(taskId: string): boolean {
+    debugInfo("worker", "cancel-request", { taskId });
     const active = this.active.get(taskId);
     if (!active || active.settled) return false;
     active.cancellationRequested = true;
@@ -102,9 +105,11 @@ export class PythonWorkerClient implements WorkerRunner {
         try {
           const event = parseWorkerEvent(line);
           if (event.request_id !== active.request.request_id || event.task_id !== active.request.task_id) throw new Error("worker 输出的任务标识不匹配。");
-          try { onEvent(event); } catch { /* Observer failures must not terminate work. */ }
+          debugInfo("worker", "event", { requestId: event.request_id, taskId: event.task_id, eventType: event.event_type, status: event.status });
+          try { onEvent(event); } catch { debugInfo("worker", "observer-error", { requestId: event.request_id, taskId: event.task_id }); }
           if (isTerminalWorkerEvent(event)) this.complete(active, event);
         } catch (error) {
+          debugError("worker", "protocol-error", error, { requestId: active.request.request_id, taskId: active.request.task_id });
           this.fail(active, "worker-protocol-error", error instanceof Error ? error.message : "worker 输出协议无效。", true);
           return;
         }
@@ -118,6 +123,7 @@ export class PythonWorkerClient implements WorkerRunner {
     active.settled = true;
     clearTimeout(active.timeout);
     this.active.delete(active.request.task_id);
+    debugInfo("worker", "complete", { requestId: active.request.request_id, taskId: active.request.task_id, status: event.status });
     const rawCode = event.payload.result_code;
     active.resolve({ status: event.status === "cancelled" ? "cancelled" : event.status === "failed" ? "failed" : "completed", resultCode: typeof rawCode === "number" ? rawCode : undefined, event });
   }
@@ -127,6 +133,7 @@ export class PythonWorkerClient implements WorkerRunner {
     active.settled = true;
     clearTimeout(active.timeout);
     this.active.delete(active.request.task_id);
+    debugInfo("worker", "fail", { requestId: active.request.request_id, taskId: active.request.task_id, code, kill });
     if (kill) this.kill(active);
     active.reject(new WorkerBridgeError(code, message));
   }

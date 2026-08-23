@@ -5,6 +5,7 @@ import { normalizeProviderRuntimeError, ProviderRuntimeError, sanitizeRuntimePay
 import { validateProviderManifest } from "./providerProtocol";
 import type { ProviderRegistry } from "./providerRegistry";
 import type { ProviderSessionContext } from "./providerService";
+import { debugError, debugInfo } from "./debugLogger";
 
 interface RuntimeOperation { kind: "start" | "stop" | "health" | "recover"; controller: AbortController; promise: Promise<ProviderRuntimeState>; }
 
@@ -37,6 +38,7 @@ export class ProviderRuntimeService {
   }
 
   public async initialize(context?: ProviderSessionContext): Promise<ProviderRuntimeState[]> {
+    debugInfo("runtime", "initialize");
     await this.discover(context);
     const recovered = await this.withTimeout("recover", this.timeouts.operationMs, (signal) => this.gateway.recover(signal)).catch(() => []);
     for (const instance of recovered) if (this.descriptors.has(instance.providerId)) await this.recoverInstance(instance, context).catch(() => undefined);
@@ -45,6 +47,7 @@ export class ProviderRuntimeService {
 
   public async discover(context?: ProviderSessionContext): Promise<ProviderRuntimeState[]> {
     const operationId = this.createId();
+    debugInfo("runtime", "discover-start", { operationId });
     try {
       const descriptors = await this.withTimeout("discover", this.timeouts.discoveryMs, (signal) => this.gateway.discover(signal));
       const incoming = new Map<string, ProviderRuntimeDescriptor>();
@@ -57,11 +60,12 @@ export class ProviderRuntimeService {
       }
       for (const providerId of [...this.states.keys()]) if (!incoming.has(providerId)) { this.states.delete(providerId); this.clearRuntime(providerId); }
       if (incoming.size === 0) await this.emit(null, "provider_runtime_unconfigured", "unconfigured", { message: "当前未配置能力 Provider。" }, operationId, context);
-      return this.list();
-    } catch (error) { throw normalizeProviderRuntimeError(error, "discover"); }
+      const result = this.list(); debugInfo("runtime", "discover-complete", { operationId, count: result.length }); return result;
+    } catch (error) { debugError("runtime", "discover-error", error, { operationId }); throw normalizeProviderRuntimeError(error, "discover"); }
   }
 
   public start(request: ProviderRuntimeStartRequest, context?: ProviderSessionContext): Promise<ProviderRuntimeState> {
+    debugInfo("runtime", "start-request", { providerId: request.providerId, permissionMode: request.permissionMode });
     const descriptor = this.requireDescriptor(request.providerId);
     const current = this.states.get(request.providerId);
     if (current?.status === "healthy") return Promise.resolve(structuredClone(current));
@@ -75,6 +79,7 @@ export class ProviderRuntimeService {
   }
 
   public async checkHealth(providerId: string, context?: ProviderSessionContext): Promise<ProviderRuntimeState> {
+    debugInfo("runtime", "health-request", { providerId });
     const instance = this.instances.get(providerId);
     if (!instance) return structuredClone(this.states.get(providerId) ?? this.requireConfiguredState(providerId));
     const existing = this.operations.get(providerId);
@@ -86,6 +91,7 @@ export class ProviderRuntimeService {
   }
 
   public async stop(providerId: string, context?: ProviderSessionContext): Promise<ProviderRuntimeState> {
+    debugInfo("runtime", "stop-request", { providerId });
     this.requireDescriptor(providerId);
     const current = this.states.get(providerId);
     if (!current || current.status === "stopped") return structuredClone(current ?? this.requireConfiguredState(providerId));
@@ -99,6 +105,7 @@ export class ProviderRuntimeService {
   }
 
   public async cancel(providerId: string): Promise<boolean> {
+    debugInfo("runtime", "cancel-request", { providerId });
     const descriptor = this.requireDescriptor(providerId);
     const operation = this.operations.get(providerId);
     if (!operation) return false;
@@ -114,6 +121,7 @@ export class ProviderRuntimeService {
     try {
       await this.policy.authorize(request, descriptor.displayName);
     } catch (error) {
+      debugError("runtime", "start-error", error, { providerId: request.providerId });
       const normalized = normalizeProviderRuntimeError(error, "start");
       await this.emit(request.providerId, "provider_runtime_start_denied", "stopped", {}, operationId, context, normalized);
       throw normalized;
@@ -148,7 +156,7 @@ export class ProviderRuntimeService {
   private async runHealth(instance: ProviderRuntimeInstance, controller: AbortController, context?: ProviderSessionContext): Promise<ProviderRuntimeState> {
     const operationId = this.createId();
     try { return await this.completeHealth(instance, operationId, context, controller); }
-    catch (error) { return this.failRuntime(instance.providerId, normalizeProviderRuntimeError(error, "health"), operationId, context); }
+    catch (error) { debugError("runtime", "health-error", error, { providerId: instance.providerId }); return this.failRuntime(instance.providerId, normalizeProviderRuntimeError(error, "health"), operationId, context); }
   }
 
   private async completeHealth(instance: ProviderRuntimeInstance, operationId: string, context?: ProviderSessionContext, controller = new AbortController()): Promise<ProviderRuntimeState> {
@@ -170,7 +178,7 @@ export class ProviderRuntimeService {
       this.clearRuntime(providerId); this.setRegistryUnhealthy(providerId, "Provider 已停止。");
       await this.onProviderUnavailable(providerId, new ProviderRuntimeError("provider-runtime-stopped", "Provider 已停止，相关任务已截停。", "stop"));
       return this.transition(providerId, "stopped", "provider_runtime_stopped", {}, operationId, context, "Provider 已停止。", "如需继续使用，请重新启动并检查健康状态。");
-    } catch (error) { return this.failRuntime(providerId, normalizeProviderRuntimeError(error, "stop"), operationId, context); }
+    } catch (error) { debugError("runtime", "stop-error", error, { providerId }); return this.failRuntime(providerId, normalizeProviderRuntimeError(error, "stop"), operationId, context); }
   }
 
   private async recoverInstance(instance: ProviderRuntimeInstance, context?: ProviderSessionContext): Promise<ProviderRuntimeState> {
@@ -188,7 +196,7 @@ export class ProviderRuntimeService {
         const state = await this.completeHealth(instance, operationId, context, controller);
         await this.emit(instance.providerId, "provider_runtime_recovered", "healthy", {}, operationId, context);
         return state;
-      } catch (error) { return this.failRuntime(instance.providerId, normalizeProviderRuntimeError(error, "recover"), operationId, context); }
+      } catch (error) { debugError("runtime", "recover-error", error, { providerId: instance.providerId }); return this.failRuntime(instance.providerId, normalizeProviderRuntimeError(error, "recover"), operationId, context); }
     })();
     this.operations.set(instance.providerId, { kind: "recover", controller, promise });
     try { return await promise; } finally { if (this.operations.get(instance.providerId)?.promise === promise) this.operations.delete(instance.providerId); }
@@ -221,6 +229,7 @@ export class ProviderRuntimeService {
   private async emit(providerId: string | null, eventType: string, status: ProviderRuntimeStatus, payload: Record<string, unknown>, operationId: string, context?: ProviderSessionContext, error?: ProviderRuntimeError): Promise<void> {
     const key = providerId ?? "unconfigured"; const sequence = (this.sequences.get(key) ?? 0) + 1; this.sequences.set(key, sequence);
     const event: ProviderRuntimeEvent = { providerId, operationId, sequence, eventType, status, payload: sanitizeRuntimePayload(payload), ...(error ? { error: { code: error.code, message: error.message } } : {}), emittedAt: this.now().toISOString() };
+    debugInfo("runtime", "event", { providerId, operationId, sequence, eventType, status, error: error?.code });
     if (context && this.persistence) {
       if (providerId) await this.persistState(context, this.states.get(providerId)!, error);
       await this.persistence.recordEvent(context.root, context.session, { eventId: this.createId(), emittedAt: event.emittedAt, category: "provider", eventType, status, taskId: providerId ? runtimeTaskId(providerId) : undefined, payload: sanitizeRuntimePayload({ providerId, ...event.payload, ...(event.error ? { error: event.error } : {}) }), collapsed: true });

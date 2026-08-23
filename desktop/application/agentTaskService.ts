@@ -5,6 +5,7 @@ import type { ProviderRuntimeService } from "./providerRuntimeService";
 import type { ProviderService, ProviderSessionContext } from "./providerService";
 import type { SessionPersistenceService } from "./sessionPersistence";
 import type { PermissionPolicy } from "./permissionPolicy";
+import { debugError, debugInfo } from "./debugLogger";
 
 export interface AgentPlanStep {
   stepId: string;
@@ -53,6 +54,7 @@ export class AgentTaskService {
   ) {}
 
   public createPlan(prompt: string): AgentPlan {
+    debugInfo("agent", "create-plan", { promptLength: prompt.length });
     const normalized = prompt.trim();
     if (!normalized) throw new Error("任务内容不能为空。");
     const inputPath = extractPath(normalized, "输入") ?? extractPath(normalized, "源文件") ?? extractFirstPath(normalized);
@@ -72,6 +74,7 @@ export class AgentTaskService {
     const emit = (type: AgentEvent["type"], status: AgentEvent["status"], payload: Record<string, unknown> = {}) => {
       const event: AgentEvent = { taskId: plan.taskId, type, status, payload, emittedAt: this.now().toISOString() };
       onEvent(event);
+      debugInfo("agent", "event", { taskId: event.taskId, type: event.type, status: event.status });
       if (context && this.persistence) void this.persistence.recordEvent(context.root, context.session, { eventId: this.createId(), emittedAt: event.emittedAt, category: "task", eventType: `agent_${type}`, status, taskId: plan.taskId, payload });
       if (context && this.persistence) void this.persistence.recordLog(context.root, context.session, { emittedAt: event.emittedAt, level: status === "failed" ? "error" : "info", message: `agent_${type}`, context: { taskId: plan.taskId } });
     };
@@ -97,7 +100,9 @@ export class AgentTaskService {
     try {
       emit("approval_required", "running", { title: "解密任务审批", detail: "任务将启动本地 Provider 并写入输出文件。" });
       await this.permissions.authorize({ mode: permissionMode, operation: "provider", title: "解密任务审批", detail: "任务将启动本地 Provider 并写入输出文件。" });
+      debugInfo("agent", "approval-granted", { taskId: plan.taskId, mode: permissionMode });
       const runtime = await this.runtime.start({ providerId: step.providerId, permissionMode }, context);
+      debugInfo("agent", "runtime-started", { taskId: plan.taskId, providerId: step.providerId, status: runtime.status });
       emit("runtime_started", "running", { status: runtime.status });
       const handle = this.providers.start({ providerId: step.providerId, capabilityId: step.capabilityId, input: step.input, permissionMode }, context, (event: ProviderEvent) => emit("provider_event", event.status, { event }));
       this.active.set(plan.taskId, { providerTaskId: handle.taskId, providerId: step.providerId, context });
@@ -106,6 +111,7 @@ export class AgentTaskService {
       if (context) await this.onSessionChanged(context);
       return { taskId: plan.taskId, output: result.output };
     } catch (error) {
+      debugError("agent", "task-error", error, { taskId: plan.taskId });
       const message = error instanceof Error ? error.message : "解密任务失败。";
       const cancelled = /取消|cancel/i.test(message);
       emit(cancelled ? "cancelled" : "failed", cancelled ? "cancelled" : "failed", { message });

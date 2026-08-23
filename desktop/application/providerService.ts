@@ -3,6 +3,7 @@ import type { ArtifactReference, SessionEventRecord, SessionPersistenceService, 
 import type { SessionInfo } from "./workspaceService";
 import { ProviderContractError, normalizeProviderError, sanitizeProviderData, validateArtifacts, validateProviderEvent, validateProviderOutput, type ProviderCall, type ProviderCapabilityManifest, type ProviderEvent, type ProviderGateway, type ProviderHealth, type ProviderInvocationRequest, type ProviderRegistration } from "./providerProtocol";
 import type { ProviderRegistry } from "./providerRegistry";
+import { debugError, debugInfo } from "./debugLogger";
 
 export interface ProviderSessionContext { root: string; session: SessionInfo; }
 export interface ProviderCallHandle { requestId: string; taskId: string; completion: Promise<{ requestId: string; taskId: string; output: unknown }>; }
@@ -32,24 +33,27 @@ export class ProviderService {
   public list(): ProviderRegistration[] { return this.registry.list(); }
 
   public setEnabled(providerId: string, enabled: boolean): ProviderRegistration {
+    debugInfo("provider", "set-enabled", { providerId, enabled });
     return this.registry.setEnabled(providerId, enabled);
   }
 
   public async refresh(): Promise<ProviderRegistration[]> {
+    debugInfo("provider", "discover-start");
     let manifests;
-    try { manifests = await this.gateway.discover(); } catch (error) { throw normalizeProviderError(error); }
+    try { manifests = await this.gateway.discover(); } catch (error) { debugError("provider", "discover-error", error); throw normalizeProviderError(error); }
     this.registry.refresh(manifests);
     for (const registration of this.registry.list()) if (registration.enabled) await this.checkHealth(registration.manifest.provider_id);
-    return this.registry.list();
+    const result = this.registry.list(); debugInfo("provider", "discover-complete", { count: result.length }); return result;
   }
 
   public async checkHealth(providerId: string): Promise<ProviderRegistration> {
+    debugInfo("provider", "health-start", { providerId });
     try {
       const health = await this.gateway.checkHealth(providerId);
-      return this.registry.setHealth(providerId, normalizeHealth(health, this.now));
+      const result = this.registry.setHealth(providerId, normalizeHealth(health, this.now)); debugInfo("provider", "health-complete", { providerId, status: result.health.status }); return result;
     } catch (error) {
       const normalized = normalizeProviderError(error);
-      return this.registry.setHealth(providerId, { status: "unhealthy", checkedAt: this.now().toISOString(), message: normalized.message });
+      debugError("provider", "health-error", error, { providerId }); return this.registry.setHealth(providerId, { status: "unhealthy", checkedAt: this.now().toISOString(), message: normalized.message });
     }
   }
 
@@ -61,6 +65,7 @@ export class ProviderService {
     const interruption = new Promise<void>((resolve) => { resolveInterruption = resolve; });
     const active: ActiveProviderCall = { request, capability, controller, interruption, resolveInterruption, cancelled: false };
     this.active.set(request.taskId, active);
+    debugInfo("provider", "call-start", { providerId: request.providerId, capabilityId: request.capabilityId, requestId: request.requestId, taskId: request.taskId, timeoutMs: request.timeoutMs });
     return { requestId: request.requestId, taskId: request.taskId, completion: this.execute(active, context, onEvent) };
   }
 
@@ -86,6 +91,7 @@ export class ProviderService {
       const sanitized = sanitizeEvent(event);
       terminalEventSeen = sanitized.status === "completed" || sanitized.status === "failed" || sanitized.status === "cancelled";
       eventQueue = eventQueue.then(async () => { await this.persistProviderEvent(context, sanitized); onEvent(sanitized); });
+      debugInfo("provider", "event", { providerId: sanitized.provider_id, capabilityId: sanitized.capability_id, taskId: sanitized.task_id, eventType: sanitized.event_type, status: sanitized.status, sequence: sanitized.sequence });
       if (sanitized.status === "failed" || sanitized.status === "cancelled") {
         rejectTerminalEvent(new ProviderContractError(sanitized.status === "cancelled" ? "provider-cancelled" : sanitized.error?.code || "provider-execution-failed", sanitized.error?.message || (sanitized.status === "cancelled" ? "Provider 调用已取消。" : "Provider 执行失败。")));
       }
@@ -113,12 +119,13 @@ export class ProviderService {
       const output = sanitizeProviderData(result.output);
       await this.persistTask(context, request, "completed", undefined, { output });
       await this.persistLifecycle(context, request, "provider_call_completed", "completed", { output });
+      debugInfo("provider", "call-complete", { providerId: request.providerId, capabilityId: request.capabilityId, taskId: request.taskId });
       return { requestId: request.requestId, taskId: request.taskId, output };
     } catch (error) {
       acceptingEvents = false;
       controller.abort();
       await eventQueue.catch(() => undefined);
-      const normalized = normalizeProviderError(error);
+      const normalized = normalizeProviderError(error); debugError("provider", "call-error", error, { providerId: request.providerId, capabilityId: request.capabilityId, taskId: request.taskId, code: normalized.code });
       const status = normalized.code === "provider-cancelled" || normalized.code === "provider-timeout" ? "stopped" : "failed";
       if (taskStarted) {
         await this.persistTask(context, request, status, normalized);
@@ -133,6 +140,7 @@ export class ProviderService {
   }
 
   public async cancel(taskId: string): Promise<boolean> {
+    debugInfo("provider", "cancel-request", { taskId });
     const active = this.active.get(taskId);
     if (!active) return false;
     if (!active.capability.cancellation) throw new ProviderContractError("provider-cancellation-unsupported", "此 Provider 能力不支持取消。");

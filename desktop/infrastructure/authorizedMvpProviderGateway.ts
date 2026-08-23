@@ -7,6 +7,7 @@ import { WorkerService } from "../application/workerService";
 import { PythonWorkerClient } from "./pythonWorker";
 import { MVP_PROVIDER_MANIFEST } from "./mvpProviderManifest";
 import { decryptUnlockMusicKgm, UnlockMusicUnsupportedError } from "./unlockMusicKgm";
+import { debugError, debugInfo } from "../application/debugLogger";
 
 export class AuthorizedMvpProviderGateway implements ProviderGateway {
   private readonly worker: WorkerService;
@@ -18,16 +19,17 @@ export class AuthorizedMvpProviderGateway implements ProviderGateway {
   }
 
   public async discover(): Promise<ProviderManifest[]> { return [MVP_PROVIDER_MANIFEST]; }
-  public async checkHealth(): Promise<ProviderHealth> { return { status: "healthy" }; }
+  public async checkHealth(): Promise<ProviderHealth> { debugInfo("private-provider", "health"); return { status: "healthy" }; }
 
   public async invoke(request: ProviderInvocationRequest, onEvent: (event: ProviderEvent) => void, signal: AbortSignal): Promise<ProviderGatewayResult> {
+    debugInfo("private-provider", "invoke", { providerId: request.providerId, capabilityId: request.capabilityId, taskId: request.taskId, platform: (request.input as Record<string, unknown>).platform });
     const input = request.input as Record<string, unknown>;
     const outputDir = String(input.outputDir);
     const before = await listFiles(outputDir);
     const primary = selectKugouProvider([{ kind: "primary", available: String(input.platform).toLowerCase() === "kugou" }, { kind: "fallback", available: true }]);
     if (primary.kind === "primary") {
-      try { return await this.invokeUnlockMusic(request, String(input.inputPath), outputDir, onEvent, signal); }
-      catch (error) { if (!(error instanceof UnlockMusicUnsupportedError)) throw error; }
+      try { debugInfo("private-provider", "primary-start", { taskId: request.taskId }); return await this.invokeUnlockMusic(request, String(input.inputPath), outputDir, onEvent, signal); }
+      catch (error) { if (!(error instanceof UnlockMusicUnsupportedError)) { debugError("private-provider", "primary-error", error, { taskId: request.taskId }); throw error; } debugInfo("private-provider", "primary-unsupported", { taskId: request.taskId }); }
     }
     let sequence = 0;
     const handle = this.worker.start("decrypt", { platform: String(input.platform), input_path: String(input.inputPath), output_dir: outputDir, recursive: Boolean(input.recursive), settings: { transcode_enabled: false, decryption_priority: "primary-authorized-logic" } }, (event) => onEvent(this.mapEvent(request, event, sequence++)), { timeoutMs: request.timeoutMs });
@@ -35,12 +37,12 @@ export class AuthorizedMvpProviderGateway implements ProviderGateway {
     const abort = () => { this.cancel(request.providerId, request.taskId); };
     signal.addEventListener("abort", abort, { once: true });
     try {
-      const completion = await handle.completion;
+      debugInfo("private-provider", "fallback-start", { taskId: request.taskId }); const completion = await handle.completion;
       if (completion.status === "cancelled" || this.cancelled.has(request.taskId)) throw new ProviderContractError("provider-cancelled", "Provider 调用已取消。");
       if (completion.status !== "completed" || completion.resultCode !== 0) throw new ProviderContractError("provider-execution-failed", "本地解密未成功完成。");
       const outputPath = await findNewFile(outputDir, before);
       if (!outputPath) throw new ProviderContractError("provider-output-invalid", "未找到可验证的解密输出文件。");
-      return { output: { success: true, outputPath, format: path.extname(outputPath).slice(1).toLowerCase() || "audio" }, artifacts: [{ artifact_id: `${request.taskId}-output`, relative_path: toRelative(outputDir, outputPath), kind: "audio" }] };
+      debugInfo("private-provider", "fallback-complete", { taskId: request.taskId, format: path.extname(outputPath).slice(1).toLowerCase() }); return { output: { success: true, outputPath, format: path.extname(outputPath).slice(1).toLowerCase() || "audio" }, artifacts: [{ artifact_id: `${request.taskId}-output`, relative_path: toRelative(outputDir, outputPath), kind: "audio" }] };
     } finally { signal.removeEventListener("abort", abort); this.active.delete(request.taskId); }
   }
 
@@ -60,7 +62,7 @@ export class AuthorizedMvpProviderGateway implements ProviderGateway {
     await fs.writeFile(outputPath, decoded);
     emit("progress", "running", { progress: 1, engine: "primary" });
     emit("completed", "completed", { outputPath, format: extension, engine: "primary" });
-    return { output: { success: true, outputPath, format: extension }, artifacts: [{ artifact_id: `${request.taskId}-output`, relative_path: toRelative(outputDir, outputPath), kind: "audio" }] };
+    debugInfo("private-provider", "primary-complete", { taskId: request.taskId, format: extension }); return { output: { success: true, outputPath, format: extension }, artifacts: [{ artifact_id: `${request.taskId}-output`, relative_path: toRelative(outputDir, outputPath), kind: "audio" }] };
   }
 
   public async cancel(_providerId: string, taskId: string): Promise<boolean> { const workerTaskId = this.active.get(taskId); if (!workerTaskId) return false; this.cancelled.add(taskId); return this.worker.cancel(workerTaskId); }

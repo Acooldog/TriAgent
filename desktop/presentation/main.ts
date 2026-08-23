@@ -31,6 +31,7 @@ import { JsonSettingsRepository } from "../infrastructure/settingsRepository";
 import { SystemDiagnosticsGateway } from "../infrastructure/systemDiagnostics";
 import { FileSystemWorkspaceRepository } from "../infrastructure/workspaceRepository";
 import { registerProviderIpc } from "./providerIpc";
+import { debugError, debugInfo } from "../application/debugLogger";
 
 let mainWindow: BrowserWindow | null = null;
 let workspaceService: WorkspaceService;
@@ -53,7 +54,7 @@ let persistenceQueue: Promise<void> = Promise.resolve();
 
 function installationDirectory(): string { return app.isPackaged ? path.dirname(app.getPath("exe")) : app.getAppPath(); }
 function settingsRepository(): WindowsRegistrySettingsRepository | JsonSettingsRepository { return process.platform === "win32" ? new WindowsRegistrySettingsRepository() : new JsonSettingsRepository(path.join(app.getPath("userData"), "settings.json")); }
-function publishState(state: WorkspaceState): WorkspaceState { mainWindow?.webContents.send("app:initialization-state", state); return state; }
+function publishState(state: WorkspaceState): WorkspaceState { debugInfo("main", "workspace-state", { status: state.status, hasRoot: Boolean(state.workspaceRoot), sessionCount: state.sessions.length, selectedSessionId: state.selectedSessionId }); mainWindow?.webContents.send("app:initialization-state", state); return state; }
 
 function selectedContext(): { root: string; session: SessionInfo } | null {
   const state = workspaceService?.getState();
@@ -63,8 +64,10 @@ function selectedContext(): { root: string; session: SessionInfo } | null {
 }
 
 function enqueuePersistence(label: string, operation: () => Promise<void>): void {
+  debugInfo("persistence", "enqueue", { label });
   const current = persistenceQueue.then(operation);
   persistenceQueue = current.catch((error: unknown) => {
+    debugError("persistence", "error", error, { label });
     mainWindow?.webContents.send("session:persistence-error", { label, message: error instanceof Error ? error.message : "会话持久化失败。" });
   });
 }
@@ -108,6 +111,7 @@ function publishWorkerEvent(event: WorkerEvent): WorkerEvent {
 }
 
 function publishModelEvent(requestId: string, event: ModelEvent): void {
+  debugInfo("model-ipc", "publish-event", { requestId, type: event.type });
   const context = activeTaskContexts.get(requestId);
   mainWindow?.webContents.send("model:event", { requestId, event });
   if (event.type === "text_delta") activeModelTexts.set(requestId, `${activeModelTexts.get(requestId) ?? ""}${event.text}`);
@@ -121,17 +125,20 @@ function publishModelEvent(requestId: string, event: ModelEvent): void {
 }
 
 function registerIpc(): void {
+  debugInfo("main", "register-ipc");
   registerProviderIpc({ ipc: ipcMain, service: providerService, runtime: providerRuntimeService, permissions, selectedContext, publishEvent: (event) => mainWindow?.webContents.send("provider:event", event) });
-  ipcMain.handle("app:get-initialization-state", () => workspaceService.getState());
+  ipcMain.handle("app:get-initialization-state", () => { debugInfo("workspace-ipc", "get-state"); return workspaceService.getState(); });
   ipcMain.handle("workspace:choose-root", async () => {
+    debugInfo("workspace-ipc", "choose-root");
     if (!mainWindow) return workspaceService.getState();
     const result = await dialog.showOpenDialog(mainWindow, { title: "选择工作数据根目录", properties: ["openDirectory", "createDirectory"] });
     if (result.canceled || result.filePaths.length === 0) return workspaceService.getState();
     return publishState(await workspaceService.chooseWorkspaceRoot(result.filePaths[0]));
   });
-  ipcMain.handle("session:create", async () => publishState(await workspaceService.createSession()));
-  ipcMain.handle("session:select", async (_event, sessionId: unknown) => typeof sessionId === "string" ? publishState(await workspaceService.selectSession(sessionId)) : workspaceService.getState());
+  ipcMain.handle("session:create", async () => { debugInfo("session-ipc", "create"); return publishState(await workspaceService.createSession()); });
+  ipcMain.handle("session:select", async (_event, sessionId: unknown) => { debugInfo("session-ipc", "select", { sessionId }); return typeof sessionId === "string" ? publishState(await workspaceService.selectSession(sessionId)) : workspaceService.getState(); });
   ipcMain.handle("session:compress", async (_event, options: unknown) => {
+    debugInfo("session-ipc", "compress", { hasOptions: Boolean(options) });
     const context = selectedContext();
     if (!context) throw new Error("请先选择会话。");
     const snapshot = await sessionPersistence.load(context.root, context.session);
@@ -146,6 +153,7 @@ function registerIpc(): void {
     return compression;
   });
   ipcMain.handle("session:restore-original", async () => {
+    debugInfo("session-ipc", "restore-original");
     const context = selectedContext();
     if (!context) throw new Error("请先选择会话。");
     await sessionPersistence.restoreOriginalContext(context.root, context.session);
@@ -153,6 +161,7 @@ function registerIpc(): void {
     return publishState(await workspaceService.refreshSelectedSession());
   });
   ipcMain.handle("worker:start", async (_event, operation: unknown, payload: unknown, permissionMode: unknown) => {
+    debugInfo("worker-ipc", "start-request", { operation, permissionMode });
     if (operation !== "ping" && operation !== "capability") throw new Error("不支持此 worker 操作。");
     if (typeof payload !== "object" || payload === null || Array.isArray(payload)) throw new Error("worker 参数必须是对象。");
     if (permissionMode !== "restricted" && permissionMode !== "standard" && permissionMode !== "full") throw new Error("权限模式无效。");
@@ -168,8 +177,9 @@ function registerIpc(): void {
     });
     return { requestId: handle.requestId, taskId: handle.taskId };
   });
-  ipcMain.handle("worker:cancel", (_event, taskId: unknown) => { if (typeof taskId !== "string") return false; const cancelled = workerService.cancel(taskId); if (cancelled) persistTask(taskId, "stopped", undefined, { code: "cancelled", message: "用户已取消任务。" }, activeTaskContexts.get(taskId)); return cancelled; });
+  ipcMain.handle("worker:cancel", (_event, taskId: unknown) => { debugInfo("worker-ipc", "cancel-request", { taskId }); if (typeof taskId !== "string") return false; const cancelled = workerService.cancel(taskId); if (cancelled) persistTask(taskId, "stopped", undefined, { code: "cancelled", message: "用户已取消任务。" }, activeTaskContexts.get(taskId)); return cancelled; });
   ipcMain.handle("model:stream", async (_event, config: unknown, messages: unknown, permissionMode: unknown, networkEnabled: unknown) => {
+    debugInfo("model-ipc", "stream-request", { model: isRecordValue(config) ? config.model : undefined, baseUrl: isRecordValue(config) ? config.baseUrl : undefined, messageCount: Array.isArray(messages) ? messages.length : 0, permissionMode, networkEnabled, apiKeyConfigured: isRecordValue(config) && typeof config.apiKey === "string" && config.apiKey.length > 0 });
     if (!isModelConfig(config) || !Array.isArray(messages) || !messages.every(isChatMessage)) throw new Error("模型配置或消息格式无效。");
     if (permissionMode !== "restricted" && permissionMode !== "standard" && permissionMode !== "full") throw new Error("权限模式无效。");
     if (typeof networkEnabled !== "boolean") throw new Error("联网设置无效。");
@@ -189,19 +199,21 @@ function registerIpc(): void {
     const boundedConfig = { ...config, totalTimeoutMs: Math.min(config.totalTimeoutMs ?? budget.remainingMs(), budget.remainingMs()) };
     const controller = new AbortController(); activeModelRequests.set(requestId, controller); persistTask(requestId, "running", requestId, undefined, context ?? undefined);
     terminalModelRequests.delete(requestId);
-    void modelService.stream({ config: boundedConfig, messages: requestMessages, permissionMode, networkEnabled, budget, allowJsonFallback: true, signal: controller.signal }, (event) => publishModelEvent(requestId, event)).then(() => {
+    void modelService.stream({ config: boundedConfig, messages: requestMessages, permissionMode, networkEnabled, budget, allowJsonFallback: true, signal: controller.signal }, (event) => { debugInfo("model-ipc", "event", { requestId, type: event.type, code: event.type === "error" ? event.code : undefined }); publishModelEvent(requestId, event); }).then(() => {
       if (!terminalModelRequests.has(requestId)) {
         terminalModelRequests.add(requestId);
         persistTask(requestId, "completed", requestId, undefined, activeTaskContexts.get(requestId));
         activeTaskContexts.delete(requestId);
       }
     }).catch((error: unknown) => {
+      debugError("model-ipc", "stream-error", error, { requestId });
       if (!terminalModelRequests.has(requestId)) publishModelEvent(requestId, { type: "error", code: errorCode(error), message: error instanceof Error ? error.message : "模型请求失败。", retryable: Boolean(error && typeof error === "object" && "retryable" in error && error.retryable === true) });
     }).finally(() => { activeModelRequests.delete(requestId); terminalModelRequests.delete(requestId); });
     return { requestId };
   });
   ipcMain.handle("model:cancel", (_event, requestId: unknown) => { if (typeof requestId !== "string") return false; const controller = activeModelRequests.get(requestId); if (!controller) return false; controller.abort(); persistTask(requestId, "stopped", requestId, { code: "cancelled", message: "用户已取消任务。" }, activeTaskContexts.get(requestId)); return true; });
   ipcMain.handle("model:save-config", async (_event, config: unknown) => {
+    debugInfo("model-ipc", "save-config", { model: isRecordValue(config) ? config.model : undefined, baseUrl: isRecordValue(config) ? config.baseUrl : undefined, apiKeyConfigured: isRecordValue(config) && typeof config.apiKey === "string" && config.apiKey.length > 0 });
     if (!isModelConfig(config)) throw new Error("模型配置无效。");
     const context = selectedContext();
     if (!context) throw new Error("请先选择工作区和会话。");
@@ -212,6 +224,7 @@ function registerIpc(): void {
   ipcMain.handle("tools:list", () => toolRegistry.list());
   ipcMain.handle("tools:refresh", (_event, manifests: unknown) => { if (!Array.isArray(manifests)) throw new Error("工具清单必须是数组。"); for (const manifest of manifests) validateManifest(manifest as ToolManifest); toolRegistry.refresh(manifests as ToolManifest[]); return toolRegistry.list(); });
   ipcMain.handle("diagnostics:run", async (_event, value: unknown) => {
+    debugInfo("diagnostics-ipc", "run");
     const request = parseDiagnosticsRequest(value);
     if (request.networkEnabled) await permissions.authorize({ mode: request.permissionMode, operation: "network", networkEnabled: true, title: "诊断联网审批", detail: "允许诊断访问模型服务检查连接状态。" });
     const context = selectedContext();
@@ -221,6 +234,7 @@ function registerIpc(): void {
     return report;
   });
   ipcMain.handle("diagnostics:search", async (_event, issueValue: unknown, mode: unknown, networkEnabled: unknown) => {
+    debugInfo("diagnostics-ipc", "search", { mode, networkEnabled });
     const issue = parseErrorSearchIssue(issueValue);
     if (mode !== "restricted" && mode !== "standard" && mode !== "full") throw new Error("权限模式无效。");
     if (typeof networkEnabled !== "boolean") throw new Error("联网设置无效。");
@@ -230,13 +244,14 @@ function registerIpc(): void {
   });
   ipcMain.handle("agent:plan", (_event, prompt: unknown) => { if (typeof prompt !== "string") throw new Error("任务内容无效。"); return agentTaskService.createPlan(prompt); });
   ipcMain.handle("agent:start", async (_event, prompt: unknown, mode: unknown) => {
+    debugInfo("agent-ipc", "start-request", { promptLength: typeof prompt === "string" ? prompt.length : 0, mode });
     if (typeof prompt !== "string" || !prompt.trim()) throw new Error("任务内容不能为空。");
     if (mode !== "restricted" && mode !== "standard" && mode !== "full") throw new Error("权限模式无效。");
-    const handle = agentTaskService.start(prompt, mode, selectedContext() ?? undefined, (event: AgentEvent) => mainWindow?.webContents.send("agent:event", event));
+    const handle = agentTaskService.start(prompt, mode, selectedContext() ?? undefined, (event: AgentEvent) => { debugInfo("agent-ipc", "event", { taskId: event.taskId, type: event.type, status: event.status }); mainWindow?.webContents.send("agent:event", event); });
     void handle.completion.catch(() => undefined);
     return { taskId: handle.taskId, plan: handle.plan };
   });
-  ipcMain.handle("agent:cancel", (_event, taskId: unknown) => typeof taskId === "string" ? agentTaskService.cancel(taskId) : false);
+  ipcMain.handle("agent:cancel", (_event, taskId: unknown) => { debugInfo("agent-ipc", "cancel-request", { taskId }); return typeof taskId === "string" ? agentTaskService.cancel(taskId) : false; });
 }
 
 async function createWindow(): Promise<void> { mainWindow = new BrowserWindow({ width: 1080, height: 720, minWidth: 760, minHeight: 520, backgroundColor: "#f4f7fb", webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, "preload.cjs") } }); await mainWindow.loadFile(path.join(__dirname, "renderer", "index.html")); publishState(workspaceService.getState()); mainWindow.on("closed", () => { mainWindow = null; }); }
@@ -252,6 +267,7 @@ async function bootstrap(): Promise<void> {
   const approval = new ProviderRuntimeStartPolicy({ requestStartApproval: requestProviderRuntimeApproval });
   providerRuntimeService = new ProviderRuntimeService(new FakeMvpProviderRuntimeGateway(), providerRegistry, approval, sessionPersistence, refreshContext, (providerId, error) => { providerService.stopProvider(providerId, new ProviderContractError(error.code, error.message)); }, (event) => mainWindow?.webContents.send("provider:runtime-event", event));
   agentTaskService = new AgentTaskService(providerRuntimeService, providerService, permissions, sessionPersistence, refreshContext);
+  debugInfo("main", "bootstrap-ready", { platform: process.platform, packaged: app.isPackaged });
   diagnosticsService = new DiagnosticsService(new SystemDiagnosticsGateway({
     checkWorker: checkWorkerHealth,
     listProviderStates: () => providerRuntimeService.list(),
@@ -293,6 +309,7 @@ function parseErrorSearchIssue(value: unknown): ErrorSearchIssue {
 function isDiagnosticCategory(value: unknown): value is ErrorSearchIssue["category"] { return value === "ffmpeg" || value === "model" || value === "worker" || value === "session" || value === "provider"; }
 function isCompressionOptions(value: unknown): value is CompressionOptions { if (typeof value !== "object" || value === null || Array.isArray(value)) return false; const options = value as Record<string, unknown>; return typeof options.thresholdTokens === "number" && Number.isFinite(options.thresholdTokens) && options.thresholdTokens > 0 && typeof options.preserveRecentMessages === "number" && Number.isInteger(options.preserveRecentMessages) && options.preserveRecentMessages >= 1 && (options.markdownThresholdTokens === undefined || typeof options.markdownThresholdTokens === "number" && Number.isFinite(options.markdownThresholdTokens) && options.markdownThresholdTokens > 0) && (options.markdownMaxRatio === undefined || typeof options.markdownMaxRatio === "number" && options.markdownMaxRatio > 0 && options.markdownMaxRatio < 1) && (options.writeMarkdown === undefined || typeof options.writeMarkdown === "boolean"); }
 function isModelConfig(value: unknown): value is ModelConfig { if (typeof value !== "object" || value === null || Array.isArray(value)) return false; const config = value as Record<string, unknown>; if (typeof config.baseUrl !== "string" || !config.baseUrl.trim() || typeof config.model !== "string" || !config.model.trim()) return false; if (config.apiKey !== undefined && typeof config.apiKey !== "string") return false; if (config.headers !== undefined && (typeof config.headers !== "object" || config.headers === null || Array.isArray(config.headers))) return false; for (const key of ["maxTokens", "temperature", "connectTimeoutMs", "firstByteTimeoutMs", "readTimeoutMs", "totalTimeoutMs"]) if (config[key] !== undefined && (typeof config[key] !== "number" || !Number.isFinite(config[key]))) return false; return config.thinking === undefined || config.thinking === "enabled" || config.thinking === "disabled"; }
+function isRecordValue(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
 function isChatMessage(value: unknown): value is ChatMessage { if (typeof value !== "object" || value === null || Array.isArray(value)) return false; const message = value as Record<string, unknown>; return ["system", "user", "assistant", "tool"].includes(String(message.role)) && (typeof message.content === "string" || message.content === null); }
 function errorCode(error: unknown): string { return typeof error === "object" && error !== null && "code" in error && typeof error.code === "string" ? error.code : "model-error"; }
 void app.whenReady().then(bootstrap).catch((error: unknown) => { dialog.showErrorBox("TriMusicAgent 初始化失败", error instanceof Error ? error.message : "未知错误"); app.quit(); });

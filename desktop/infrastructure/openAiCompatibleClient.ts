@@ -1,4 +1,5 @@
 import { ModelClientError, type ModelClient, type ModelEvent, type ModelRequest, type ModelResult, type ToolCall } from "../application/modelProtocol";
+import { debugError, debugInfo } from "../application/debugLogger";
 
 export type FetchImplementation = (input: string, init?: RequestInit) => Promise<Response>;
 
@@ -8,6 +9,7 @@ export class OpenAiCompatibleClient implements ModelClient {
   public constructor(private readonly fetchImpl: FetchImplementation = fetch) {}
 
   public async stream(request: ModelRequest, onEvent: (event: ModelEvent) => void): Promise<ModelResult> {
+    debugInfo("model-client", "request", { model: request.config.model, baseUrl: request.config.baseUrl, messageCount: request.messages.length, stream: request.config.stream !== false, apiKeyConfigured: Boolean(request.config.apiKey) });
     const controller = new AbortController();
     const detach = relayAbort(request.signal, controller);
     const totalTimer = request.config.totalTimeoutMs ? setTimeout(() => controller.abort(new ModelClientError("total-timeout", "模型请求超过总超时限制。", true)), request.config.totalTimeoutMs) : undefined;
@@ -18,16 +20,17 @@ export class OpenAiCompatibleClient implements ModelClient {
         body: JSON.stringify(buildRequestBody(request)),
         signal: controller.signal,
       }), request.config.connectTimeoutMs, controller);
+      debugInfo("model-client", "response", { status: response.status, ok: response.ok });
       if (!response.ok) throw await httpError(response);
       if (!response.body) throw new ModelClientError("empty-body", "模型响应没有返回内容。", true, response.status);
       return request.config.stream === false ? await parseJsonResponse(response, onEvent) : await parseSseResponse(response.body, request, onEvent, controller);
     } catch (error) {
-      if (error instanceof ModelClientError) { onEvent({ type: "error", code: error.code, message: error.message, retryable: error.retryable, status: error.status }); throw error; }
+      if (error instanceof ModelClientError) { debugError("model-client", "client-error", error, { code: error.code }); onEvent({ type: "error", code: error.code, message: error.message, retryable: error.retryable, status: error.status }); throw error; }
       const reason = controller.signal.reason;
       if (reason instanceof ModelClientError) { onEvent({ type: "error", code: reason.code, message: reason.message, retryable: reason.retryable }); throw reason; }
       const aborted = request.signal?.aborted || controller.signal.aborted;
       const normalized = new ModelClientError(aborted ? "aborted" : "network-error", aborted ? "模型请求已取消。" : "模型连接失败。", !aborted);
-      onEvent({ type: "error", code: normalized.code, message: normalized.message, retryable: normalized.retryable });
+      debugError("model-client", "network-error", error, { code: normalized.code }); onEvent({ type: "error", code: normalized.code, message: normalized.message, retryable: normalized.retryable });
       throw normalized;
     } finally {
       detach();
