@@ -20,6 +20,14 @@ root?.addEventListener("click", (event) => {
     event.stopImmediatePropagation();
     void stopTask(runtime);
   }
+  if (action === "test-llm") {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    void testModelConnection(runtime).catch((error) => {
+      runtime.state.toast = error instanceof Error ? error.message : "模型连接测试失败。";
+      runtime.render();
+    });
+  }
   if (action === "choose-root") {
     event.preventDefault();
     event.stopImmediatePropagation();
@@ -65,6 +73,7 @@ export async function testModelConnection(runtime) {
   if (!runtime.state.modelConfig.apiKey) throw new Error("请先填写 API Key。");
   if (!runtime.state.networkEnabled) throw new Error("请先打开联网开关。");
   activeModel?.unsubscribe?.();
+  runtime.state.toast = "正在测试模型连接……";
   runtime.state.llmMessages = [{ role: "notice", text: "正在测试模型连接……" }];
   runtime.render();
   try {
