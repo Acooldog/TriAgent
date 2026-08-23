@@ -2,16 +2,19 @@ import type { IpcMain } from "electron";
 import { isRecord } from "../application/jsonSchema";
 import { normalizeProviderError, sanitizeProviderData, type ProviderCall, type ProviderEvent } from "../application/providerProtocol";
 import type { ProviderService, ProviderSessionContext } from "../application/providerService";
+import type { ProviderRuntimeService } from "../application/providerRuntimeService";
+import type { ProviderRuntimeStartRequest } from "../application/providerRuntimeProtocol";
 
 export interface ProviderIpcDependencies {
   ipc: IpcMain;
   service: ProviderService;
+  runtime?: ProviderRuntimeService;
   selectedContext: () => ProviderSessionContext | null;
   publishEvent: (event: ProviderEvent) => void;
 }
 
 export function registerProviderIpc(dependencies: ProviderIpcDependencies): void {
-  const { ipc, service } = dependencies;
+  const { ipc, service, runtime } = dependencies;
   ipc.handle("providers:list", () => service.list());
   ipc.handle("providers:refresh", () => service.refresh());
   ipc.handle("providers:health", (_event, providerId: unknown) => {
@@ -37,6 +40,20 @@ export function registerProviderIpc(dependencies: ProviderIpcDependencies): void
     if (typeof taskId !== "string" || !taskId.trim()) return false;
     return service.cancel(taskId);
   });
+  if (runtime) {
+    ipc.handle("providers:runtime-list", () => runtime.list());
+    ipc.handle("providers:runtime-discover", async () => runtime.discover(dependencies.selectedContext() ?? undefined));
+    ipc.handle("providers:runtime-start", async (_event, value: unknown) => runtime.start(parseRuntimeStart(value), dependencies.selectedContext() ?? undefined));
+    ipc.handle("providers:runtime-health", (_event, providerId: unknown) => {
+      if (typeof providerId !== "string" || !providerId.trim()) throw new Error("Provider ID 无效。");
+      return runtime.checkHealth(providerId, dependencies.selectedContext() ?? undefined);
+    });
+    ipc.handle("providers:runtime-stop", (_event, providerId: unknown) => {
+      if (typeof providerId !== "string" || !providerId.trim()) throw new Error("Provider ID 无效。");
+      return runtime.stop(providerId, dependencies.selectedContext() ?? undefined);
+    });
+    ipc.handle("providers:runtime-cancel", (_event, providerId: unknown) => typeof providerId === "string" && providerId.trim() ? runtime.cancel(providerId) : false);
+  }
 }
 
 function terminalEvent(call: ProviderCall, requestId: string, taskId: string, status: "completed" | "failed" | "cancelled", payload: Record<string, unknown>, error?: ProviderEvent["error"]): ProviderEvent {
@@ -47,4 +64,10 @@ function parseProviderCall(value: unknown): ProviderCall {
   if (!isRecord(value) || typeof value.providerId !== "string" || typeof value.capabilityId !== "string") throw new Error("Provider 调用请求无效。");
   if (value.permissionMode !== "restricted" && value.permissionMode !== "standard" && value.permissionMode !== "full") throw new Error("Provider 权限模式无效。");
   return { providerId: value.providerId, capabilityId: value.capabilityId, input: value.input, permissionMode: value.permissionMode };
+}
+
+function parseRuntimeStart(value: unknown): ProviderRuntimeStartRequest {
+  if (!isRecord(value) || typeof value.providerId !== "string" || !value.providerId.trim()) throw new Error("Provider 启动请求无效。");
+  if (value.permissionMode !== "restricted" && value.permissionMode !== "standard" && value.permissionMode !== "full") throw new Error("Provider 权限模式无效。");
+  return { providerId: value.providerId, permissionMode: value.permissionMode };
 }

@@ -9,6 +9,14 @@ export class ProviderRegistry {
     this.registrations.set(manifest.provider_id, registration(manifest));
   }
 
+  public upsert(manifest: ProviderManifest): ProviderRegistration {
+    validateProviderManifest(manifest);
+    const current = this.registrations.get(manifest.provider_id);
+    const next: ProviderRegistration = { manifest: structuredClone(manifest), enabled: current?.enabled ?? true, health: current?.health ?? { status: "unknown" } };
+    this.registrations.set(manifest.provider_id, next);
+    return structuredClone(next);
+  }
+
   public refresh(manifests: ProviderManifest[]): void {
     const incoming = new Map<string, ProviderManifest>();
     for (const manifest of manifests) {

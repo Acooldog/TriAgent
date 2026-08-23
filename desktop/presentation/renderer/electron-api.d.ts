@@ -4,6 +4,7 @@ import type { ChatMessage, ModelConfig, ModelEvent } from "../../application/mod
 import type { CompressionOptions, CompressionResult } from "../../application/contextCompression";
 import type { ToolManifest } from "../../application/toolProtocol";
 import type { ProviderCall, ProviderEvent, ProviderRegistration } from "../../application/providerProtocol";
+import type { ProviderRuntimeEvent, ProviderRuntimeStartRequest, ProviderRuntimeState } from "../../application/providerRuntimeProtocol";
 
 export interface ModelEventEnvelope { requestId: string; event: ModelEvent; }
 
@@ -16,7 +17,7 @@ export interface TriMusicAgentApi {
   restoreOriginalContext(): Promise<WorkspaceState>;
   onInitializationState(listener: (state: WorkspaceState) => void): () => void;
   onPersistenceError(listener: (error: { label: string; message: string }) => void): () => void;
-  startWorker(operation: "ping" | "decrypt", payload: Record<string, unknown>): Promise<{ requestId: string; taskId: string }>;
+  startWorker(operation: "ping" | "capability", payload: Record<string, unknown>): Promise<{ requestId: string; taskId: string }>;
   cancelWorker(taskId: string): Promise<boolean>;
   onWorkerEvent(listener: (event: WorkerEvent) => void): () => void;
   startModel(config: ModelConfig, messages: ChatMessage[], permissionMode: "restricted" | "standard" | "full"): Promise<{ requestId: string }>;
@@ -30,7 +31,14 @@ export interface TriMusicAgentApi {
   setProviderEnabled(providerId: string, enabled: boolean): Promise<ProviderRegistration>;
   invokeProvider(call: ProviderCall): Promise<{ requestId: string; taskId: string }>;
   cancelProvider(taskId: string): Promise<boolean>;
+  listProviderRuntimes(): Promise<ProviderRuntimeState[]>;
+  discoverProviderRuntimes(): Promise<ProviderRuntimeState[]>;
+  startProviderRuntime(request: ProviderRuntimeStartRequest): Promise<ProviderRuntimeState>;
+  checkProviderRuntimeHealth(providerId: string): Promise<ProviderRuntimeState>;
+  stopProviderRuntime(providerId: string): Promise<ProviderRuntimeState>;
+  cancelProviderRuntime(providerId: string): Promise<boolean>;
   onProviderEvent(listener: (event: ProviderEvent) => void): () => void;
+  onProviderRuntimeEvent(listener: (event: ProviderRuntimeEvent) => void): () => void;
 }
 
 declare global {

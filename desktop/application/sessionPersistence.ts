@@ -13,7 +13,7 @@ export interface SessionState {
 
 export interface SessionTaskState {
   taskId: string;
-  kind?: "model" | "worker" | "provider";
+  kind?: "model" | "worker" | "provider" | "provider-runtime";
   providerId?: string;
   capabilityId?: string;
   status: SessionStatus;
@@ -23,6 +23,8 @@ export interface SessionTaskState {
   requestId?: string;
   error?: { code: string; message: string };
   result?: Record<string, unknown>;
+  runtimeStatus?: import("./providerRuntimeProtocol").ProviderRuntimeStatus;
+  recoverySuggestion?: string;
 }
 
 export interface SessionEventRecord {

@@ -11,8 +11,9 @@ interface ActiveProviderCall {
   request: ProviderInvocationRequest;
   capability: ProviderCapabilityManifest;
   controller: AbortController;
-  cancellation: Promise<void>;
-  resolveCancellation: () => void;
+  interruption: Promise<void>;
+  resolveInterruption: () => void;
+  interruptionError?: ProviderContractError;
   cancelled: boolean;
 }
 
@@ -56,9 +57,9 @@ export class ProviderService {
     const { capability } = this.registry.resolve(call);
     const request: ProviderInvocationRequest = { ...call, requestId: this.createId(), taskId: this.createId(), timeoutMs: capability.timeout_ms };
     const controller = new AbortController();
-    let resolveCancellation!: () => void;
-    const cancellation = new Promise<void>((resolve) => { resolveCancellation = resolve; });
-    const active: ActiveProviderCall = { request, capability, controller, cancellation, resolveCancellation, cancelled: false };
+    let resolveInterruption!: () => void;
+    const interruption = new Promise<void>((resolve) => { resolveInterruption = resolve; });
+    const active: ActiveProviderCall = { request, capability, controller, interruption, resolveInterruption, cancelled: false };
     this.active.set(request.taskId, active);
     return { requestId: request.requestId, taskId: request.taskId, completion: this.execute(active, context, onEvent) };
   }
@@ -103,7 +104,7 @@ export class ProviderService {
           reject(new ProviderContractError("provider-timeout", "Provider 调用超时。"));
         }, request.timeoutMs);
       });
-      const cancellationFailure = active.cancellation.then<never>(() => { throw new ProviderContractError("provider-cancelled", "Provider 调用已取消。"); });
+      const cancellationFailure = active.interruption.then<never>(() => { throw active.interruptionError ?? new ProviderContractError("provider-cancelled", "Provider 调用已取消。"); });
       const result = await Promise.race([this.gateway.invoke(request, acceptEvent, controller.signal), timeoutFailure, cancellationFailure, terminalEventFailure]);
       acceptingEvents = false;
       await eventQueue;
@@ -137,9 +138,23 @@ export class ProviderService {
     if (!active.capability.cancellation) throw new ProviderContractError("provider-cancellation-unsupported", "此 Provider 能力不支持取消。");
     active.cancelled = true;
     active.controller.abort();
-    active.resolveCancellation();
+    active.interruptionError = new ProviderContractError("provider-cancelled", "Provider 调用已取消。");
+    active.resolveInterruption();
     void this.gateway.cancel(active.request.providerId, taskId).catch(() => false);
     return true;
+  }
+
+  public stopProvider(providerId: string, error: ProviderContractError): number {
+    let stopped = 0;
+    for (const active of this.active.values()) {
+      if (active.request.providerId !== providerId) continue;
+      stopped += 1;
+      active.controller.abort();
+      active.interruptionError = error;
+      active.resolveInterruption();
+      if (active.capability.cancellation) void this.gateway.cancel(providerId, active.request.taskId).catch(() => false);
+    }
+    return stopped;
   }
 
   private async persistTask(context: ProviderSessionContext | undefined, request: ProviderInvocationRequest, status: SessionTaskState["status"], error?: ProviderContractError, result?: Record<string, unknown>): Promise<void> {
