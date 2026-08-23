@@ -13,6 +13,9 @@ export interface SessionState {
 
 export interface SessionTaskState {
   taskId: string;
+  kind?: "model" | "worker" | "provider";
+  providerId?: string;
+  capabilityId?: string;
   status: SessionStatus;
   startedAt: string;
   updatedAt: string;
@@ -25,7 +28,7 @@ export interface SessionTaskState {
 export interface SessionEventRecord {
   eventId: string;
   emittedAt: string;
-  category: "model" | "worker" | "task" | "system";
+  category: "model" | "worker" | "provider" | "task" | "system";
   eventType: string;
   status?: string;
   taskId?: string;
@@ -74,6 +77,7 @@ export interface SessionSnapshot {
 
 export interface SessionStore {
   load(root: string, session: SessionInfo): Promise<SessionSnapshot>;
+  recoverInterruptedTasks(root: string, session: SessionInfo): Promise<void>;
   appendMessage(root: string, session: SessionInfo, message: ChatMessage): Promise<void>;
   writeConfig(root: string, session: SessionInfo, config: Record<string, unknown>): Promise<void>;
   writeTaskState(root: string, session: SessionInfo, task: SessionTaskState): Promise<void>;
@@ -89,6 +93,10 @@ export class SessionPersistenceService {
 
   public load(root: string, session: SessionInfo): Promise<SessionSnapshot> {
     return this.store.load(root, session);
+  }
+
+  public recoverInterruptedTasks(root: string, session: SessionInfo): Promise<void> {
+    return this.store.recoverInterruptedTasks(root, session);
   }
 
   public appendMessage(root: string, session: SessionInfo, message: ChatMessage): Promise<void> {

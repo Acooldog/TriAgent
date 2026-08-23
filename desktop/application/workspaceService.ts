@@ -24,6 +24,7 @@ export interface WorkspaceSettings { loadWorkspaceRoot(): Promise<string | null>
 
 export class WorkspaceService {
   private state: WorkspaceState = { status: "needs-workspace", message: "请选择可写的工作数据根目录。", workspaceRoot: null, sessions: [], selectedSessionId: null, selectedSession: null };
+  private startupRecoveryPending = true;
 
   public constructor(
     private readonly repository: WorkspaceRepository,
@@ -77,7 +78,9 @@ export class WorkspaceService {
   private async activateRoot(candidate: string, persist: boolean): Promise<WorkspaceState> {
     const root = await this.repository.prepareRoot(candidate, this.installationDir);
     const sessions = await this.repository.listSessions(root);
+    if (this.persistence && this.startupRecoveryPending) for (const session of sessions) await this.persistence.recoverInterruptedTasks(root, session);
     if (persist) await this.settings.saveWorkspaceRoot(root);
+    this.startupRecoveryPending = false;
     this.state = { status: "ready", message: "工作区已就绪。", workspaceRoot: root, sessions, selectedSessionId: sessions[0]?.id ?? null, selectedSession: sessions[0] ? await this.loadSnapshot(root, sessions[0]) : null };
     return this.getState();
   }

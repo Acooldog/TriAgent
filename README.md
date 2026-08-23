@@ -36,6 +36,16 @@ npm run typecheck:electron
 npm run test:electron
 ```
 
+### 外部能力 Provider 合同（MVP 任务 5）
+
+Electron Agent 核心已与公开仓库同步 provider 合同：版本化 manifest、能力清单、输入/输出 Schema、权限、事件、取消和超时声明，以及发现、原子刷新、启用/禁用、健康状态、调用结果和统一错误。只有注册、启用、健康且通过调用校验的 provider 能力可以执行。
+
+Renderer 提供中文 Provider 清单、健康检查、启用状态、JSON 参数调用、权限选择、取消、脱敏结果和默认折叠事件；事件、任务状态、日志和产物引用写入当前 session。应用重启后，运行中的 Provider 任务恢复为停止状态并写入恢复时间线，不自动重试。
+
+共享 Application、Presentation、通用 Infrastructure 和合同测试与公开仓库保持一致。专有能力的适配、运行时资源和 provider-specific 测试继续限定在私有 Infrastructure/测试边界，不改变公开合同，也不把内部调用细节写入公开仓库。当前任务完成合同验证；外部进程启动、停止和恢复策略仍由后续 MVP 任务 6 完成。
+
+接入配置以协议版本 `1` 的 manifest 和 `ProviderGateway` 为边界。未接入运行时 gateway 时，界面会显示未发现 Provider。合同回归覆盖注册、版本、重复 ID、Schema、权限、缺失、健康失败、终态与迟到事件、非阻塞取消、超时、异步终态可见、错误和本地路径脱敏、刷新原子性、session 写入和重启恢复。
+
 ### 会话持久化与上下文压缩
 
 每个会话保存只追加的 `conversation.jsonl`、脱敏 `config.json`、任务状态、事件、日志、产物引用和可恢复检查点。应用重启后会恢复操作时间线和停止状态；压缩检查点作为后续模型请求的活动上下文，用户可以随时恢复原始上下文。

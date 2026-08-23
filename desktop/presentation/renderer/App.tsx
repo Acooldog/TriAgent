@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactElement } from "react";
 import type { ModelConfig, ModelEvent } from "../../application/modelProtocol";
 import type { WorkerEvent } from "../../application/workerProtocol";
 import type { WorkspaceState } from "../../application/workspaceService";
+import { ProviderPanel } from "./ProviderPanel";
 import "./styles.css";
 
 const EMPTY_STATE: WorkspaceState = {
@@ -123,6 +124,8 @@ export function App(): ReactElement {
       <div className="panel-heading"><div><h2>操作时间线</h2><p>记录从 events.jsonl 恢复，默认折叠。</p></div><span className="session-meta">{state.selectedSession?.state.status ?? "idle"}</span></div>
       {state.selectedSession?.events.length ? <div className="timeline-list">{state.selectedSession.events.slice().reverse().map((event) => <details className="timeline-entry" key={event.eventId}><summary><strong>{event.eventType}</strong><span>{event.status ?? ""}</span><small>{formatDate(event.emittedAt)}</small></summary><pre>{formatPayload(event.payload)}</pre></details>)}</div> : <div className="empty-state">暂无操作事件。</div>}
     </section>
+
+    <ProviderPanel />
 
     <section className="sessions-panel worker-panel">
       <div className="panel-heading"><div><h2>Python worker</h2><p>由主进程桥接结构化 JSON Lines 事件。</p></div><div className="worker-actions"><button type="button" onClick={() => { setWorkerBusy(true); void window.triMusicAgent.startWorker("ping", {}).then(({ taskId }) => setWorkerTaskId(taskId)).catch(() => setWorkerBusy(false)); }} disabled={workerBusy}>测试 worker</button><button type="button" onClick={() => { if (workerTaskId) void window.triMusicAgent.cancelWorker(workerTaskId); }} disabled={workerTaskId === null}>停止</button></div></div>

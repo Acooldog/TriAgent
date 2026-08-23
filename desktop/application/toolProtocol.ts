@@ -1,15 +1,10 @@
+import { isNonEmptyString, isRecord, validateJsonSchema, validateJsonValue, type JsonSchema } from "./jsonSchema";
+
+export type { JsonSchema } from "./jsonSchema";
+
 export const TOOL_PROTOCOL_VERSION = "1" as const;
 
 export type PermissionMode = "restricted" | "standard" | "full";
-
-export interface JsonSchema {
-  type?: "object" | "array" | "string" | "number" | "integer" | "boolean" | "null";
-  properties?: Record<string, JsonSchema>;
-  required?: string[];
-  additionalProperties?: boolean;
-  items?: JsonSchema;
-  enum?: unknown[];
-}
 
 export interface ToolManifest {
   protocol_version: typeof TOOL_PROTOCOL_VERSION;
@@ -47,7 +42,12 @@ export function validateManifest(manifest: unknown): asserts manifest is ToolMan
   for (const field of ["tool_id", "version", "name", "description"] as const) {
     if (!isNonEmptyString(manifest[field])) throw new ToolProtocolError("manifest-field", `工具 manifest 缺少 ${field}。`);
   }
-  if (!isRecord(manifest.input_schema)) throw new ToolProtocolError("schema", "工具输入 Schema 无效。");
+  try {
+    validateJsonSchema(manifest.input_schema, "工具输入 Schema");
+    if (manifest.output_schema !== undefined) validateJsonSchema(manifest.output_schema, "工具输出 Schema");
+  } catch (error) {
+    throw new ToolProtocolError("schema", error instanceof Error ? error.message : "工具 Schema 无效。");
+  }
   if (!Array.isArray(manifest.permissions) || manifest.permissions.length === 0) throw new ToolProtocolError("permission", "工具必须声明权限模式。");
   if (typeof manifest.timeout_ms !== "number" || !Number.isFinite(manifest.timeout_ms) || manifest.timeout_ms <= 0) throw new ToolProtocolError("timeout", "工具超时必须是正数。");
 }
@@ -55,7 +55,7 @@ export function validateManifest(manifest: unknown): asserts manifest is ToolMan
 export function validateInvocation(manifest: ToolManifest, invocation: ToolInvocation): void {
   validateManifest(manifest);
   if (!manifest.permissions.includes(invocation.permissionMode)) throw new ToolProtocolError("permission-denied", `工具 ${manifest.tool_id} 不允许当前权限模式。`);
-  const errors = validateJson(manifest.input_schema, invocation.arguments, "arguments");
+  const errors = validateJsonValue(manifest.input_schema, invocation.arguments, "arguments");
   if (errors.length > 0) throw new ToolProtocolError("invalid-arguments", errors.join("；"));
 }
 
@@ -92,27 +92,3 @@ export class ToolRegistry {
     validateInvocation(manifest, invocation);
   }
 }
-
-function validateJson(schema: JsonSchema, value: unknown, path: string): string[] {
-  const errors: string[] = [];
-  if (schema.enum && !schema.enum.some((candidate) => JSON.stringify(candidate) === JSON.stringify(value))) errors.push(`${path} 不在允许值范围内`);
-  if (schema.type && !matchesType(schema.type, value)) errors.push(`${path} 类型应为 ${schema.type}`);
-  if (schema.type === "object" && isRecord(value)) {
-    for (const required of schema.required ?? []) if (!(required in value)) errors.push(`${path}.${required} 必填`);
-    if (schema.additionalProperties === false) for (const key of Object.keys(value)) if (!schema.properties?.[key]) errors.push(`${path}.${key} 不允许`);
-    for (const [key, child] of Object.entries(schema.properties ?? {})) if (key in value) errors.push(...validateJson(child, value[key], `${path}.${key}`));
-  }
-  if (schema.type === "array" && Array.isArray(value) && schema.items) value.forEach((item, index) => errors.push(...validateJson(schema.items!, item, `${path}[${index}]`)));
-  return errors;
-}
-
-function matchesType(type: NonNullable<JsonSchema["type"]>, value: unknown): boolean {
-  if (type === "null") return value === null;
-  if (type === "array") return Array.isArray(value);
-  if (type === "object") return isRecord(value);
-  if (type === "integer") return typeof value === "number" && Number.isInteger(value);
-  return typeof value === type;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
-function isNonEmptyString(value: unknown): value is string { return typeof value === "string" && value.trim().length > 0; }
