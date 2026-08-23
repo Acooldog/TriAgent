@@ -2,6 +2,8 @@ import { useEffect, useState, type ReactElement } from "react";
 import type { ModelConfig, ModelEvent } from "../../application/modelProtocol";
 import type { WorkerEvent } from "../../application/workerProtocol";
 import type { WorkspaceState } from "../../application/workspaceService";
+import type { PermissionMode } from "../../application/toolProtocol";
+import { DiagnosticsPanel } from "./DiagnosticsPanel";
 import { ProviderPanel } from "./ProviderPanel";
 import "./styles.css";
 
@@ -27,6 +29,8 @@ export function App(): ReactElement {
   const [modelBusy, setModelBusy] = useState(false);
   const [compressionMessage, setCompressionMessage] = useState("");
   const [persistenceError, setPersistenceError] = useState("");
+  const [permissionMode, setPermissionMode] = useState<PermissionMode>("standard");
+  const [networkEnabled, setNetworkEnabled] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -87,11 +91,17 @@ export function App(): ReactElement {
       <p className={`message message-${state.status}`}>{state.message}</p>
     </section>
 
+    <section className="sessions-panel permission-panel">
+      <div className="panel-heading"><div><h2>权限与联网</h2><p>标准模式会在敏感操作前请求批准；联网按会话默认关闭。</p></div></div>
+      <div className="permission-options" role="radiogroup" aria-label="权限模式">{(["restricted", "standard", "full"] as PermissionMode[]).map((mode) => <label className={permissionMode === mode ? "selected" : ""} key={mode}><input type="radio" name="permission-mode" value={mode} checked={permissionMode === mode} onChange={() => setPermissionMode(mode)} /><span>{permissionLabel(mode)}</span></label>)}</div>
+      <label className="network-toggle"><input type="checkbox" checked={networkEnabled} onChange={(event) => setNetworkEnabled(event.target.checked)} /><span>允许当前会话联网</span></label>
+    </section>
+
     <section className="sessions-panel model-panel">
       <div className="panel-heading">
         <div><h2>模型服务</h2><p>测试通用 OpenAI-compatible 流式接口。</p></div>
         <div className="worker-actions">
-          <button type="button" onClick={() => { setModelBusy(true); void window.triMusicAgent.startModel(modelConfig, [{ role: "user", content: modelPrompt }], "standard").then(({ requestId }) => setModelRequestId(requestId)).catch(() => setModelBusy(false)); }} disabled={modelBusy || !modelConfig.apiKey}>测试模型</button>
+          <button type="button" onClick={() => { setModelBusy(true); void window.triMusicAgent.startModel(modelConfig, [{ role: "user", content: modelPrompt }], permissionMode, networkEnabled).then(({ requestId }) => setModelRequestId(requestId)).catch(() => setModelBusy(false)); }} disabled={modelBusy || !modelConfig.apiKey || !networkEnabled}>测试模型</button>
           <button type="button" onClick={() => { if (modelRequestId) void window.triMusicAgent.cancelModel(modelRequestId); }} disabled={!modelRequestId}>停止</button>
         </div>
       </div>
@@ -125,10 +135,12 @@ export function App(): ReactElement {
       {state.selectedSession?.events.length ? <div className="timeline-list">{state.selectedSession.events.slice().reverse().map((event) => <details className="timeline-entry" key={event.eventId}><summary><strong>{event.eventType}</strong><span>{event.status ?? ""}</span><small>{formatDate(event.emittedAt)}</small></summary><pre>{formatPayload(event.payload)}</pre></details>)}</div> : <div className="empty-state">暂无操作事件。</div>}
     </section>
 
-    <ProviderPanel />
+    <DiagnosticsPanel modelConfig={modelConfig} networkEnabled={networkEnabled} permissionMode={permissionMode} />
+
+    <ProviderPanel permissionMode={permissionMode} />
 
     <section className="sessions-panel worker-panel">
-      <div className="panel-heading"><div><h2>Python worker</h2><p>由主进程桥接结构化 JSON Lines 事件。</p></div><div className="worker-actions"><button type="button" onClick={() => { setWorkerBusy(true); void window.triMusicAgent.startWorker("ping", {}).then(({ taskId }) => setWorkerTaskId(taskId)).catch(() => setWorkerBusy(false)); }} disabled={workerBusy}>测试 worker</button><button type="button" onClick={() => { if (workerTaskId) void window.triMusicAgent.cancelWorker(workerTaskId); }} disabled={workerTaskId === null}>停止</button></div></div>
+      <div className="panel-heading"><div><h2>Python worker</h2><p>由主进程桥接结构化 JSON Lines 事件。</p></div><div className="worker-actions"><button type="button" onClick={() => { setWorkerBusy(true); void window.triMusicAgent.startWorker("ping", {}, permissionMode).then(({ taskId }) => setWorkerTaskId(taskId)).catch(() => setWorkerBusy(false)); }} disabled={workerBusy}>测试 worker</button><button type="button" onClick={() => { if (workerTaskId) void window.triMusicAgent.cancelWorker(workerTaskId); }} disabled={workerTaskId === null}>停止</button></div></div>
       {workerEvents.length === 0 ? <div className="empty-state">暂无 worker 事件。</div> : <div className="worker-events">{workerEvents.map((event, index) => <div className="worker-event" key={`${event.request_id}-${index}`}><strong>{event.event_type}</strong><span>{event.status}</span><small>{event.task_id}</small></div>)}</div>}
     </section>
   </main>;
@@ -146,6 +158,8 @@ function statusLabel(status: WorkspaceState["status"]): string {
   if (status === "error") return "需要处理";
   return "等待选择";
 }
+
+function permissionLabel(mode: PermissionMode): string { return mode === "restricted" ? "受限" : mode === "full" ? "完全访问" : "标准"; }
 
 function formatDate(value: string): string { const date = new Date(value); return Number.isNaN(date.valueOf()) ? "时间未知" : date.toLocaleString(); }
 function formatPayload(value: Record<string, unknown>): string { try { return JSON.stringify(value, null, 2); } catch { return "内容不可用"; } }

@@ -5,6 +5,7 @@ import type { CompressionOptions, CompressionResult } from "../../application/co
 import type { ToolManifest } from "../../application/toolProtocol";
 import type { ProviderCall, ProviderEvent, ProviderRegistration } from "../../application/providerProtocol";
 import type { ProviderRuntimeEvent, ProviderRuntimeStartRequest, ProviderRuntimeState } from "../../application/providerRuntimeProtocol";
+import type { DiagnosticReport, DiagnosticsRequest, ErrorSearchIssue, ErrorSearchResult } from "../../application/diagnostics";
 
 export interface ModelEventEnvelope { requestId: string; event: ModelEvent; }
 
@@ -17,14 +18,16 @@ export interface TriMusicAgentApi {
   restoreOriginalContext(): Promise<WorkspaceState>;
   onInitializationState(listener: (state: WorkspaceState) => void): () => void;
   onPersistenceError(listener: (error: { label: string; message: string }) => void): () => void;
-  startWorker(operation: "ping" | "capability", payload: Record<string, unknown>): Promise<{ requestId: string; taskId: string }>;
+  startWorker(operation: "ping" | "capability", payload: Record<string, unknown>, permissionMode: "restricted" | "standard" | "full"): Promise<{ requestId: string; taskId: string }>;
   cancelWorker(taskId: string): Promise<boolean>;
   onWorkerEvent(listener: (event: WorkerEvent) => void): () => void;
-  startModel(config: ModelConfig, messages: ChatMessage[], permissionMode: "restricted" | "standard" | "full"): Promise<{ requestId: string }>;
+  startModel(config: ModelConfig, messages: ChatMessage[], permissionMode: "restricted" | "standard" | "full", networkEnabled: boolean): Promise<{ requestId: string }>;
   cancelModel(requestId: string): Promise<boolean>;
   onModelEvent(listener: (envelope: ModelEventEnvelope) => void): () => void;
   listTools(): Promise<ToolManifest[]>;
   refreshTools(manifests: ToolManifest[]): Promise<ToolManifest[]>;
+  runDiagnostics(request: DiagnosticsRequest): Promise<DiagnosticReport>;
+  searchDiagnosticError(issue: ErrorSearchIssue, permissionMode: "restricted" | "standard" | "full", networkEnabled: boolean): Promise<ErrorSearchResult>;
   listProviders(): Promise<ProviderRegistration[]>;
   refreshProviders(): Promise<ProviderRegistration[]>;
   checkProviderHealth(providerId: string): Promise<ProviderRegistration>;

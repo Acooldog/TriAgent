@@ -13,6 +13,7 @@ export const BUILT_IN_TOOL_MANIFESTS: ToolManifest[] = [
     events: ["started", "progress", "finished", "error", "cancelled"],
     cancellation: true,
     timeout_ms: 900_000,
+    sensitive_operation: "built-in",
   },
   {
     protocol_version: "1",
@@ -26,5 +27,6 @@ export const BUILT_IN_TOOL_MANIFESTS: ToolManifest[] = [
     events: ["started", "progress", "finished", "error", "cancelled"],
     cancellation: true,
     timeout_ms: 900_000,
+    sensitive_operation: "process",
   },
 ];

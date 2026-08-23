@@ -55,7 +55,7 @@ export class ProviderService {
 
   public start(call: ProviderCall, context?: ProviderSessionContext, onEvent: (event: ProviderEvent) => void = () => undefined): ProviderCallHandle {
     const { capability } = this.registry.resolve(call);
-    const request: ProviderInvocationRequest = { ...call, requestId: this.createId(), taskId: this.createId(), timeoutMs: capability.timeout_ms };
+    const request: ProviderInvocationRequest = { ...call, requestId: this.createId(), taskId: this.createId(), timeoutMs: Math.min(capability.timeout_ms, 15 * 60 * 1_000) };
     const controller = new AbortController();
     let resolveInterruption!: () => void;
     const interruption = new Promise<void>((resolve) => { resolveInterruption = resolve; });

@@ -3,7 +3,9 @@ import type { ProviderEvent, ProviderRegistration } from "../../application/prov
 import type { ProviderRuntimeEvent, ProviderRuntimeState } from "../../application/providerRuntimeProtocol";
 import type { PermissionMode } from "../../application/toolProtocol";
 
-export function ProviderPanel(): ReactElement {
+export interface ProviderPanelProps { permissionMode: PermissionMode; }
+
+export function ProviderPanel({ permissionMode }: ProviderPanelProps): ReactElement {
   const [providers, setProviders] = useState<ProviderRegistration[]>([]);
   const [events, setEvents] = useState<ProviderEvent[]>([]);
   const [runtimeStates, setRuntimeStates] = useState<ProviderRuntimeState[]>([]);
@@ -14,7 +16,6 @@ export function ProviderPanel(): ReactElement {
   const [providerId, setProviderId] = useState("");
   const [capabilityId, setCapabilityId] = useState("");
   const [inputText, setInputText] = useState("{}");
-  const [permissionMode, setPermissionMode] = useState<PermissionMode>("standard");
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [resultText, setResultText] = useState("");
   const activeTaskRef = useRef<string | null>(null);
@@ -164,7 +165,7 @@ export function ProviderPanel(): ReactElement {
       <div className="provider-fields">
         <label>Provider<select value={providerId} onChange={(event) => setProviderId(event.target.value)} disabled={!providers.length}>{providers.map((item) => <option key={item.manifest.provider_id} value={item.manifest.provider_id}>{item.manifest.name}</option>)}</select></label>
         <label>能力<select value={capabilityId} onChange={(event) => setCapabilityId(event.target.value)} disabled={!selected}>{selected?.manifest.capabilities.map((item) => <option key={item.capability_id} value={item.capability_id}>{item.name}</option>)}</select></label>
-        <label>权限模式<select value={permissionMode} onChange={(event) => setPermissionMode(event.target.value as PermissionMode)}><option value="restricted">受限</option><option value="standard">标准</option><option value="full">完全访问</option></select></label>
+        <label>权限模式<input value={permissionLabel(permissionMode)} readOnly /></label>
       </div>
       <label className="provider-input">JSON 参数<textarea value={inputText} onChange={(event) => setInputText(event.target.value)} spellCheck={false} /></label>
       <div className="worker-actions"><button type="button" onClick={() => void invoke()} disabled={busy || !selected || activeTaskId !== null}>开始调用</button><button type="button" onClick={() => void cancel()} disabled={!activeTaskId}>取消调用</button></div>
@@ -196,6 +197,8 @@ function runtimeStatusLabel(status: ProviderRuntimeState["status"]): string {
   if (status === "stopping") return "停止中";
   return "异常";
 }
+
+function permissionLabel(mode: PermissionMode): string { return mode === "restricted" ? "受限" : mode === "full" ? "完全访问" : "标准"; }
 
 function formatDate(value: string): string { const date = new Date(value); return Number.isNaN(date.valueOf()) ? "时间未知" : date.toLocaleString(); }
 function formatPayload(value: Record<string, unknown>): string { try { return JSON.stringify(value, null, 2); } catch { return "内容不可用"; } }

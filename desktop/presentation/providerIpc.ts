@@ -4,6 +4,7 @@ import { normalizeProviderError, sanitizeProviderData, type ProviderCall, type P
 import type { ProviderService, ProviderSessionContext } from "../application/providerService";
 import type { ProviderRuntimeService } from "../application/providerRuntimeService";
 import type { ProviderRuntimeStartRequest } from "../application/providerRuntimeProtocol";
+import type { PermissionPolicy } from "../application/permissionPolicy";
 
 export interface ProviderIpcDependencies {
   ipc: IpcMain;
@@ -11,6 +12,7 @@ export interface ProviderIpcDependencies {
   runtime?: ProviderRuntimeService;
   selectedContext: () => ProviderSessionContext | null;
   publishEvent: (event: ProviderEvent) => void;
+  permissions?: PermissionPolicy;
 }
 
 export function registerProviderIpc(dependencies: ProviderIpcDependencies): void {
@@ -25,10 +27,11 @@ export function registerProviderIpc(dependencies: ProviderIpcDependencies): void
     if (typeof providerId !== "string" || typeof enabled !== "boolean") throw new Error("Provider 启用设置无效。");
     return service.setEnabled(providerId, enabled);
   });
-  ipc.handle("providers:invoke", (_event, value: unknown) => {
+  ipc.handle("providers:invoke", async (_event, value: unknown) => {
     const context = dependencies.selectedContext();
     if (!context) throw new Error("请先选择会话。");
     const call = parseProviderCall(value);
+    await dependencies.permissions?.authorize({ mode: call.permissionMode, operation: "provider", title: "Provider 调用审批", detail: `是否允许调用 ${call.providerId} 的 ${call.capabilityId} 能力？` });
     const handle = service.start(call, context, dependencies.publishEvent);
     void handle.completion.then((result) => dependencies.publishEvent(terminalEvent(call, handle.requestId, handle.taskId, "completed", { output: sanitizeProviderData(result.output) }))).catch((error: unknown) => {
       const normalized = normalizeProviderError(error);

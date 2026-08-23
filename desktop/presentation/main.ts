@@ -3,7 +3,10 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { BUILT_IN_TOOL_MANIFESTS } from "../application/builtInTools";
 import { StructuredContextCompressor, type CompressionOptions } from "../application/contextCompression";
+import { DiagnosticsService, ErrorSearchService, type DiagnosticsRequest, type ErrorSearchIssue } from "../application/diagnostics";
+import { ExecutionBudget } from "../application/executionBudget";
 import { ModelService } from "../application/modelService";
+import { PermissionPolicy, type PermissionRequest } from "../application/permissionPolicy";
 import { ProviderContractError } from "../application/providerProtocol";
 import { ProviderRegistry } from "../application/providerRegistry";
 import { ProviderService } from "../application/providerService";
@@ -19,10 +22,12 @@ import type { WorkerEvent, WorkerOperation } from "../application/workerProtocol
 import { FileSessionRepository } from "../infrastructure/sessionRepository";
 import { EmptyProviderGateway } from "../infrastructure/emptyProviderGateway";
 import { PrivateProviderRuntimeGateway } from "../infrastructure/privateProviderRuntimeGateway";
+import { DuckDuckGoErrorSearchGateway } from "../infrastructure/duckDuckGoErrorSearch";
 import { PythonWorkerClient } from "../infrastructure/pythonWorker";
 import { OpenAiCompatibleClient } from "../infrastructure/openAiCompatibleClient";
 import { WindowsRegistrySettingsRepository } from "../infrastructure/registrySettingsRepository";
 import { JsonSettingsRepository } from "../infrastructure/settingsRepository";
+import { SystemDiagnosticsGateway } from "../infrastructure/systemDiagnostics";
 import { FileSystemWorkspaceRepository } from "../infrastructure/workspaceRepository";
 import { registerProviderIpc } from "./providerIpc";
 
@@ -35,6 +40,9 @@ let sessionPersistence: SessionPersistenceService;
 let providerService: ProviderService;
 let providerRuntimeService: ProviderRuntimeService;
 let compressor: StructuredContextCompressor;
+let diagnosticsService: DiagnosticsService;
+let errorSearchService: ErrorSearchService;
+let permissions: PermissionPolicy;
 const activeModelRequests = new Map<string, AbortController>();
 const activeModelTexts = new Map<string, string>();
 const activeTaskContexts = new Map<string, { root: string; session: SessionInfo }>();
@@ -111,7 +119,7 @@ function publishModelEvent(requestId: string, event: ModelEvent): void {
 }
 
 function registerIpc(): void {
-  registerProviderIpc({ ipc: ipcMain, service: providerService, runtime: providerRuntimeService, selectedContext, publishEvent: (event) => mainWindow?.webContents.send("provider:event", event) });
+  registerProviderIpc({ ipc: ipcMain, service: providerService, runtime: providerRuntimeService, permissions, selectedContext, publishEvent: (event) => mainWindow?.webContents.send("provider:event", event) });
   ipcMain.handle("app:get-initialization-state", () => workspaceService.getState());
   ipcMain.handle("workspace:choose-root", async () => {
     if (!mainWindow) return workspaceService.getState();
@@ -142,9 +150,11 @@ function registerIpc(): void {
     persistEvent("system", "context_restored", { mode: "original" }, { status: "completed" }, context);
     return publishState(await workspaceService.refreshSelectedSession());
   });
-  ipcMain.handle("worker:start", async (_event, operation: unknown, payload: unknown) => {
+  ipcMain.handle("worker:start", async (_event, operation: unknown, payload: unknown, permissionMode: unknown) => {
     if (operation !== "ping" && operation !== "decrypt") throw new Error("不支持此 worker 操作。");
     if (typeof payload !== "object" || payload === null || Array.isArray(payload)) throw new Error("worker 参数必须是对象。");
+    if (permissionMode !== "restricted" && permissionMode !== "standard" && permissionMode !== "full") throw new Error("权限模式无效。");
+    await permissions.authorize({ mode: permissionMode, operation: operation === "ping" ? "built-in" : "process", title: "Python worker 审批", detail: operation === "ping" ? "运行只读健康检查。" : "启动 Python worker 执行本地处理。" });
     let handle;
     try { handle = workerService.start(operation as WorkerOperation, payload as Record<string, unknown>, publishWorkerEvent); } catch (error) { throw new Error(error instanceof Error ? error.message : "worker 启动失败。"); }
     const context = selectedContext();
@@ -157,9 +167,12 @@ function registerIpc(): void {
     return { requestId: handle.requestId, taskId: handle.taskId };
   });
   ipcMain.handle("worker:cancel", (_event, taskId: unknown) => { if (typeof taskId !== "string") return false; const cancelled = workerService.cancel(taskId); if (cancelled) persistTask(taskId, "stopped", undefined, { code: "cancelled", message: "用户已取消任务。" }, activeTaskContexts.get(taskId)); return cancelled; });
-  ipcMain.handle("model:stream", async (_event, config: unknown, messages: unknown, permissionMode: unknown) => {
+  ipcMain.handle("model:stream", async (_event, config: unknown, messages: unknown, permissionMode: unknown, networkEnabled: unknown) => {
     if (!isModelConfig(config) || !Array.isArray(messages) || !messages.every(isChatMessage)) throw new Error("模型配置或消息格式无效。");
     if (permissionMode !== "restricted" && permissionMode !== "standard" && permissionMode !== "full") throw new Error("权限模式无效。");
+    if (typeof networkEnabled !== "boolean") throw new Error("联网设置无效。");
+    if (!networkEnabled) throw new Error("联网默认关闭，请先在当前会话中启用联网。");
+    await permissions.authorize({ mode: permissionMode, operation: "network", networkEnabled, title: "模型联网审批", detail: "允许模型服务访问网络并发送当前请求摘要。" });
     const context = selectedContext();
     const requestId = randomUUID();
     let requestMessages = messages;
@@ -170,9 +183,11 @@ function registerIpc(): void {
       requestMessages = [...snapshot.activeContext, ...messages];
       activeTaskContexts.set(requestId, context);
     }
+    const budget = new ExecutionBudget();
+    const boundedConfig = { ...config, totalTimeoutMs: Math.min(config.totalTimeoutMs ?? budget.remainingMs(), budget.remainingMs()) };
     const controller = new AbortController(); activeModelRequests.set(requestId, controller); persistTask(requestId, "running", requestId, undefined, context ?? undefined);
     terminalModelRequests.delete(requestId);
-    void modelService.stream({ config, messages: requestMessages, permissionMode, allowJsonFallback: true, signal: controller.signal }, (event) => publishModelEvent(requestId, event)).then(() => {
+    void modelService.stream({ config: boundedConfig, messages: requestMessages, permissionMode, networkEnabled, budget, allowJsonFallback: true, signal: controller.signal }, (event) => publishModelEvent(requestId, event)).then(() => {
       if (!terminalModelRequests.has(requestId)) {
         terminalModelRequests.add(requestId);
         persistTask(requestId, "completed", requestId, undefined, activeTaskContexts.get(requestId));
@@ -186,17 +201,37 @@ function registerIpc(): void {
   ipcMain.handle("model:cancel", (_event, requestId: unknown) => { if (typeof requestId !== "string") return false; const controller = activeModelRequests.get(requestId); if (!controller) return false; controller.abort(); persistTask(requestId, "stopped", requestId, { code: "cancelled", message: "用户已取消任务。" }, activeTaskContexts.get(requestId)); return true; });
   ipcMain.handle("tools:list", () => toolRegistry.list());
   ipcMain.handle("tools:refresh", (_event, manifests: unknown) => { if (!Array.isArray(manifests)) throw new Error("工具清单必须是数组。"); for (const manifest of manifests) validateManifest(manifest as ToolManifest); toolRegistry.refresh(manifests as ToolManifest[]); return toolRegistry.list(); });
+  ipcMain.handle("diagnostics:run", async (_event, value: unknown) => {
+    const request = parseDiagnosticsRequest(value);
+    if (request.networkEnabled) await permissions.authorize({ mode: request.permissionMode, operation: "network", networkEnabled: true, title: "诊断联网审批", detail: "允许诊断访问模型服务检查连接状态。" });
+    const context = selectedContext();
+    const logsLocation = context ? path.join(context.root, context.session.relativePath, "logs.jsonl") : null;
+    const report = await diagnosticsService.run({ modelConfig: request.modelConfig, networkEnabled: request.networkEnabled, sessionReady: context !== null, logsLocation });
+    persistEvent("system", "diagnostics_completed", { statuses: report.items.map((item) => ({ category: item.category, status: item.status })) }, { status: report.items.some((item) => item.status === "error") ? "failed" : "completed" }, context ?? undefined);
+    return report;
+  });
+  ipcMain.handle("diagnostics:search", async (_event, issueValue: unknown, mode: unknown, networkEnabled: unknown) => {
+    const issue = parseErrorSearchIssue(issueValue);
+    if (mode !== "restricted" && mode !== "standard" && mode !== "full") throw new Error("权限模式无效。");
+    if (typeof networkEnabled !== "boolean") throw new Error("联网设置无效。");
+    const result = await errorSearchService.search(issue, mode, networkEnabled);
+    persistEvent("system", "diagnostic_search_stopped", { category: issue.category, resultCount: result.results.length }, { status: result.status });
+    return result;
+  });
 }
 
 async function createWindow(): Promise<void> { mainWindow = new BrowserWindow({ width: 1080, height: 720, minWidth: 760, minHeight: 520, backgroundColor: "#f4f7fb", webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, "preload.cjs") } }); await mainWindow.loadFile(path.join(__dirname, "renderer", "index.html")); publishState(workspaceService.getState()); mainWindow.on("closed", () => { mainWindow = null; }); }
 async function bootstrap(): Promise<void> {
   workerService = new WorkerService(new PythonWorkerClient({ workerScript: path.join(app.getAppPath(), "src", "Presentation", "worker.py") }));
-  toolRegistry = new ToolRegistry(); toolRegistry.refresh(BUILT_IN_TOOL_MANIFESTS); modelService = new ModelService(new OpenAiCompatibleClient(), toolRegistry);
+  permissions = new PermissionPolicy({ requestApproval: requestSensitiveOperationApproval });
+  toolRegistry = new ToolRegistry(); toolRegistry.refresh(BUILT_IN_TOOL_MANIFESTS); modelService = new ModelService(new OpenAiCompatibleClient(), toolRegistry, permissions);
   sessionPersistence = new SessionPersistenceService(new FileSessionRepository()); compressor = new StructuredContextCompressor();
   workspaceService = new WorkspaceService(new FileSystemWorkspaceRepository(), settingsRepository(), installationDirectory(), () => new Date(), randomUUID, sessionPersistence);
   const providerRegistry = new ProviderRegistry(); providerService = new ProviderService(providerRegistry, new EmptyProviderGateway(), sessionPersistence, refreshContext);
   const approval = new ProviderRuntimeStartPolicy({ requestStartApproval: requestProviderRuntimeApproval });
   providerRuntimeService = new ProviderRuntimeService(new PrivateProviderRuntimeGateway(), providerRegistry, approval, sessionPersistence, refreshContext, (providerId, error) => { providerService.stopProvider(providerId, new ProviderContractError(error.code, error.message)); }, (event) => mainWindow?.webContents.send("provider:runtime-event", event));
+  diagnosticsService = new DiagnosticsService(new SystemDiagnosticsGateway({ checkWorker: checkWorkerHealth, listProviderStates: () => providerRuntimeService.list() }));
+  errorSearchService = new ErrorSearchService(new DuckDuckGoErrorSearchGateway(), permissions);
   registerIpc(); await workspaceService.initialize(); await providerRuntimeService.initialize(selectedContext() ?? undefined); await createWindow();
 }
 
@@ -205,6 +240,29 @@ async function requestProviderRuntimeApproval(request: ProviderRuntimeApprovalRe
   const result = await dialog.showMessageBox(mainWindow, { type: "question", buttons: ["允许启动", "取消"], defaultId: 0, cancelId: 1, title: "Provider 启动审批", message: `是否允许启动 ${request.displayName}？`, detail: request.reason });
   return result.response === 0;
 }
+async function requestSensitiveOperationApproval(request: PermissionRequest): Promise<boolean> {
+  if (!mainWindow) return false;
+  const result = await dialog.showMessageBox(mainWindow, { type: "question", buttons: ["允许一次", "取消"], defaultId: 0, cancelId: 1, title: request.title, message: "此操作需要你的批准。", detail: request.detail });
+  return result.response === 0;
+}
+async function checkWorkerHealth(): Promise<boolean> {
+  const handle = workerService.start("ping", {}, () => undefined, { timeoutMs: 5_000 });
+  return (await handle.completion).status === "completed";
+}
+function parseDiagnosticsRequest(value: unknown): DiagnosticsRequest {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error("诊断请求无效。");
+  const request = value as Record<string, unknown>;
+  if (typeof request.networkEnabled !== "boolean" || (request.permissionMode !== "restricted" && request.permissionMode !== "standard" && request.permissionMode !== "full")) throw new Error("诊断设置无效。");
+  if (request.modelConfig !== undefined && !isModelConfig(request.modelConfig)) throw new Error("模型配置无效。");
+  return { networkEnabled: request.networkEnabled, permissionMode: request.permissionMode, ...(request.modelConfig ? { modelConfig: request.modelConfig } : {}) };
+}
+function parseErrorSearchIssue(value: unknown): ErrorSearchIssue {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error("错误搜索请求无效。");
+  const issue = value as Record<string, unknown>;
+  if (!isDiagnosticCategory(issue.category) || typeof issue.summary !== "string" || !issue.summary.trim()) throw new Error("错误搜索摘要无效。");
+  return { category: issue.category, summary: issue.summary };
+}
+function isDiagnosticCategory(value: unknown): value is ErrorSearchIssue["category"] { return value === "ffmpeg" || value === "model" || value === "worker" || value === "session" || value === "provider"; }
 function isCompressionOptions(value: unknown): value is CompressionOptions { if (typeof value !== "object" || value === null || Array.isArray(value)) return false; const options = value as Record<string, unknown>; return typeof options.thresholdTokens === "number" && Number.isFinite(options.thresholdTokens) && options.thresholdTokens > 0 && typeof options.preserveRecentMessages === "number" && Number.isInteger(options.preserveRecentMessages) && options.preserveRecentMessages >= 1 && (options.markdownThresholdTokens === undefined || typeof options.markdownThresholdTokens === "number" && Number.isFinite(options.markdownThresholdTokens) && options.markdownThresholdTokens > 0) && (options.markdownMaxRatio === undefined || typeof options.markdownMaxRatio === "number" && options.markdownMaxRatio > 0 && options.markdownMaxRatio < 1) && (options.writeMarkdown === undefined || typeof options.writeMarkdown === "boolean"); }
 function isModelConfig(value: unknown): value is ModelConfig { if (typeof value !== "object" || value === null || Array.isArray(value)) return false; const config = value as Record<string, unknown>; if (typeof config.baseUrl !== "string" || !config.baseUrl.trim() || typeof config.model !== "string" || !config.model.trim()) return false; if (config.apiKey !== undefined && typeof config.apiKey !== "string") return false; if (config.headers !== undefined && (typeof config.headers !== "object" || config.headers === null || Array.isArray(config.headers))) return false; for (const key of ["maxTokens", "temperature", "connectTimeoutMs", "firstByteTimeoutMs", "readTimeoutMs", "totalTimeoutMs"]) if (config[key] !== undefined && (typeof config[key] !== "number" || !Number.isFinite(config[key]))) return false; return config.thinking === undefined || config.thinking === "enabled" || config.thinking === "disabled"; }
 function isChatMessage(value: unknown): value is ChatMessage { if (typeof value !== "object" || value === null || Array.isArray(value)) return false; const message = value as Record<string, unknown>; return ["system", "user", "assistant", "tool"].includes(String(message.role)) && (typeof message.content === "string" || message.content === null); }

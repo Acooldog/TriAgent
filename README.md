@@ -150,3 +150,18 @@ npm run package
 - [LICENSE](./LICENSE)
 
 如果你计划进行商业使用、闭源分发或接入额外第三方组件，请先自行完成完整的许可证核验和风险评估。
+## 权限、预算与 C 端诊断（MVP 任务 7）
+
+Electron Agent 现在统一支持受限、标准、完全访问三档权限。敏感操作在受限模式拒绝，标准模式请求中文一次性审批，完全访问模式自动执行；联网按会话默认关闭，错误搜索仅发送脱敏摘要，不发送音频、凭据或完整本地路径。私有 Provider 运行时仍通过公开 `ProviderRuntimeGateway` 合同接入，具体实现、资源和命令不进入公开仓库。
+
+任务预算限制为单步骤最多重试 2 次、最多 8 轮模型交互、16 次工具调用和 15 分钟总超时。超时、取消、重复错误和预算耗尽立即截停，并写入 session 任务、事件和日志。桌面“运行诊断”检查 FFmpeg、模型、Python worker、session 与 Provider，并展示中文错误分类、脱敏摘要、日志位置和恢复建议；错误搜索无结果即停止。
+
+任务 7 验证命令：
+
+```powershell
+npm run build:electron
+npm run typecheck:electron
+npm run test:electron
+npm run build:console
+npm run build:ui
+```

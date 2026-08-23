@@ -5,6 +5,7 @@ export type { JsonSchema } from "./jsonSchema";
 export const TOOL_PROTOCOL_VERSION = "1" as const;
 
 export type PermissionMode = "restricted" | "standard" | "full";
+export type SensitiveOperation = "built-in" | "process" | "command" | "file-write" | "file-delete" | "network" | "log-read" | "task-resume" | "provider";
 
 export interface ToolManifest {
   protocol_version: typeof TOOL_PROTOCOL_VERSION;
@@ -19,6 +20,7 @@ export interface ToolManifest {
   events: string[];
   cancellation: boolean;
   timeout_ms: number;
+  sensitive_operation?: SensitiveOperation;
 }
 
 export interface ToolInvocation {
@@ -50,6 +52,11 @@ export function validateManifest(manifest: unknown): asserts manifest is ToolMan
   }
   if (!Array.isArray(manifest.permissions) || manifest.permissions.length === 0) throw new ToolProtocolError("permission", "工具必须声明权限模式。");
   if (typeof manifest.timeout_ms !== "number" || !Number.isFinite(manifest.timeout_ms) || manifest.timeout_ms <= 0) throw new ToolProtocolError("timeout", "工具超时必须是正数。");
+  if (manifest.sensitive_operation !== undefined && !isSensitiveOperation(manifest.sensitive_operation)) throw new ToolProtocolError("permission", "工具敏感操作声明无效。");
+}
+
+function isSensitiveOperation(value: unknown): value is SensitiveOperation {
+  return value === "built-in" || value === "process" || value === "command" || value === "file-write" || value === "file-delete" || value === "network" || value === "log-read" || value === "task-resume" || value === "provider";
 }
 
 export function validateInvocation(manifest: ToolManifest, invocation: ToolInvocation): void {
