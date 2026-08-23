@@ -47,7 +47,7 @@ function render() {
       const fields = document.createElement("div");
       fields.dataset.realModelFields = "true";
       fields.className = "field-grid real-model-fields";
-      fields.innerHTML = `<label>API Key<input data-input="model-api-key" type="password" value="${state.modelConfig.apiKey || ""}" autocomplete="off" /></label><label>Thinking<select data-input="model-thinking"><option value="enabled" ${state.modelConfig.thinking === "enabled" ? "selected" : ""}>enabled</option><option value="disabled" ${state.modelConfig.thinking !== "enabled" ? "selected" : ""}>disabled</option></select></label><label>最大 Token<input data-input="model-max-tokens" type="number" min="1" step="1" value="${state.modelConfig.maxTokens || 4096}" /></label><label>Temperature<input data-input="model-temperature" type="number" min="0" max="2" step="0.1" value="${state.modelConfig.temperature ?? 0.6}" /></label>`;
+      fields.innerHTML = `<label>API Key<input data-input="model-api-key" type="password" value="${state.modelConfig.apiKey || ""}" autocomplete="off" /></label><label>思考模式<select data-input="model-thinking"><option value="enabled" ${state.modelConfig.thinking === "enabled" ? "selected" : ""}>开启深度思考</option><option value="disabled" ${state.modelConfig.thinking !== "enabled" ? "selected" : ""}>关闭深度思考</option></select></label><label>最大 Token<input data-input="model-max-tokens" type="number" min="1" step="1" value="${state.modelConfig.maxTokens || 4096}" /></label><label>Temperature<input data-input="model-temperature" type="number" min="0" max="2" step="0.1" value="${state.modelConfig.temperature ?? 0.6}" /></label>`;
       block.append(fields);
     }
   }
