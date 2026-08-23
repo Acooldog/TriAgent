@@ -172,4 +172,6 @@ npm run build:ui
 
 启动：`npm run start:electron`。若本地没有 Python 虚拟环境，先创建 `.venv` 并使用 `requirements-private.txt` 安装私有运行时依赖；然后选择非 C 盘工作区、创建会话、配置通用 OpenAI-compatible 模型并提交自然语言解密任务。私有版本使用一个授权的本地 Provider 完成 KGM v3 到 MP3 的可验证闭环，输出、session、日志、时间线、产物引用、取消、失败恢复和重启停止状态均由现有持久化协议记录。
 
+模型设置页提供 API Key、Thinking、最大 Token 和 Temperature。智谱 GLM-4.5 配置示例：Base URL `https://open.bigmodel.cn/api/paas/v4`，模型名 `glm-4.5`，Thinking `enabled`，最大 Token `4096`，Temperature `0.6`。保存设置和测试连接均通过 Electron IPC 执行，API Key 不写入 session 或日志。
+
 酷狗能力按要求优先使用 Unlock Music 逻辑；该逻辑仅位于私有 Provider 边界，许可证核对记录见 `docs/third-party/unlock-music-license.md`。公开仓库不包含私有 Provider 的代码、资源、命令、参数或内部调用细节。任务 8 及之后的安装包、升级器、完整多格式回归和正式发布尚未执行。

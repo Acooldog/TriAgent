@@ -37,6 +37,7 @@ contextBridge.exposeInMainWorld("triMusicAgent", {
     return () => ipcRenderer.removeListener("worker:event", handler);
   },
   startModel: (config: ModelConfig, messages: ChatMessage[], permissionMode: "restricted" | "standard" | "full", networkEnabled: boolean): Promise<{ requestId: string }> => ipcRenderer.invoke("model:stream", config, messages, permissionMode, networkEnabled),
+  saveModelConfig: (config: ModelConfig): Promise<boolean> => ipcRenderer.invoke("model:save-config", config),
   cancelModel: (requestId: string): Promise<boolean> => ipcRenderer.invoke("model:cancel", requestId),
   onModelEvent: (listener: (envelope: ModelEventEnvelope) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, envelope: ModelEventEnvelope) => listener(envelope);

@@ -76,6 +76,6 @@ export function createState() {
     llmModel: "DeepSeek-R1",
     llmProvider: "OpenAI-compatible",
     llmTested: false,
-    modelConfig: { baseUrl: "https://api.openai.com/v1", model: "gpt-4o-mini", apiKey: "", thinking: "disabled", maxTokens: 4096, temperature: 0.6 },
+    modelConfig: { baseUrl: "https://open.bigmodel.cn/api/paas/v4", model: "glm-4.5", apiKey: "", thinking: "enabled", maxTokens: 4096, temperature: 0.6, connectTimeoutMs: 60_000 },
   };
 }

@@ -32,3 +32,17 @@ test("原型任务入口已接入 Electron Agent bridge", async () => {
   assert.match(bridge, /startAgentTask/);
   assert.match(bridge, /onAgentEvent/);
 });
+
+test("模型设置暴露智谱所需配置并使用真实保存/测试入口", async () => {
+  const ui = await fs.readFile(path.join(root, "ui.js"), "utf8");
+  const app = await fs.readFile(path.join(root, "app.js"), "utf8");
+  const adapter = await fs.readFile(path.join(root, "runtime-adapter.js"), "utf8");
+  assert.match(ui, /data-input="model-name"/);
+  assert.match(ui, /data-input="model-base-url"/);
+  assert.match(app, /model-api-key/);
+  assert.match(app, /model-thinking/);
+  assert.match(app, /model-max-tokens/);
+  assert.match(app, /model-temperature/);
+  assert.match(app, /saveModelConfig/);
+  assert.match(adapter, /startModel/);
+});

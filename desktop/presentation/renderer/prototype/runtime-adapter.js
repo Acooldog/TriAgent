@@ -1,7 +1,8 @@
-import { cancelAgent, chooseWorkspace, createSession, startAgent } from "./agent-bridge.js";
+import { cancelAgent, chooseWorkspace, createSession, startAgent, startModel } from "./agent-bridge.js";
 
 const root = document.querySelector("#app");
 let activeTaskId = null;
+let activeModel = null;
 
 root?.addEventListener("click", (event) => {
   const target = event.target.closest("[data-action]");
@@ -59,3 +60,21 @@ async function startTask(runtime) {
 }
 
 async function stopTask(runtime) { await cancelAgent(); activeTaskId = null; runtime.state.processing = false; runtime.state.taskStatus = "已停止"; runtime.state.toast = "任务已停止"; runtime.render(); }
+
+export async function testModelConnection(runtime) {
+  if (!runtime.state.modelConfig.apiKey) throw new Error("请先填写 API Key。");
+  if (!runtime.state.networkEnabled) throw new Error("请先打开联网开关。");
+  activeModel?.unsubscribe?.();
+  runtime.state.llmMessages = [{ role: "notice", text: "正在测试模型连接……" }];
+  runtime.render();
+  try {
+    activeModel = await startModel(runtime.state.modelConfig, [{ role: "user", content: "请只回复：连接成功" }], runtime.state.mode, true, (event) => {
+      if (event.type === "text_delta") runtime.state.llmMessages = [...runtime.state.llmMessages.filter((item) => item.role !== "notice"), { role: "assistant", text: event.text }];
+      if (event.type === "response_completed") { runtime.state.llmTested = true; runtime.state.toast = "模型连接测试成功"; activeModel = null; }
+      if (event.type === "error") { runtime.state.llmTested = false; runtime.state.llmMessages = [{ role: "error", text: event.message }]; activeModel = null; }
+      runtime.render();
+    });
+  } catch (error) { runtime.state.llmTested = false; runtime.state.llmMessages = [{ role: "error", text: error instanceof Error ? error.message : "模型连接失败。" }]; runtime.render(); }
+}
+
+window.triMusicPrototypeModelTest = testModelConnection;

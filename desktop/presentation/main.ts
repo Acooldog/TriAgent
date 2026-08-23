@@ -21,9 +21,8 @@ import { WorkspaceService, type SessionInfo, type WorkspaceState } from "../appl
 import { WorkerService } from "../application/workerService";
 import type { WorkerEvent, WorkerOperation } from "../application/workerProtocol";
 import { FileSessionRepository } from "../infrastructure/sessionRepository";
-import { EmptyProviderGateway } from "../infrastructure/emptyProviderGateway";
-import { AuthorizedMvpProviderGateway } from "../infrastructure/authorizedMvpProviderGateway";
-import { PrivateProviderRuntimeGateway } from "../infrastructure/privateProviderRuntimeGateway";
+import { FakeMvpProviderGateway } from "../infrastructure/fakeMvpProviderGateway";
+import { FakeMvpProviderRuntimeGateway } from "../infrastructure/fakeMvpProviderRuntimeGateway";
 import { DuckDuckGoErrorSearchGateway } from "../infrastructure/duckDuckGoErrorSearch";
 import { PythonWorkerClient } from "../infrastructure/pythonWorker";
 import { OpenAiCompatibleClient } from "../infrastructure/openAiCompatibleClient";
@@ -154,7 +153,7 @@ function registerIpc(): void {
     return publishState(await workspaceService.refreshSelectedSession());
   });
   ipcMain.handle("worker:start", async (_event, operation: unknown, payload: unknown, permissionMode: unknown) => {
-    if (operation !== "ping" && operation !== "decrypt") throw new Error("不支持此 worker 操作。");
+    if (operation !== "ping" && operation !== "capability") throw new Error("不支持此 worker 操作。");
     if (typeof payload !== "object" || payload === null || Array.isArray(payload)) throw new Error("worker 参数必须是对象。");
     if (permissionMode !== "restricted" && permissionMode !== "standard" && permissionMode !== "full") throw new Error("权限模式无效。");
     await permissions.authorize({ mode: permissionMode, operation: operation === "ping" ? "built-in" : "process", title: "Python worker 审批", detail: operation === "ping" ? "运行只读健康检查。" : "启动 Python worker 执行本地处理。" });
@@ -202,6 +201,14 @@ function registerIpc(): void {
     return { requestId };
   });
   ipcMain.handle("model:cancel", (_event, requestId: unknown) => { if (typeof requestId !== "string") return false; const controller = activeModelRequests.get(requestId); if (!controller) return false; controller.abort(); persistTask(requestId, "stopped", requestId, { code: "cancelled", message: "用户已取消任务。" }, activeTaskContexts.get(requestId)); return true; });
+  ipcMain.handle("model:save-config", async (_event, config: unknown) => {
+    if (!isModelConfig(config)) throw new Error("模型配置无效。");
+    const context = selectedContext();
+    if (!context) throw new Error("请先选择工作区和会话。");
+    await sessionPersistence.saveConfig(context.root, context.session, config, { permissionMode: "standard" });
+    await refreshContext(context);
+    return true;
+  });
   ipcMain.handle("tools:list", () => toolRegistry.list());
   ipcMain.handle("tools:refresh", (_event, manifests: unknown) => { if (!Array.isArray(manifests)) throw new Error("工具清单必须是数组。"); for (const manifest of manifests) validateManifest(manifest as ToolManifest); toolRegistry.refresh(manifests as ToolManifest[]); return toolRegistry.list(); });
   ipcMain.handle("diagnostics:run", async (_event, value: unknown) => {
@@ -234,18 +241,26 @@ function registerIpc(): void {
 
 async function createWindow(): Promise<void> { mainWindow = new BrowserWindow({ width: 1080, height: 720, minWidth: 760, minHeight: 520, backgroundColor: "#f4f7fb", webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, "preload.cjs") } }); await mainWindow.loadFile(path.join(__dirname, "renderer", "index.html")); publishState(workspaceService.getState()); mainWindow.on("closed", () => { mainWindow = null; }); }
 async function bootstrap(): Promise<void> {
-  workerService = new WorkerService(new PythonWorkerClient({ workerScript: path.join(app.getAppPath(), "src", "Presentation", "worker.py") }));
+  workerService = new WorkerService(new PythonWorkerClient({ workerScript: path.join(app.getAppPath(), "desktop", "infrastructure", "publicWorker.py") }));
   permissions = new PermissionPolicy({ requestApproval: requestSensitiveOperationApproval });
-  toolRegistry = new ToolRegistry(); toolRegistry.refresh(BUILT_IN_TOOL_MANIFESTS); modelService = new ModelService(new OpenAiCompatibleClient(), toolRegistry, permissions);
+  toolRegistry = new ToolRegistry(); toolRegistry.refresh(BUILT_IN_TOOL_MANIFESTS);
+  modelService = new ModelService(new OpenAiCompatibleClient(), toolRegistry, permissions);
   sessionPersistence = new SessionPersistenceService(new FileSessionRepository()); compressor = new StructuredContextCompressor();
   workspaceService = new WorkspaceService(new FileSystemWorkspaceRepository(), settingsRepository(), installationDirectory(), () => new Date(), randomUUID, sessionPersistence);
-  const providerRegistry = new ProviderRegistry(); providerService = new ProviderService(providerRegistry, new AuthorizedMvpProviderGateway(path.join(app.getAppPath(), "src", "Presentation", "worker.py"), app.getAppPath(), process.env.TRIMUSIC_PYTHON), sessionPersistence, refreshContext);
+  const providerRegistry = new ProviderRegistry();
+  providerService = new ProviderService(providerRegistry, new FakeMvpProviderGateway(), sessionPersistence, refreshContext);
   const approval = new ProviderRuntimeStartPolicy({ requestStartApproval: requestProviderRuntimeApproval });
-  providerRuntimeService = new ProviderRuntimeService(new PrivateProviderRuntimeGateway(), providerRegistry, approval, sessionPersistence, refreshContext, (providerId, error) => { providerService.stopProvider(providerId, new ProviderContractError(error.code, error.message)); }, (event) => mainWindow?.webContents.send("provider:runtime-event", event));
+  providerRuntimeService = new ProviderRuntimeService(new FakeMvpProviderRuntimeGateway(), providerRegistry, approval, sessionPersistence, refreshContext, (providerId, error) => { providerService.stopProvider(providerId, new ProviderContractError(error.code, error.message)); }, (event) => mainWindow?.webContents.send("provider:runtime-event", event));
   agentTaskService = new AgentTaskService(providerRuntimeService, providerService, permissions, sessionPersistence, refreshContext);
-  diagnosticsService = new DiagnosticsService(new SystemDiagnosticsGateway({ checkWorker: checkWorkerHealth, listProviderStates: () => providerRuntimeService.list() }));
+  diagnosticsService = new DiagnosticsService(new SystemDiagnosticsGateway({
+    checkWorker: checkWorkerHealth,
+    listProviderStates: () => providerRuntimeService.list(),
+  }));
   errorSearchService = new ErrorSearchService(new DuckDuckGoErrorSearchGateway(), permissions);
-  registerIpc(); await workspaceService.initialize(); await providerRuntimeService.initialize(selectedContext() ?? undefined); await createWindow();
+  registerIpc();
+  await workspaceService.initialize();
+  await providerRuntimeService.initialize(selectedContext() ?? undefined);
+  await createWindow();
 }
 
 async function requestProviderRuntimeApproval(request: ProviderRuntimeApprovalRequest): Promise<boolean> {

@@ -41,6 +41,16 @@ function render() {
       grid.append(field);
     }
   }
+  if (state.page === "settings" && state.settingsTab === "model" && !root.querySelector("[data-real-model-fields]")) {
+    const block = root.querySelector(".settings-content .setting-block");
+    if (block) {
+      const fields = document.createElement("div");
+      fields.dataset.realModelFields = "true";
+      fields.className = "field-grid real-model-fields";
+      fields.innerHTML = `<label>API Key<input data-input="model-api-key" type="password" value="${state.modelConfig.apiKey || ""}" autocomplete="off" /></label><label>Thinking<select data-input="model-thinking"><option value="enabled" ${state.modelConfig.thinking === "enabled" ? "selected" : ""}>enabled</option><option value="disabled" ${state.modelConfig.thinking !== "enabled" ? "selected" : ""}>disabled</option></select></label><label>最大 Token<input data-input="model-max-tokens" type="number" min="1" step="1" value="${state.modelConfig.maxTokens || 4096}" /></label><label>Temperature<input data-input="model-temperature" type="number" min="0" max="2" step="0.1" value="${state.modelConfig.temperature ?? 0.6}" /></label>`;
+      block.append(fields);
+    }
+  }
   root.querySelectorAll('[data-page="onboarding"]').forEach((element) => { element.removeAttribute("data-page"); element.dataset.action = "open-data-settings"; });
   syncTypewriter();
   const nextStream = root.querySelector(".conversation-stream, .llm-chat-scroll");
@@ -259,9 +269,9 @@ function handleAction(action, element) {
   if (action === "continue") { state.page = "dashboard"; toast("工作数据根目录已就绪（模拟）"); }
   if (action === "open-data-settings") { state.routeHistory = [...state.routeHistory, "settings"]; state.page = "settings"; state.settingsTab = "data"; }
   if (action === "diagnose") toast("完整诊断完成：7 项正常，1 项提示");
-  if (action === "save-settings") toast("设置已保存（模拟）");
+  if (action === "save-settings") { void window.triMusicAgent?.saveModelConfig?.(state.modelConfig).then(() => toast("模型设置已保存")).catch((error) => toast(error instanceof Error ? error.message : "模型设置保存失败。")); }
   if (action === "select-llm") { state.llmModel = element.dataset.model; state.llmTested = false; toast(`已选择 ${state.llmModel}`); }
-  if (action === "test-llm") { state.llmTested = true; toast("模型连接测试成功（模拟）"); }
+  if (action === "test-llm") { void window.triMusicPrototypeModelTest?.(window.triMusicPrototypeRuntime).catch((error) => toast(error instanceof Error ? error.message : "模型连接测试失败。")); }
   if (action === "reset-llm") { state.llmModel = "DeepSeek-R1"; state.llmProvider = "OpenAI-compatible"; state.llmTested = false; toast("已恢复推荐模型配置"); }
   if (action === "compress") { state.compressionDone = true; toast("会话压缩完成，原始消息已保留"); }
   if (action === "toast") toast(element.dataset.message || "操作已完成");
@@ -294,7 +304,11 @@ root.addEventListener("input", (event) => {
   if (target.dataset.input === "library-query") { state.libraryQuery = target.value; render(); }
   if (target.dataset.input === "library-platform") { state.libraryPlatform = target.value; render(); }
   if (target.dataset.input === "library-format") { state.libraryFormat = target.value; render(); }
-  if (target.dataset.input === "context-threshold") { state.compressionThreshold = Math.max(50, Math.min(95, Number(target.value) || 80)); }
+      if (target.dataset.input === "context-threshold") { state.compressionThreshold = Math.max(50, Math.min(95, Number(target.value) || 80)); }
+      if (target.dataset.input === "model-api-key") state.modelConfig.apiKey = target.value;
+      if (target.dataset.input === "model-thinking") state.modelConfig.thinking = target.value === "enabled" ? "enabled" : "disabled";
+      if (target.dataset.input === "model-max-tokens") state.modelConfig.maxTokens = Math.max(1, Number(target.value) || 4096);
+      if (target.dataset.input === "model-temperature") state.modelConfig.temperature = Math.max(0, Math.min(2, Number(target.value) || 0.6));
 });
 root.addEventListener("keydown", (event) => { const target = event.target; if (!target.matches(".llm-input, .prompt-text-input") || event.key !== "Enter" || event.shiftKey) return; event.preventDefault(); handleAction(target.matches(".llm-input") ? (state.conversationMode ? "start" : state.llmStreaming ? "interrupt-llm" : "llm-send") : "start", target); });
 render();

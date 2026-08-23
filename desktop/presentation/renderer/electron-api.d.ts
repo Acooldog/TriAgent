@@ -27,6 +27,7 @@ export interface TriMusicAgentApi {
   cancelWorker(taskId: string): Promise<boolean>;
   onWorkerEvent(listener: (event: WorkerEvent) => void): () => void;
   startModel(config: ModelConfig, messages: ChatMessage[], permissionMode: "restricted" | "standard" | "full", networkEnabled: boolean): Promise<{ requestId: string }>;
+  saveModelConfig(config: ModelConfig): Promise<boolean>;
   cancelModel(requestId: string): Promise<boolean>;
   onModelEvent(listener: (envelope: ModelEventEnvelope) => void): () => void;
   listTools(): Promise<ToolManifest[]>;
