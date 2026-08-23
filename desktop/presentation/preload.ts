@@ -5,6 +5,7 @@ import type { ChatMessage, ModelConfig, ModelEvent } from "../application/modelP
 import type { CompressionOptions, CompressionResult } from "../application/contextCompression";
 import type { ToolManifest } from "../application/toolProtocol";
 import type { ProviderCall, ProviderEvent, ProviderRegistration } from "../application/providerProtocol";
+import type { ProviderRuntimeEvent, ProviderRuntimeStartRequest, ProviderRuntimeState } from "../application/providerRuntimeProtocol";
 
 export interface ModelEventEnvelope {
   requestId: string;
@@ -18,7 +19,7 @@ contextBridge.exposeInMainWorld("triMusicAgent", {
   selectSession: (sessionId: string): Promise<WorkspaceState> => ipcRenderer.invoke("session:select", sessionId),
   compressSession: (options: CompressionOptions): Promise<CompressionResult> => ipcRenderer.invoke("session:compress", options),
   restoreOriginalContext: (): Promise<WorkspaceState> => ipcRenderer.invoke("session:restore-original"),
-  startWorker: (operation: "ping" | "decrypt", payload: Record<string, unknown>): Promise<{ requestId: string; taskId: string }> => ipcRenderer.invoke("worker:start", operation, payload),
+  startWorker: (operation: "ping" | "capability", payload: Record<string, unknown>): Promise<{ requestId: string; taskId: string }> => ipcRenderer.invoke("worker:start", operation, payload),
   cancelWorker: (taskId: string): Promise<boolean> => ipcRenderer.invoke("worker:cancel", taskId),
   onWorkerEvent: (listener: (event: WorkerEvent) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, workerEvent: WorkerEvent) => listener(workerEvent);
@@ -40,10 +41,21 @@ contextBridge.exposeInMainWorld("triMusicAgent", {
   setProviderEnabled: (providerId: string, enabled: boolean): Promise<ProviderRegistration> => ipcRenderer.invoke("providers:set-enabled", providerId, enabled),
   invokeProvider: (call: ProviderCall): Promise<{ requestId: string; taskId: string }> => ipcRenderer.invoke("providers:invoke", call),
   cancelProvider: (taskId: string): Promise<boolean> => ipcRenderer.invoke("providers:cancel", taskId),
+  listProviderRuntimes: (): Promise<ProviderRuntimeState[]> => ipcRenderer.invoke("providers:runtime-list"),
+  discoverProviderRuntimes: (): Promise<ProviderRuntimeState[]> => ipcRenderer.invoke("providers:runtime-discover"),
+  startProviderRuntime: (request: ProviderRuntimeStartRequest): Promise<ProviderRuntimeState> => ipcRenderer.invoke("providers:runtime-start", request),
+  checkProviderRuntimeHealth: (providerId: string): Promise<ProviderRuntimeState> => ipcRenderer.invoke("providers:runtime-health", providerId),
+  stopProviderRuntime: (providerId: string): Promise<ProviderRuntimeState> => ipcRenderer.invoke("providers:runtime-stop", providerId),
+  cancelProviderRuntime: (providerId: string): Promise<boolean> => ipcRenderer.invoke("providers:runtime-cancel", providerId),
   onProviderEvent: (listener: (event: ProviderEvent) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, providerEvent: ProviderEvent) => listener(providerEvent);
     ipcRenderer.on("provider:event", handler);
     return () => ipcRenderer.removeListener("provider:event", handler);
+  },
+  onProviderRuntimeEvent: (listener: (event: ProviderRuntimeEvent) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, runtimeEvent: ProviderRuntimeEvent) => listener(runtimeEvent);
+    ipcRenderer.on("provider:runtime-event", handler);
+    return () => ipcRenderer.removeListener("provider:runtime-event", handler);
   },
   onInitializationState: (listener: (state: WorkspaceState) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, state: WorkspaceState) => listener(state);

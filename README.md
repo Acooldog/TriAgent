@@ -36,15 +36,17 @@ npm run typecheck:electron
 npm run test:electron
 ```
 
-### 外部能力 Provider 合同（MVP 任务 5）
+### 外部能力 Provider 合同与运行时边界（MVP 任务 5-6）
 
 Electron Agent 核心已与公开仓库同步 provider 合同：版本化 manifest、能力清单、输入/输出 Schema、权限、事件、取消和超时声明，以及发现、原子刷新、启用/禁用、健康状态、调用结果和统一错误。只有注册、启用、健康且通过调用校验的 provider 能力可以执行。
 
 Renderer 提供中文 Provider 清单、健康检查、启用状态、JSON 参数调用、权限选择、取消、脱敏结果和默认折叠事件；事件、任务状态、日志和产物引用写入当前 session。应用重启后，运行中的 Provider 任务恢复为停止状态并写入恢复时间线，不自动重试。
 
-共享 Application、Presentation、通用 Infrastructure 和合同测试与公开仓库保持一致。专有能力的适配、运行时资源和 provider-specific 测试继续限定在私有 Infrastructure/测试边界，不改变公开合同，也不把内部调用细节写入公开仓库。当前任务完成合同验证；外部进程启动、停止和恢复策略仍由后续 MVP 任务 6 完成。
+共享 Application、Presentation、通用 Infrastructure 和合同测试与公开仓库保持一致。运行时状态机现在覆盖发现、启动审批、握手、健康、停止、取消、超时、崩溃截停和应用重启恢复；状态、脱敏事件、日志和运行时任务写入当前 session。专有能力的适配、运行时资源和 provider-specific 测试继续限定在私有 Infrastructure/测试边界，不改变公开合同，也不把内部调用细节写入公开仓库。
 
 接入配置以协议版本 `1` 的 manifest 和 `ProviderGateway` 为边界。未接入运行时 gateway 时，界面会显示未发现 Provider。合同回归覆盖注册、版本、重复 ID、Schema、权限、缺失、健康失败、终态与迟到事件、非阻塞取消、超时、异步终态可见、错误和本地路径脱敏、刷新原子性、session 写入和重启恢复。
+
+运行时管理界面使用中文显示“未配置、已停止、启动中、健康、异常、停止中”状态，并提供启动、健康检查、停止和恢复建议。受限模式拒绝启动，标准模式要求用户审批，完全访问模式允许自动启动；Provider 异常退出后不会盲目重试。具体 provider 的部署、运行时资源和专有适配仍属于本私有仓库范围，尚未形成面向最终用户的独立安装流程。
 
 ### 会话持久化与上下文压缩
 

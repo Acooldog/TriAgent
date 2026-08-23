@@ -4,8 +4,12 @@ import path from "node:path";
 import { BUILT_IN_TOOL_MANIFESTS } from "../application/builtInTools";
 import { StructuredContextCompressor, type CompressionOptions } from "../application/contextCompression";
 import { ModelService } from "../application/modelService";
+import { ProviderContractError } from "../application/providerProtocol";
 import { ProviderRegistry } from "../application/providerRegistry";
 import { ProviderService } from "../application/providerService";
+import { ProviderRuntimeService } from "../application/providerRuntimeService";
+import { ProviderRuntimeStartPolicy } from "../application/providerRuntimePolicy";
+import type { ProviderRuntimeApprovalRequest } from "../application/providerRuntimeProtocol";
 import type { ChatMessage, ModelConfig, ModelEvent } from "../application/modelProtocol";
 import { SessionPersistenceService, taskStatusForModelError, type SessionEventRecord, type SessionTaskState } from "../application/sessionPersistence";
 import { ToolRegistry, validateManifest, type ToolManifest } from "../application/toolProtocol";
@@ -14,6 +18,7 @@ import { WorkerService } from "../application/workerService";
 import type { WorkerEvent, WorkerOperation } from "../application/workerProtocol";
 import { FileSessionRepository } from "../infrastructure/sessionRepository";
 import { EmptyProviderGateway } from "../infrastructure/emptyProviderGateway";
+import { PrivateProviderRuntimeGateway } from "../infrastructure/privateProviderRuntimeGateway";
 import { PythonWorkerClient } from "../infrastructure/pythonWorker";
 import { OpenAiCompatibleClient } from "../infrastructure/openAiCompatibleClient";
 import { WindowsRegistrySettingsRepository } from "../infrastructure/registrySettingsRepository";
@@ -28,6 +33,7 @@ let modelService: ModelService;
 let toolRegistry: ToolRegistry;
 let sessionPersistence: SessionPersistenceService;
 let providerService: ProviderService;
+let providerRuntimeService: ProviderRuntimeService;
 let compressor: StructuredContextCompressor;
 const activeModelRequests = new Map<string, AbortController>();
 const activeModelTexts = new Map<string, string>();
@@ -105,7 +111,7 @@ function publishModelEvent(requestId: string, event: ModelEvent): void {
 }
 
 function registerIpc(): void {
-  registerProviderIpc({ ipc: ipcMain, service: providerService, selectedContext, publishEvent: (event) => mainWindow?.webContents.send("provider:event", event) });
+  registerProviderIpc({ ipc: ipcMain, service: providerService, runtime: providerRuntimeService, selectedContext, publishEvent: (event) => mainWindow?.webContents.send("provider:event", event) });
   ipcMain.handle("app:get-initialization-state", () => workspaceService.getState());
   ipcMain.handle("workspace:choose-root", async () => {
     if (!mainWindow) return workspaceService.getState();
@@ -183,7 +189,22 @@ function registerIpc(): void {
 }
 
 async function createWindow(): Promise<void> { mainWindow = new BrowserWindow({ width: 1080, height: 720, minWidth: 760, minHeight: 520, backgroundColor: "#f4f7fb", webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: path.join(__dirname, "preload.cjs") } }); await mainWindow.loadFile(path.join(__dirname, "renderer", "index.html")); publishState(workspaceService.getState()); mainWindow.on("closed", () => { mainWindow = null; }); }
-async function bootstrap(): Promise<void> { workerService = new WorkerService(new PythonWorkerClient({ workerScript: path.join(app.getAppPath(), "src", "Presentation", "worker.py") })); toolRegistry = new ToolRegistry(); toolRegistry.refresh(BUILT_IN_TOOL_MANIFESTS); modelService = new ModelService(new OpenAiCompatibleClient(), toolRegistry); sessionPersistence = new SessionPersistenceService(new FileSessionRepository()); compressor = new StructuredContextCompressor(); workspaceService = new WorkspaceService(new FileSystemWorkspaceRepository(), settingsRepository(), installationDirectory(), () => new Date(), randomUUID, sessionPersistence); providerService = new ProviderService(new ProviderRegistry(), new EmptyProviderGateway(), sessionPersistence, refreshContext); registerIpc(); await workspaceService.initialize(); await createWindow(); }
+async function bootstrap(): Promise<void> {
+  workerService = new WorkerService(new PythonWorkerClient({ workerScript: path.join(app.getAppPath(), "src", "Presentation", "worker.py") }));
+  toolRegistry = new ToolRegistry(); toolRegistry.refresh(BUILT_IN_TOOL_MANIFESTS); modelService = new ModelService(new OpenAiCompatibleClient(), toolRegistry);
+  sessionPersistence = new SessionPersistenceService(new FileSessionRepository()); compressor = new StructuredContextCompressor();
+  workspaceService = new WorkspaceService(new FileSystemWorkspaceRepository(), settingsRepository(), installationDirectory(), () => new Date(), randomUUID, sessionPersistence);
+  const providerRegistry = new ProviderRegistry(); providerService = new ProviderService(providerRegistry, new EmptyProviderGateway(), sessionPersistence, refreshContext);
+  const approval = new ProviderRuntimeStartPolicy({ requestStartApproval: requestProviderRuntimeApproval });
+  providerRuntimeService = new ProviderRuntimeService(new PrivateProviderRuntimeGateway(), providerRegistry, approval, sessionPersistence, refreshContext, (providerId, error) => { providerService.stopProvider(providerId, new ProviderContractError(error.code, error.message)); }, (event) => mainWindow?.webContents.send("provider:runtime-event", event));
+  registerIpc(); await workspaceService.initialize(); await providerRuntimeService.initialize(selectedContext() ?? undefined); await createWindow();
+}
+
+async function requestProviderRuntimeApproval(request: ProviderRuntimeApprovalRequest): Promise<boolean> {
+  if (!mainWindow) return false;
+  const result = await dialog.showMessageBox(mainWindow, { type: "question", buttons: ["允许启动", "取消"], defaultId: 0, cancelId: 1, title: "Provider 启动审批", message: `是否允许启动 ${request.displayName}？`, detail: request.reason });
+  return result.response === 0;
+}
 function isCompressionOptions(value: unknown): value is CompressionOptions { if (typeof value !== "object" || value === null || Array.isArray(value)) return false; const options = value as Record<string, unknown>; return typeof options.thresholdTokens === "number" && Number.isFinite(options.thresholdTokens) && options.thresholdTokens > 0 && typeof options.preserveRecentMessages === "number" && Number.isInteger(options.preserveRecentMessages) && options.preserveRecentMessages >= 1 && (options.markdownThresholdTokens === undefined || typeof options.markdownThresholdTokens === "number" && Number.isFinite(options.markdownThresholdTokens) && options.markdownThresholdTokens > 0) && (options.markdownMaxRatio === undefined || typeof options.markdownMaxRatio === "number" && options.markdownMaxRatio > 0 && options.markdownMaxRatio < 1) && (options.writeMarkdown === undefined || typeof options.writeMarkdown === "boolean"); }
 function isModelConfig(value: unknown): value is ModelConfig { if (typeof value !== "object" || value === null || Array.isArray(value)) return false; const config = value as Record<string, unknown>; if (typeof config.baseUrl !== "string" || !config.baseUrl.trim() || typeof config.model !== "string" || !config.model.trim()) return false; if (config.apiKey !== undefined && typeof config.apiKey !== "string") return false; if (config.headers !== undefined && (typeof config.headers !== "object" || config.headers === null || Array.isArray(config.headers))) return false; for (const key of ["maxTokens", "temperature", "connectTimeoutMs", "firstByteTimeoutMs", "readTimeoutMs", "totalTimeoutMs"]) if (config[key] !== undefined && (typeof config[key] !== "number" || !Number.isFinite(config[key]))) return false; return config.thinking === undefined || config.thinking === "enabled" || config.thinking === "disabled"; }
 function isChatMessage(value: unknown): value is ChatMessage { if (typeof value !== "object" || value === null || Array.isArray(value)) return false; const message = value as Record<string, unknown>; return ["system", "user", "assistant", "tool"].includes(String(message.role)) && (typeof message.content === "string" || message.content === null); }

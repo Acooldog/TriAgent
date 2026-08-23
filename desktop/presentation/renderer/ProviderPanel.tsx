@@ -1,12 +1,16 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import type { ProviderEvent, ProviderRegistration } from "../../application/providerProtocol";
+import type { ProviderRuntimeEvent, ProviderRuntimeState } from "../../application/providerRuntimeProtocol";
 import type { PermissionMode } from "../../application/toolProtocol";
 
 export function ProviderPanel(): ReactElement {
   const [providers, setProviders] = useState<ProviderRegistration[]>([]);
   const [events, setEvents] = useState<ProviderEvent[]>([]);
+  const [runtimeStates, setRuntimeStates] = useState<ProviderRuntimeState[]>([]);
+  const [runtimeEvents, setRuntimeEvents] = useState<ProviderRuntimeEvent[]>([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [runtimeMessage, setRuntimeMessage] = useState("");
   const [providerId, setProviderId] = useState("");
   const [capabilityId, setCapabilityId] = useState("");
   const [inputText, setInputText] = useState("{}");
@@ -29,8 +33,13 @@ export function ProviderPanel(): ReactElement {
         setMessage(event.status === "completed" ? "Provider 调用已完成。" : event.status === "cancelled" ? "Provider 调用已取消。" : event.error?.message || "Provider 调用失败。");
       }
     });
-    void window.triMusicAgent.listProviders().then((items) => { if (active) applyProviders(items); });
-    return () => { active = false; unsubscribe(); };
+    const unsubscribeRuntime = window.triMusicAgent.onProviderRuntimeEvent((event) => {
+      if (!active) return;
+      setRuntimeEvents((current) => [...current.slice(-29), event]);
+      if (event.providerId) void window.triMusicAgent.listProviderRuntimes().then((items) => { if (active) setRuntimeStates(items); });
+    });
+    void Promise.all([window.triMusicAgent.listProviders(), window.triMusicAgent.listProviderRuntimes()]).then(([items, runtimes]) => { if (active) { applyProviders(items); setRuntimeStates(runtimes); } });
+    return () => { active = false; unsubscribe(); unsubscribeRuntime(); };
   }, []);
 
   useEffect(() => {
@@ -54,9 +63,10 @@ export function ProviderPanel(): ReactElement {
     setBusy(true);
     setMessage("");
     try {
-      const items = await window.triMusicAgent.refreshProviders();
+      const [items, runtimes] = await Promise.all([window.triMusicAgent.refreshProviders(), window.triMusicAgent.discoverProviderRuntimes()]);
       applyProviders(items);
-      setMessage(items.length ? "Provider 清单和健康状态已刷新。" : "未发现可用的 Provider。");
+      setRuntimeStates(runtimes);
+      setMessage(items.length || runtimes.some((item) => item.providerId) ? "Provider 清单和运行时状态已刷新。" : "未配置 Provider。");
     } catch (error) { setMessage(error instanceof Error ? error.message : "Provider 刷新失败。"); }
     finally { setBusy(false); }
   };
@@ -99,6 +109,31 @@ export function ProviderPanel(): ReactElement {
     } catch (error) { setMessage(error instanceof Error ? error.message : "取消 Provider 调用失败。"); }
   };
 
+  const refreshRuntime = async (providerId: string) => {
+    try {
+      const state = await window.triMusicAgent.checkProviderRuntimeHealth(providerId);
+      setRuntimeStates((current) => current.map((item) => item.providerId === providerId ? state : item));
+      setRuntimeMessage(state.message || "运行时健康检查已完成。");
+    } catch (error) { setRuntimeMessage(error instanceof Error ? error.message : "运行时健康检查失败。"); }
+  };
+
+  const startRuntime = async (providerId: string) => {
+    setRuntimeMessage("");
+    try {
+      const state = await window.triMusicAgent.startProviderRuntime({ providerId, permissionMode });
+      setRuntimeStates((current) => current.map((item) => item.providerId === providerId ? state : item));
+      setRuntimeMessage(state.message || "Provider 运行时已启动。");
+    } catch (error) { setRuntimeMessage(error instanceof Error ? error.message : "Provider 启动失败。"); }
+  };
+
+  const stopRuntime = async (providerId: string) => {
+    try {
+      const state = await window.triMusicAgent.stopProviderRuntime(providerId);
+      setRuntimeStates((current) => current.map((item) => item.providerId === providerId ? state : item));
+      setRuntimeMessage(state.message || "Provider 运行时已停止。");
+    } catch (error) { setRuntimeMessage(error instanceof Error ? error.message : "Provider 停止失败。"); }
+  };
+
   const selected = providers.find((item) => item.manifest.provider_id === providerId);
   return <section className="sessions-panel provider-panel">
     <div className="panel-heading">
@@ -106,6 +141,17 @@ export function ProviderPanel(): ReactElement {
       <button type="button" onClick={() => void refresh()} disabled={busy}>刷新清单</button>
     </div>
     {message ? <p className="message provider-message">{message}</p> : null}
+    <div className="provider-runtime">
+      <div className="panel-heading"><div><h3>运行时管理</h3><p>启动、健康检查和停止只通过通用运行时协议执行。</p></div></div>
+      {runtimeMessage ? <p className="message provider-message">{runtimeMessage}</p> : null}
+      {runtimeStates.length === 0 || (runtimeStates.length === 1 && runtimeStates[0].providerId === null) ? <div className="empty-state">未配置 Provider。请配置后刷新。</div> : <div className="provider-list">{runtimeStates.filter((state) => state.providerId).map((state) => <article className="provider-row" key={state.providerId}>
+        <div className="provider-summary"><div><strong>{state.displayName}</strong><small>{state.providerId}</small></div><span className={`health health-${state.status}`}>{runtimeStatusLabel(state.status)}</span></div>
+        {state.message ? <p className="provider-health-message">{state.message}</p> : null}
+        {state.recoverySuggestion ? <p className="provider-health-message">建议：{state.recoverySuggestion}</p> : null}
+        <div className="worker-actions"><button type="button" onClick={() => void startRuntime(state.providerId!)} disabled={state.status === "starting" || state.status === "healthy"}>启动</button><button type="button" onClick={() => void refreshRuntime(state.providerId!)} disabled={state.status === "starting" || state.status === "stopping"}>检查健康</button><button type="button" onClick={() => void stopRuntime(state.providerId!)} disabled={state.status === "stopped" || state.status === "stopping"}>停止</button></div>
+      </article>)}</div>}
+      {runtimeEvents.length ? <div className="provider-events"><h3>运行时事件</h3>{runtimeEvents.slice().reverse().map((event) => <details className="timeline-entry" key={`${event.operationId}-${event.sequence}`}><summary><strong>{event.eventType}</strong><span>{runtimeStatusLabel(event.status)}</span><small>{formatDate(event.emittedAt)}</small></summary><pre>{formatPayload(event.payload)}</pre></details>)}</div> : null}
+    </div>
     {providers.length === 0 ? <div className="empty-state">暂无已注册的 Provider。</div> : <div className="provider-list">{providers.map((registration) => <article className="provider-row" key={registration.manifest.provider_id}>
       <div className="provider-summary"><div><strong>{registration.manifest.name}</strong><small>{registration.manifest.provider_id} · 版本 {registration.manifest.version}</small></div><span className={`health health-${registration.health.status}`}>{healthLabel(registration.health.status)}</span></div>
       <p>{registration.manifest.capabilities.map((capability) => capability.name).join("、")}</p>
@@ -140,6 +186,15 @@ function eventStatusLabel(status: ProviderEvent["status"]): string {
   if (status === "completed") return "已完成";
   if (status === "cancelled") return "已取消";
   return "失败";
+}
+
+function runtimeStatusLabel(status: ProviderRuntimeState["status"]): string {
+  if (status === "unconfigured") return "未配置";
+  if (status === "stopped") return "已停止";
+  if (status === "starting") return "启动中";
+  if (status === "healthy") return "健康";
+  if (status === "stopping") return "停止中";
+  return "异常";
 }
 
 function formatDate(value: string): string { const date = new Date(value); return Number.isNaN(date.valueOf()) ? "时间未知" : date.toLocaleString(); }
