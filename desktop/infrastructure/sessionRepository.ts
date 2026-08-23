@@ -39,7 +39,11 @@ export class FileSessionRepository implements SessionStore {
       const interrupted = tasks.filter((task) => task.kind === "provider" && task.status === "running");
       if (interrupted.length === 0) return;
       const updatedAt = new Date().toISOString();
-      for (const task of interrupted) await writeJson(path.join(directory, "tasks", task.taskId, "state.json"), { ...task, status: "stopped", updatedAt, completedAt: updatedAt, error: { code: "provider-interrupted", message: "应用重启后，未完成的 Provider 任务已停止。" } });
+      for (const task of interrupted) {
+        await writeJson(path.join(directory, "tasks", task.taskId, "state.json"), { ...task, status: "stopped", updatedAt, completedAt: updatedAt, error: { code: "provider-interrupted", message: "应用重启后，未完成的 Provider 任务已停止。" } });
+        await appendJsonLine(path.join(directory, "events.jsonl"), { eventId: randomUUID(), emittedAt: updatedAt, category: "provider", eventType: "provider_interrupted", status: "stopped", taskId: task.taskId, requestId: task.requestId, payload: { providerId: task.providerId, capabilityId: task.capabilityId }, collapsed: true } satisfies SessionEventRecord);
+        await appendJsonLine(path.join(directory, "logs.jsonl"), { emittedAt: updatedAt, level: "warn", message: "provider_interrupted", context: { providerId: task.providerId, capabilityId: task.capabilityId, taskId: task.taskId } } satisfies SessionLogRecord);
+      }
       const state = normalizeSessionState(await readJsonObject(path.join(directory, "state.json")), session.createdAt);
       if (state.activeTaskId && interrupted.some((task) => task.taskId === state.activeTaskId)) await writeJson(path.join(directory, "state.json"), { ...state, status: "stopped", activeTaskId: null, updatedAt, stopReason: "应用重启后，未完成的 Provider 任务已停止。" });
     });

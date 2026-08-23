@@ -69,5 +69,12 @@ h2 { font-size: 18px; margin-bottom: 6px; }
 .health-healthy { background: #d9f4e6; color: #12633d; }
 .health-unhealthy { background: #ffe0df; color: #a32b2b; }
 .health-unknown { background: #e8edf5; color: #53627a; }
+.provider-invoke { border-top: 1px solid #e0e7f0; display: grid; gap: 12px; margin-top: 20px; padding-top: 20px; }
+.provider-invoke h3 { font-size: 15px; margin: 0; }
+.provider-fields { display: grid; gap: 12px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.provider-fields label, .provider-input { color: #3d4d67; display: grid; font-size: 12px; gap: 6px; }
+.provider-fields select, .provider-input textarea { background: #fff; border: 1px solid #d7dfeb; border-radius: 5px; color: #172033; font: inherit; padding: 9px 10px; }
+.provider-input textarea { min-height: 96px; resize: vertical; }
+.provider-result { background: #f7f9fc; border: 1px solid #e0e7f0; border-radius: 6px; margin: 0; max-height: 220px; overflow: auto; padding: 12px; white-space: pre-wrap; }
 .provider-events { margin-top: 20px; }
 .provider-events h3 { font-size: 14px; margin: 0 0 10px; }

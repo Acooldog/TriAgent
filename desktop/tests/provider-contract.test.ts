@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ProviderContractError, normalizeProviderError, validateProviderManifest, validateProviderOutput, type ProviderManifest } from "../application/providerProtocol";
+import { ProviderContractError, normalizeProviderError, sanitizeProviderData, validateProviderManifest, validateProviderOutput, type ProviderManifest } from "../application/providerProtocol";
 import { ProviderRegistry } from "../application/providerRegistry";
 import { providerManifestFixture as manifest } from "./providerFixture";
+import { validateJsonValue } from "../application/jsonSchema";
 
 test("registers a valid provider manifest", () => {
   const registry = new ProviderRegistry();
@@ -70,4 +71,25 @@ test("normalizes provider errors without exposing sensitive values", () => {
   assert.doesNotMatch(normalized.message, /private-value/);
   const unknown = normalizeProviderError(new Error("internal path and implementation detail"));
   assert.equal(unknown.message, "Provider 执行失败。");
+  const path = normalizeProviderError(new ProviderContractError("provider-execution-failed", "路径=C:\\Users\\name\\My Music\\private.txt"));
+  assert.doesNotMatch(path.message, /Users|Music|private\.txt/);
+});
+
+test("rejects non-finite JSON numbers", () => {
+  assert.deepEqual(validateJsonValue({ type: "number" }, Number.NaN, "value"), ["value 类型应为 number"]);
+  assert.deepEqual(validateJsonValue({ type: "number" }, Number.POSITIVE_INFINITY, "value"), ["value 类型应为 number"]);
+});
+
+test("rejects cyclic schemas and sanitizes cyclic payloads", () => {
+  const cyclicSchema: Record<string, unknown> = { type: "object", properties: {} };
+  (cyclicSchema.properties as Record<string, unknown>).self = cyclicSchema;
+  const invalid = manifest();
+  invalid.capabilities[0].input_schema = cyclicSchema as never;
+  assert.throws(() => validateProviderManifest(invalid), (error: unknown) => error instanceof ProviderContractError && error.code === "provider-schema-invalid");
+  const invalidEnum = manifest();
+  invalidEnum.capabilities[0].input_schema = { type: "number", enum: [Number.NaN] };
+  assert.throws(() => validateProviderManifest(invalidEnum), (error: unknown) => error instanceof ProviderContractError && error.code === "provider-schema-invalid");
+  const cyclicPayload: Record<string, unknown> = { value: "ok" };
+  cyclicPayload.self = cyclicPayload;
+  assert.deepEqual(sanitizeProviderData(cyclicPayload), { value: "ok", self: "[循环引用已脱敏]" });
 });

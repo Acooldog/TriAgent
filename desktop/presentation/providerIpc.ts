@@ -1,6 +1,6 @@
 import type { IpcMain } from "electron";
 import { isRecord } from "../application/jsonSchema";
-import type { ProviderCall, ProviderEvent } from "../application/providerProtocol";
+import { normalizeProviderError, sanitizeProviderData, type ProviderCall, type ProviderEvent } from "../application/providerProtocol";
 import type { ProviderService, ProviderSessionContext } from "../application/providerService";
 
 export interface ProviderIpcDependencies {
@@ -25,14 +25,22 @@ export function registerProviderIpc(dependencies: ProviderIpcDependencies): void
   ipc.handle("providers:invoke", (_event, value: unknown) => {
     const context = dependencies.selectedContext();
     if (!context) throw new Error("请先选择会话。");
-    const handle = service.start(parseProviderCall(value), context, dependencies.publishEvent);
-    void handle.completion.catch(() => undefined);
+    const call = parseProviderCall(value);
+    const handle = service.start(call, context, dependencies.publishEvent);
+    void handle.completion.then((result) => dependencies.publishEvent(terminalEvent(call, handle.requestId, handle.taskId, "completed", { output: sanitizeProviderData(result.output) }))).catch((error: unknown) => {
+      const normalized = normalizeProviderError(error);
+      dependencies.publishEvent(terminalEvent(call, handle.requestId, handle.taskId, normalized.code === "provider-cancelled" ? "cancelled" : "failed", {}, { code: normalized.code, message: normalized.message, retryable: normalized.retryable }));
+    });
     return { requestId: handle.requestId, taskId: handle.taskId };
   });
   ipc.handle("providers:cancel", (_event, taskId: unknown) => {
     if (typeof taskId !== "string" || !taskId.trim()) return false;
     return service.cancel(taskId);
   });
+}
+
+function terminalEvent(call: ProviderCall, requestId: string, taskId: string, status: "completed" | "failed" | "cancelled", payload: Record<string, unknown>, error?: ProviderEvent["error"]): ProviderEvent {
+  return { protocol_version: "1", request_id: requestId, task_id: taskId, provider_id: call.providerId, capability_id: call.capabilityId, sequence: Number.MAX_SAFE_INTEGER, event_type: status === "completed" ? "provider_result" : status === "cancelled" ? "provider_cancelled" : "provider_failed", status, payload, ...(error ? { error } : {}), emitted_at: new Date().toISOString() };
 }
 
 function parseProviderCall(value: unknown): ProviderCall {

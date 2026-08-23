@@ -11,6 +11,7 @@ import { FileSessionRepository } from "../infrastructure/sessionRepository";
 import { JsonSettingsRepository } from "../infrastructure/settingsRepository";
 import { FileSystemWorkspaceRepository } from "../infrastructure/workspaceRepository";
 import { providerManifestFixture } from "./providerFixture";
+import { registerProviderIpc } from "../presentation/providerIpc";
 
 const tempRoot = path.join(process.cwd(), ".tmp");
 
@@ -21,18 +22,22 @@ class FakeProviderGateway implements ProviderGateway {
   public failure: unknown;
   public waitForAbort = false;
   public ignoreAbort = false;
+  public hangAfterEvents = false;
+  public emitLateEventAfterAbort = false;
+  public cancelNeverResolves = false;
   public cancelCalls = 0;
 
   public constructor(public manifests: ProviderManifest[] = [providerManifestFixture()]) {}
   public async discover(): Promise<ProviderManifest[]> { return structuredClone(this.manifests); }
   public async checkHealth(): Promise<ProviderHealth> { if (this.failure) throw this.failure; return structuredClone(this.health); }
   public async invoke(request: ProviderInvocationRequest, onEvent: (event: ProviderEvent) => void, signal: AbortSignal): Promise<ProviderGatewayResult> {
-    if (this.waitForAbort) return new Promise((_resolve, reject) => { if (!this.ignoreAbort) signal.addEventListener("abort", () => { const error = new Error("aborted"); error.name = "AbortError"; reject(error); }, { once: true }); });
+    if (this.waitForAbort) return new Promise((_resolve, reject) => { signal.addEventListener("abort", () => { if (this.emitLateEventAfterAbort) setTimeout(() => onEvent({ protocol_version: "1", request_id: request.requestId, task_id: request.taskId, provider_id: request.providerId, capability_id: request.capabilityId, sequence: 99, event_type: "progress", status: "running", payload: { late: true }, emitted_at: "2026-08-23T00:00:09.000Z" }), 1); if (!this.ignoreAbort) { const error = new Error("aborted"); error.name = "AbortError"; reject(error); } }, { once: true }); });
     for (const [index, event] of this.events.entries()) onEvent({ protocol_version: "1", request_id: request.requestId, task_id: request.taskId, provider_id: request.providerId, capability_id: request.capabilityId, sequence: event.sequence ?? index, emitted_at: `2026-08-23T00:00:0${index}.000Z`, ...event });
+    if (this.hangAfterEvents) return new Promise(() => undefined);
     if (this.failure) throw this.failure;
     return structuredClone(this.result);
   }
-  public async cancel(): Promise<boolean> { this.cancelCalls += 1; return true; }
+  public async cancel(): Promise<boolean> { this.cancelCalls += 1; if (this.cancelNeverResolves) return new Promise(() => undefined); return true; }
 }
 
 async function fixture(gateway = new FakeProviderGateway(), timeoutMs = 100): Promise<{ root: string; session: Awaited<ReturnType<FileSystemWorkspaceRepository["createSession"]>>; persistence: SessionPersistenceService; service: ProviderService; gateway: FakeProviderGateway }> {
@@ -95,6 +100,25 @@ test("rejects provider events that arrive out of order", async () => {
   } finally { await rm(value.root, { recursive: true, force: true }); }
 });
 
+test("rejects events after a terminal event", async () => {
+  const gateway = new FakeProviderGateway();
+  gateway.events = [{ event_type: "completed", status: "completed", payload: {} }, { event_type: "progress", status: "running", payload: {} }];
+  const value = await fixture(gateway);
+  try {
+    await assert.rejects(value.service.invoke({ providerId: "example.provider", capabilityId: "example.echo", input: { text: "run" }, permissionMode: "standard" }, { root: value.root, session: value.session }), (error: unknown) => error instanceof ProviderContractError && error.code === "provider-event-after-terminal");
+  } finally { await rm(value.root, { recursive: true, force: true }); }
+});
+
+test("stops immediately when a failed terminal event arrives", async () => {
+  const gateway = new FakeProviderGateway();
+  gateway.events = [{ event_type: "failed", status: "failed", payload: {}, error: { code: "provider-runtime", message: "运行失败" } }];
+  gateway.hangAfterEvents = true;
+  const value = await fixture(gateway, 1000);
+  try {
+    await assert.rejects(value.service.invoke({ providerId: "example.provider", capabilityId: "example.echo", input: { text: "run" }, permissionMode: "standard" }, { root: value.root, session: value.session }), (error: unknown) => error instanceof ProviderContractError && error.code === "provider-runtime");
+  } finally { await rm(value.root, { recursive: true, force: true }); }
+});
+
 test("cancels an active provider call", async () => {
   const gateway = new FakeProviderGateway(); gateway.waitForAbort = true;
   const value = await fixture(gateway, 1000);
@@ -110,12 +134,34 @@ test("cancels an active provider call", async () => {
   } finally { await rm(value.root, { recursive: true, force: true }); }
 });
 
+test("returns from cancellation without waiting for the gateway", async () => {
+  const gateway = new FakeProviderGateway(); gateway.waitForAbort = true; gateway.cancelNeverResolves = true;
+  const value = await fixture(gateway, 1000);
+  try {
+    const handle = value.service.start({ providerId: "example.provider", capabilityId: "example.echo", input: { text: "run" }, permissionMode: "standard" }, { root: value.root, session: value.session });
+    const completion = assert.rejects(handle.completion, (error: unknown) => error instanceof ProviderContractError && error.code === "provider-cancelled");
+    assert.equal(await Promise.race([value.service.cancel(handle.taskId), new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 50))]), true);
+    await completion;
+  } finally { await rm(value.root, { recursive: true, force: true }); }
+});
+
 test("times out a provider that does not stop itself", async () => {
   const gateway = new FakeProviderGateway(); gateway.waitForAbort = true; gateway.ignoreAbort = true;
   const value = await fixture(gateway, 15);
   try {
     await assert.rejects(value.service.invoke({ providerId: "example.provider", capabilityId: "example.echo", input: { text: "run" }, permissionMode: "standard" }, { root: value.root, session: value.session }), (error: unknown) => error instanceof ProviderContractError && error.code === "provider-timeout");
     assert.equal(gateway.cancelCalls, 1);
+  } finally { await rm(value.root, { recursive: true, force: true }); }
+});
+
+test("ignores late events after timeout", async () => {
+  const gateway = new FakeProviderGateway(); gateway.waitForAbort = true; gateway.ignoreAbort = true; gateway.emitLateEventAfterAbort = true;
+  const value = await fixture(gateway, 15);
+  try {
+    await assert.rejects(value.service.invoke({ providerId: "example.provider", capabilityId: "example.echo", input: { text: "run" }, permissionMode: "standard" }, { root: value.root, session: value.session }), (error: unknown) => error instanceof ProviderContractError && error.code === "provider-timeout");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const snapshot = await value.persistence.load(value.root, value.session);
+    assert.equal(snapshot.events.some((event) => (event.payload.payload as Record<string, unknown> | undefined)?.late === true), false);
   } finally { await rm(value.root, { recursive: true, force: true }); }
 });
 
@@ -139,7 +185,21 @@ test("recovers an interrupted provider task as stopped after application restart
     assert.equal(state.selectedSession?.tasks[0]?.status, "stopped");
     assert.equal(state.selectedSession?.tasks[0]?.error?.code, "provider-interrupted");
     assert.equal(state.selectedSession?.state.activeTaskId, null);
+    assert.equal(state.selectedSession?.events.some((event) => event.eventType === "provider_interrupted"), true);
   } finally { await rm(value.root, { recursive: true, force: true }); }
+});
+
+test("publishes asynchronous provider failures through IPC", async () => {
+  const gateway = new FakeProviderGateway(); gateway.result = { output: { value: 9 } };
+  const registry = new ProviderRegistry(); registry.register(providerManifestFixture()); registry.setHealth("example.provider", { status: "healthy" });
+  const service = new ProviderService(registry, gateway);
+  const handlers = new Map<string, (...args: any[]) => unknown>();
+  const events: ProviderEvent[] = [];
+  registerProviderIpc({ ipc: { handle: (channel: string, handler: (...args: any[]) => unknown) => { handlers.set(channel, handler); } } as never, service, selectedContext: () => ({ root: "D:\\Data", session: { id: "session", createdAt: "2026-08-23T00:00:00.000Z", relativePath: "session" } }), publishEvent: (event) => events.push(event) });
+  const handle = await handlers.get("providers:invoke")!({}, { providerId: "example.provider", capabilityId: "example.echo", input: { text: "run" }, permissionMode: "standard" }) as { taskId: string };
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const terminal = events.find((event) => event.task_id === handle.taskId && event.event_type === "provider_failed");
+  assert.equal(terminal?.error?.code, "provider-output-schema");
 });
 
 test("does not stop a live provider task on later workspace refresh", async () => {

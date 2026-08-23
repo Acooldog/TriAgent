@@ -71,15 +71,23 @@ export class ProviderService {
     const { request, capability, controller } = active;
     let lastSequence = -1;
     let eventQueue = Promise.resolve();
-    let terminalEventError: ProviderContractError | null = null;
+    let acceptingEvents = true;
+    let terminalEventSeen = false;
+    let rejectTerminalEvent!: (error: ProviderContractError) => void;
+    const terminalEventFailure = new Promise<never>((_resolve, reject) => { rejectTerminalEvent = reject; });
     let taskStarted = false;
     const acceptEvent = (event: ProviderEvent): void => {
+      if (!acceptingEvents) return;
+      if (terminalEventSeen) throw new ProviderContractError("provider-event-after-terminal", "Provider 终态后不能继续发送事件。");
       validateProviderEvent(event, request, capability);
       if (event.sequence <= lastSequence) throw new ProviderContractError("provider-event-order", "Provider 事件顺序无效。");
       lastSequence = event.sequence;
       const sanitized = sanitizeEvent(event);
-      if (sanitized.status === "failed" || sanitized.status === "cancelled") terminalEventError = new ProviderContractError(sanitized.status === "cancelled" ? "provider-cancelled" : sanitized.error?.code || "provider-execution-failed", sanitized.error?.message || (sanitized.status === "cancelled" ? "Provider 调用已取消。" : "Provider 执行失败。"));
+      terminalEventSeen = sanitized.status === "completed" || sanitized.status === "failed" || sanitized.status === "cancelled";
       eventQueue = eventQueue.then(async () => { await this.persistProviderEvent(context, sanitized); onEvent(sanitized); });
+      if (sanitized.status === "failed" || sanitized.status === "cancelled") {
+        rejectTerminalEvent(new ProviderContractError(sanitized.status === "cancelled" ? "provider-cancelled" : sanitized.error?.code || "provider-execution-failed", sanitized.error?.message || (sanitized.status === "cancelled" ? "Provider 调用已取消。" : "Provider 执行失败。")));
+      }
     };
 
     let timeout: ReturnType<typeof setTimeout> | undefined;
@@ -96,9 +104,9 @@ export class ProviderService {
         }, request.timeoutMs);
       });
       const cancellationFailure = active.cancellation.then<never>(() => { throw new ProviderContractError("provider-cancelled", "Provider 调用已取消。"); });
-      const result = await Promise.race([this.gateway.invoke(request, acceptEvent, controller.signal), timeoutFailure, cancellationFailure]);
+      const result = await Promise.race([this.gateway.invoke(request, acceptEvent, controller.signal), timeoutFailure, cancellationFailure, terminalEventFailure]);
+      acceptingEvents = false;
       await eventQueue;
-      if (terminalEventError) throw terminalEventError;
       validateProviderOutput(capability, result.output);
       if (result.artifacts) { validateArtifacts(result.artifacts); await this.persistArtifacts(context, result.artifacts); }
       const output = sanitizeProviderData(result.output);
@@ -106,6 +114,8 @@ export class ProviderService {
       await this.persistLifecycle(context, request, "provider_call_completed", "completed", { output });
       return { requestId: request.requestId, taskId: request.taskId, output };
     } catch (error) {
+      acceptingEvents = false;
+      controller.abort();
       await eventQueue.catch(() => undefined);
       const normalized = normalizeProviderError(error);
       const status = normalized.code === "provider-cancelled" || normalized.code === "provider-timeout" ? "stopped" : "failed";
@@ -115,6 +125,7 @@ export class ProviderService {
       }
       throw normalized;
     } finally {
+      acceptingEvents = false;
       if (timeout) clearTimeout(timeout);
       this.active.delete(request.taskId);
     }
@@ -127,7 +138,7 @@ export class ProviderService {
     active.cancelled = true;
     active.controller.abort();
     active.resolveCancellation();
-    await this.gateway.cancel(active.request.providerId, taskId).catch(() => false);
+    void this.gateway.cancel(active.request.providerId, taskId).catch(() => false);
     return true;
   }
 

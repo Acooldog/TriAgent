@@ -144,9 +144,7 @@ export function normalizeProviderError(error: unknown): ProviderContractError {
 }
 
 export function sanitizeProviderData(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sanitizeProviderData);
-  if (!isRecord(value)) return typeof value === "string" ? redactText(value) : value;
-  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, isSensitiveKey(key) ? "[已脱敏]" : sanitizeProviderData(item)]));
+  return sanitizeValue(value, new WeakSet<object>());
 }
 
 function validateCapability(value: unknown): asserts value is ProviderCapabilityManifest {
@@ -162,5 +160,20 @@ function validateCapability(value: unknown): asserts value is ProviderCapability
 function isPermissionMode(value: unknown): value is PermissionMode { return value === "restricted" || value === "standard" || value === "full"; }
 function isEventStatus(value: unknown): value is ProviderEventStatus { return value === "running" || value === "completed" || value === "failed" || value === "cancelled"; }
 function isSensitiveKey(key: string): boolean { return /authorization|api[-_]?key|token|secret|cookie|credential|session/i.test(key); }
-function redactText(value: string): string { return value.replace(/(authorization|api[-_]?key|token|secret|cookie|credential|session)\s*[:=]\s*[^\s,;]+/gi, "$1=[已脱敏]"); }
+function sanitizeValue(value: unknown, ancestors: WeakSet<object>): unknown {
+  if (!Array.isArray(value) && !isRecord(value)) return typeof value === "string" ? redactText(value) : value;
+  if (ancestors.has(value)) return "[循环引用已脱敏]";
+  ancestors.add(value);
+  const sanitized = Array.isArray(value)
+    ? value.map((item) => sanitizeValue(item, ancestors))
+    : Object.fromEntries(Object.entries(value).map(([key, item]) => [key, isSensitiveKey(key) ? "[已脱敏]" : sanitizeValue(item, ancestors)]));
+  ancestors.delete(value);
+  return sanitized;
+}
+function redactText(value: string): string {
+  return value
+    .replace(/(authorization|api[-_]?key|token|secret|cookie|credential|session)\s*[:=]\s*[^\s,;]+/gi, "$1=[已脱敏]")
+    .replace(/[a-z]:\\[^,;\r\n]*/gi, "[本地路径已脱敏]")
+    .replace(/\\\\[^,;\r\n]+/g, "[网络路径已脱敏]");
+}
 function isSafeRelativePath(value: unknown): value is string { return isNonEmptyString(value) && !/^(?:[a-z]:|[\\/])/i.test(value) && !value.split(/[\\/]+/).includes(".."); }
