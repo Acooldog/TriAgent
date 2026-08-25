@@ -7,6 +7,7 @@ import type { ToolManifest } from "../../application/toolProtocol";
 import type { ProviderCall, ProviderEvent, ProviderRegistration } from "../../application/providerProtocol";
 import type { ProviderRuntimeEvent, ProviderRuntimeStartRequest, ProviderRuntimeState } from "../../application/providerRuntimeProtocol";
 import type { DiagnosticReport, DiagnosticsRequest, ErrorSearchIssue, ErrorSearchResult } from "../../application/diagnostics";
+import type { AppSettings } from "../../application/appSettings";
 
 export interface ModelEventEnvelope { requestId: string; event: ModelEvent; }
 
@@ -23,6 +24,7 @@ export interface TriMusicAgentApi {
   onAgentEvent(listener: (event: AgentEvent) => void): () => void;
   onInitializationState(listener: (state: WorkspaceState) => void): () => void;
   onPersistenceError(listener: (error: { label: string; message: string }) => void): () => void;
+  onSessionPersistenceWarning(listener: (warning: { requestId: string; message: string }) => void): () => void;
   startWorker(operation: "ping" | "capability", payload: Record<string, unknown>, permissionMode: "restricted" | "standard" | "full"): Promise<{ requestId: string; taskId: string }>;
   cancelWorker(taskId: string): Promise<boolean>;
   onWorkerEvent(listener: (event: WorkerEvent) => void): () => void;
@@ -48,6 +50,9 @@ export interface TriMusicAgentApi {
   cancelProviderRuntime(providerId: string): Promise<boolean>;
   onProviderEvent(listener: (event: ProviderEvent) => void): () => void;
   onProviderRuntimeEvent(listener: (event: ProviderRuntimeEvent) => void): () => void;
+  getAppSettings(): Promise<AppSettings>;
+  updateAppSettings(partial: Partial<AppSettings>): Promise<AppSettings>;
+  resetAppSettings(): Promise<AppSettings>;
 }
 
 declare global {
@@ -56,4 +61,4 @@ declare global {
   }
 }
 
-export {};
+export { };

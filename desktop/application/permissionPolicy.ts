@@ -20,7 +20,7 @@ export class PermissionPolicyError extends Error {
 }
 
 export class PermissionPolicy {
-  public constructor(private readonly approval: SensitiveOperationApproval) {}
+  public constructor(private readonly approval: SensitiveOperationApproval) { }
 
   public async authorize(request: PermissionRequest): Promise<void> {
     if (request.operation === "network" && request.networkEnabled !== true) {

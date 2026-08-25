@@ -1,9 +1,28 @@
-import { createState } from "./data.js";
+import { createState, loadSettingsFromMain } from "./data.js";
 import { renderApp } from "./ui.js";
 import { createStreamSession, retryConnection, streamText } from "./llm-stream.js";
 const root = document.querySelector("#app");
 const state = createState();
+const debug = (event, payload = {}) => console.info(`[TriMusicAgent][prototype] ${event}`, payload);
 window.triMusicPrototypeRuntime = { state, render: () => render() };
+
+const PERMISSION_MODE_REVERSE = { "受限": "restricted", "标准": "standard", "完全访问": "full" };
+
+async function saveToMain(partial) {
+  debug("save-settings-to-main", Object.keys(partial));
+  try {
+    const updated = await window.triMusicAgent.updateAppSettings(partial);
+    debug("save-settings-saved", updated ? "ok" : "failed");
+    return updated;
+  } catch (error) {
+    console.error("[TriMusicAgent][prototype] 保存设置失败", error instanceof Error ? error.message : error);
+    return null;
+  }
+}
+
+debug("init-loading-settings");
+loadSettingsFromMain(state).then(() => { debug("settings-loaded", { networkEnabled: state.networkEnabled, mode: state.mode }); render(); });
+
 let timer = null;
 let typewriterTimer = null;
 let llmStreamSession = null;
@@ -254,9 +273,23 @@ function handleAction(action, element) {
   if (action === "retry") { state.taskStatus = "处理中"; state.progress = 38; state.stepIndex = 1; toast("已重试失败项（模拟）"); }
   if (action === "clear-queue") { state.queue = []; toast("已清空模拟队列"); }
   if (action === "remove-file") { state.queue = state.queue.filter((file) => file.id !== element.dataset.id); toast("已从队列移除"); }
-  if (action === "toggle-network") { state.networkEnabled = !state.networkEnabled; if (state.page === "llm") state.llmMessages = [...state.llmMessages, { role: "notice", text: `已切换为${state.networkEnabled ? "联网检索模式" : "离线模式"}` }]; else toast(state.networkEnabled ? "已开启联网" : "已关闭联网"); }
+  if (action === "toggle-network") {
+    state.networkEnabled = !state.networkEnabled;
+    debug("toggle-network", state.networkEnabled);
+    void saveToMain({ network: { enabled: state.networkEnabled } });
+    if (state.page === "llm") state.llmMessages = [...state.llmMessages, { role: "notice", text: `已切换为${state.networkEnabled ? "联网检索模式" : "离线模式"}` }];
+    else toast(state.networkEnabled ? "已开启联网" : "已关闭联网");
+  }
   if (action === "cycle-mode") { state.modeMenuOpen = !state.modeMenuOpen; render(); return; }
-  if (action === "select-mode") { state.mode = element.dataset.mode; state.modeMenuOpen = false; if (state.page === "llm") state.llmMessages = [...state.llmMessages, { role: "notice", text: `已切换为${state.mode}模式` }]; else toast(`已切换为${state.mode}模式`); }
+  if (action === "select-mode") {
+    state.mode = element.dataset.mode;
+    state.modeMenuOpen = false;
+    debug("select-mode", state.mode);
+    const mapped = PERMISSION_MODE_REVERSE[state.mode];
+    if (mapped) void saveToMain({ security: { permissionMode: mapped } });
+    if (state.page === "llm") state.llmMessages = [...state.llmMessages, { role: "notice", text: `已切换为${state.mode}模式` }];
+    else toast(`已切换为${state.mode}模式`);
+  }
   if (action === "route-back") { if (state.routeHistory.length > 1) state.routeHistory.pop(); state.page = state.routeHistory[state.routeHistory.length - 1] || "dashboard"; state.conversationMode = false; }
   if (action === "toggle-event") { const body = element.parentElement.querySelector(".event-body"); body.classList.toggle("is-hidden"); element.setAttribute("aria-expanded", String(!body.classList.contains("is-hidden"))); return; }
   if (action === "toggle-conversation-log") { const container = element.closest(".execution-card, .conversation-kimi-execution, .llm-execution-sticky"); const body = container?.querySelector(".tool-events, .conversation-kimi-events, .llm-execution-events"); if (!body) return; state.executionCollapsed = !state.executionCollapsed; container.classList.toggle("is-collapsed", state.executionCollapsed); element.textContent = state.executionCollapsed ? "展开" : "收起"; return; }
@@ -269,10 +302,28 @@ function handleAction(action, element) {
   if (action === "continue") { state.page = "dashboard"; toast("工作数据根目录已就绪（模拟）"); }
   if (action === "open-data-settings") { state.routeHistory = [...state.routeHistory, "settings"]; state.page = "settings"; state.settingsTab = "data"; }
   if (action === "diagnose") toast("完整诊断完成：7 项正常，1 项提示");
-  if (action === "save-settings") { void window.triMusicAgent?.saveModelConfig?.(state.modelConfig).then(() => toast("模型设置已保存")).catch((error) => toast(error instanceof Error ? error.message : "模型设置保存失败。")); }
+  if (action === "save-settings") {
+    debug("save-settings-click");
+    void (async () => {
+      try {
+        const result = await window.triMusicAgent.saveModelConfig(state.modelConfig);
+        debug("save-settings-result", result);
+        const { apiKey: _apiKey, ...rest } = state.modelConfig;
+        await saveToMain({ model: { defaultConfig: rest } });
+        toast("设置已保存");
+      } catch (error) { toast(error instanceof Error ? error.message : "设置保存失败。"); }
+    })();
+  }
   if (action === "select-llm") { state.llmModel = element.dataset.model; state.llmTested = false; toast(`已选择 ${state.llmModel}`); }
   if (action === "test-llm") { void window.triMusicPrototypeModelTest?.(window.triMusicPrototypeRuntime).catch((error) => toast(error instanceof Error ? error.message : "模型连接测试失败。")); }
-  if (action === "reset-llm") { state.llmModel = "DeepSeek-R1"; state.llmProvider = "OpenAI-compatible"; state.llmTested = false; toast("已恢复推荐模型配置"); }
+  if (action === "reset-llm") {
+    state.llmModel = "DeepSeek-R1";
+    state.llmProvider = "OpenAI-compatible";
+    state.llmTested = false;
+    debug("reset-llm");
+    void saveToMain({ model: { defaultConfig: { ...state.modelConfig, model: "DeepSeek-R1" } } });
+    toast("已恢复推荐模型配置");
+  }
   if (action === "compress") { state.compressionDone = true; toast("会话压缩完成，原始消息已保留"); }
   if (action === "toast") toast(element.dataset.message || "操作已完成");
   if (action === "agent-note") toast("Agent 已记录你的补充说明");
@@ -283,7 +334,11 @@ function handleAction(action, element) {
   if (action === "interrupt-llm") { interruptLlm(); return; }
   if (action === "retry-llm") { startLlmRetry(); return; }
   if (action === "scroll-bottom") { const scroll = root.querySelector(".llm-chat-scroll, .conversation-stream"); if (scroll) scroll.scrollTo({ top: scroll.scrollHeight, behavior: "smooth" }); return; }
-  if (action === "toggle-auto-compress") { state.autoCompression = !state.autoCompression; toast(state.autoCompression ? "已开启自动压缩" : "已关闭自动压缩"); }
+  if (action === "toggle-auto-compress") {
+    state.autoCompression = !state.autoCompression;
+    debug("toggle-auto-compress", state.autoCompression);
+    toast(state.autoCompression ? "已开启自动压缩" : "已关闭自动压缩");
+  }
   render();
 }
 root.addEventListener("click", (event) => {
@@ -304,11 +359,39 @@ root.addEventListener("input", (event) => {
   if (target.dataset.input === "library-query") { state.libraryQuery = target.value; render(); }
   if (target.dataset.input === "library-platform") { state.libraryPlatform = target.value; render(); }
   if (target.dataset.input === "library-format") { state.libraryFormat = target.value; render(); }
-      if (target.dataset.input === "context-threshold") { state.compressionThreshold = Math.max(50, Math.min(95, Number(target.value) || 80)); }
-      if (target.dataset.input === "model-api-key") state.modelConfig.apiKey = target.value;
-      if (target.dataset.input === "model-thinking") state.modelConfig.thinking = target.value === "enabled" ? "enabled" : "disabled";
-      if (target.dataset.input === "model-max-tokens") state.modelConfig.maxTokens = Math.max(1, Number(target.value) || 4096);
-      if (target.dataset.input === "model-temperature") state.modelConfig.temperature = Math.max(0, Math.min(2, Number(target.value) || 0.6));
+  if (target.dataset.input === "context-threshold") {
+    state.compressionThreshold = Math.max(50, Math.min(95, Number(target.value) || 80));
+    debug("context-threshold-change", state.compressionThreshold);
+  }
+  if (target.dataset.input === "model-api-key") {
+    state.modelConfig.apiKey = target.value;
+    debug("model-api-key-change");
+  }
+  if (target.dataset.input === "model-name") {
+    state.modelConfig.model = target.value;
+    debug("model-name-change", state.modelConfig.model);
+    void saveToMain({ model: { defaultConfig: { ...state.modelConfig } } });
+  }
+  if (target.dataset.input === "model-base-url") {
+    state.modelConfig.baseUrl = target.value;
+    debug("model-base-url-change", state.modelConfig.baseUrl);
+    void saveToMain({ model: { defaultConfig: { ...state.modelConfig } } });
+  }
+  if (target.dataset.input === "model-thinking") {
+    state.modelConfig.thinking = target.value === "enabled" ? "enabled" : "disabled";
+    debug("model-thinking-change", state.modelConfig.thinking);
+    void saveToMain({ model: { defaultConfig: { ...state.modelConfig } } });
+  }
+  if (target.dataset.input === "model-max-tokens") {
+    state.modelConfig.maxTokens = Math.max(1, Number(target.value) || 4096);
+    debug("model-max-tokens-change", state.modelConfig.maxTokens);
+    void saveToMain({ model: { defaultConfig: { ...state.modelConfig } } });
+  }
+  if (target.dataset.input === "model-temperature") {
+    state.modelConfig.temperature = Math.max(0, Math.min(2, Number(target.value) || 0.6));
+    debug("model-temperature-change", state.modelConfig.temperature);
+    void saveToMain({ model: { defaultConfig: { ...state.modelConfig } } });
+  }
 });
 root.addEventListener("keydown", (event) => { const target = event.target; if (!target.matches(".llm-input, .prompt-text-input") || event.key !== "Enter" || event.shiftKey) return; event.preventDefault(); handleAction(target.matches(".llm-input") ? (state.conversationMode ? "start" : state.llmStreaming ? "interrupt-llm" : "llm-send") : "start", target); });
 render();

@@ -35,6 +35,18 @@ export const diagnostics = [
   ["工作数据根目录", "正常", "D:\\TriMusicAgent\\Data", "2026-08-22 14:30"],
 ];
 
+const DEFAULT_MODEL_CONFIG = {
+  baseUrl: "https://open.bigmodel.cn/api/paas/v4",
+  model: "glm-4.5",
+  apiKey: "",
+  thinking: "enabled",
+  maxTokens: 4096,
+  temperature: 0.6,
+  connectTimeoutMs: 60_000,
+};
+
+const PERMISSION_MODE_MAP = { restricted: "受限", standard: "标准", full: "完全访问" };
+
 export function createState() {
   return {
     page: "dashboard",
@@ -54,7 +66,7 @@ export function createState() {
     compressionDone: false,
     modal: null,
     toast: "",
-    workspaceRoot: "D:\\TriMusicAgent\\Data",
+    workspaceRoot: "",
     sidebarWidth: 82,
     promptText: "",
     attachedPaths: [],
@@ -67,7 +79,7 @@ export function createState() {
     compressionThreshold: 80,
     modeMenuOpen: false,
     llmOutputSpeed: 45,
-    networkEnabled: false,
+    networkEnabled: true,
     autoCompression: false,
     conversationMode: false,
     agentMessages: [],
@@ -76,6 +88,37 @@ export function createState() {
     llmModel: "DeepSeek-R1",
     llmProvider: "OpenAI-compatible",
     llmTested: false,
-    modelConfig: { baseUrl: "https://open.bigmodel.cn/api/paas/v4", model: "glm-4.5", apiKey: "", thinking: "enabled", maxTokens: 4096, temperature: 0.6, connectTimeoutMs: 60_000 },
+    modelConfig: { ...DEFAULT_MODEL_CONFIG },
+    settingsLoaded: false,
   };
+}
+
+export async function loadSettingsFromMain(state) {
+  const debug = (event, payload = {}) => console.info(`[TriMusicAgent][settings] ${event}`, payload);
+  debug("loading-from-main");
+  try {
+    const settings = await window.triMusicAgent.getAppSettings();
+    debug("loaded-from-main", {
+      networkEnabled: settings.network.enabled,
+      permissionMode: settings.security.permissionMode,
+      modelConfigured: Boolean(settings.model.defaultConfig.baseUrl),
+      workspaceRoot: settings.workspace.workspaceRoot,
+      compressionThreshold: settings.compression.defaults.thresholdTokens,
+    });
+
+    state.networkEnabled = settings.network.enabled;
+    state.mode = PERMISSION_MODE_MAP[settings.security.permissionMode] || "标准";
+    if (settings.workspace.workspaceRoot) state.workspaceRoot = settings.workspace.workspaceRoot;
+    if (settings.model.defaultConfig.baseUrl) {
+      state.modelConfig = { ...DEFAULT_MODEL_CONFIG, ...settings.model.defaultConfig };
+      state.llmModel = settings.model.defaultConfig.model || state.llmModel;
+    }
+    if (settings.compression.defaults.thresholdTokens) {
+      state.compressionThreshold = Math.round(settings.compression.defaults.thresholdTokens / 100);
+    }
+    state.settingsLoaded = true;
+    debug("applied-to-state", { networkEnabled: state.networkEnabled, mode: state.mode });
+  } catch (error) {
+    console.error("[TriMusicAgent][settings] 加载失败", error instanceof Error ? error.message : error);
+  }
 }

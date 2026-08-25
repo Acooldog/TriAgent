@@ -76,14 +76,15 @@ async function stopTask(runtime) { await window.triMusicPrototypeBridge.cancelAg
 export async function testModelConnection(runtime) {
   debug("model-test-start", { model: runtime.state.modelConfig.model, baseUrl: runtime.state.modelConfig.baseUrl, apiKeyConfigured: Boolean(runtime.state.modelConfig.apiKey), networkEnabled: runtime.state.networkEnabled });
   if (!runtime.state.modelConfig.apiKey) throw new Error("请先填写 API Key。");
-  if (!runtime.state.networkEnabled) throw new Error("请先打开联网开关。");
+  if (!runtime.state.modelConfig.baseUrl) throw new Error("请先配置 API Base URL。");
+  if (!runtime.state.networkEnabled) debug("model-test-network-disabled", "联网未开启，但模型测试将尝试直接连接");
   activeModel?.unsubscribe?.();
   runtime.state.toast = "正在测试模型连接……";
   runtime.state.llmMessages = [{ role: "notice", text: "正在测试模型连接……" }];
   runtime.render();
   try {
-    debug("model-ipc-call");
-    activeModel = await window.triMusicPrototypeBridge.startModel(runtime.state.modelConfig, [{ role: "user", content: "请只回复：连接成功" }], runtime.state.mode, true, (event) => {
+    debug("model-ipc-call", { networkEnabled: runtime.state.networkEnabled });
+    activeModel = await window.triMusicPrototypeBridge.startModel(runtime.state.modelConfig, [{ role: "user", content: "请只回复：连接成功" }], runtime.state.mode, runtime.state.networkEnabled, (event) => {
       debug("model-event", { type: event.type, code: event.type === "error" ? event.code : undefined });
       if (event.type === "text_delta") runtime.state.llmMessages = [...runtime.state.llmMessages.filter((item) => item.role !== "notice"), { role: "assistant", text: event.text }];
       if (event.type === "response_completed") { runtime.state.llmTested = true; runtime.state.toast = "模型连接测试成功"; activeModel = null; }

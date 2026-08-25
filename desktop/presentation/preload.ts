@@ -8,6 +8,7 @@ import type { ToolManifest } from "../application/toolProtocol";
 import type { ProviderCall, ProviderEvent, ProviderRegistration } from "../application/providerProtocol";
 import type { ProviderRuntimeEvent, ProviderRuntimeStartRequest, ProviderRuntimeState } from "../application/providerRuntimeProtocol";
 import type { DiagnosticReport, DiagnosticsRequest, ErrorSearchIssue, ErrorSearchResult } from "../application/diagnostics";
+import type { AppSettings } from "../application/appSettings";
 
 export interface ModelEventEnvelope {
   requestId: string;
@@ -80,4 +81,12 @@ contextBridge.exposeInMainWorld("triMusicAgent", {
     ipcRenderer.on("session:persistence-error", handler);
     return () => ipcRenderer.removeListener("session:persistence-error", handler);
   },
+  onSessionPersistenceWarning: (listener: (warning: { requestId: string; message: string }) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, warning: { requestId: string; message: string }) => listener(warning);
+    ipcRenderer.on("session:persistence-warning", handler);
+    return () => ipcRenderer.removeListener("session:persistence-warning", handler);
+  },
+  getAppSettings: (): Promise<AppSettings> => ipcRenderer.invoke("app:get-settings"),
+  updateAppSettings: (partial: Partial<AppSettings>): Promise<AppSettings> => ipcRenderer.invoke("app:update-settings", partial),
+  resetAppSettings: (): Promise<AppSettings> => ipcRenderer.invoke("app:reset-settings"),
 });
