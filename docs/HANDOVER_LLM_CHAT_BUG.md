@@ -57,13 +57,13 @@ Renderer 侧日志（完全缺失）：
 | `desktop/presentation/renderer/hooks/useAppState.ts` | Renderer 侧状态管理，注册事件监听 | L133-186: useEffect 注册 onModelEvent |
 | `desktop/presentation/renderer/components/LlmChat.tsx` | UI 渲染组件 | L4-12: 解构 state, L194-198: debug 面板 |
 
-## 已完成的修复尝试（当前代码中）
+## 排查期间完成的尝试
 
 ### 1. reasoning_delta 文本累加（已实现）
 `useAppState.ts` L146-150：reasoning_delta 事件现在也会累加到 `llmReasoningRef`，完成时作为 text_delta 的回退。
 
-### 2. UI 可见 Debug 面板（已实现）
-`LlmChat.tsx` L194-198：底部 DEBUG 面板显示最近事件信息。如果此面板不出现，说明事件完全没到达 renderer。
+### 2. UI 可见 Debug 面板（已移除）
+排查期间曾在 `LlmChat.tsx` 底部显示最近事件信息，用于证明事件没有到达 Renderer。根因确认后已移除该临时英文面板及其状态，保留控制台脱敏日志。
 
 ### 3. 详细控制台日志（已实现）
 `useAppState.ts` L145, L172：每次 text_delta 和 response_completed 都有 console.info。
@@ -104,6 +104,7 @@ console.log("DEBUG: requestId check", { eventRequestId: requestId, refRequestId:
 - ModelEvent 类型：`text_delta | reasoning_delta | tool_call_delta | response_completed | error`
 
 ## 备注
-- 分支：`add/mvp-prototype-decrypt`
-- 最新 commit：`13860a8`（消息：trae）
-- 推送到：`private` remote（GitHub）
+- 原交接分支：`add/mvp-prototype-decrypt`
+- 原交接固定点：`44dfcf4`
+- 修复分支：`fix/llm-chat-render`
+- 验证：Electron 构建、类型检查、74 项测试、控制台构建和 UI 构建通过
