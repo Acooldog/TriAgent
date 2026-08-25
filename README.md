@@ -174,6 +174,8 @@ npm run build:ui
 
 模型设置页提供 API Key、Thinking、最大 Token 和 Temperature。智谱 GLM-4.5 配置示例：Base URL `https://open.bigmodel.cn/api/paas/v4`，模型名 `glm-4.5`，Thinking `enabled`，最大 Token `4096`，Temperature `0.6`。保存设置和测试连接均通过 Electron IPC 执行，API Key 不写入 session 或日志。
 
+模型、Worker、Provider、Agent 和持久化事件会在发送时读取当前 Electron 窗口，避免 IPC 早于窗口创建注册时丢失 Renderer 事件；模型的流式推理与回复文本可在会话页面持续渲染。
+
 ## 调试日志
 
 启动后按 `Ctrl+Shift+I` 打开 Electron 开发者工具，在 Console 查看 `[TriMusicAgent][renderer]`、`[bridge]`、`[main]`、`[model-client]`、`[agent]`、`[provider]`、`[runtime]` 和 `[worker]` 日志。日志覆盖点击、IPC、模型请求、审批、Provider 生命周期、进度、取消、超时和错误；API Key、Token、Cookie、Authorization 等敏感值会自动脱敏。

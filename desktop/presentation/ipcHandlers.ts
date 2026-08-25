@@ -21,6 +21,7 @@ import type { WorkerService } from "../application/workerService";
 import type { WorkerEvent, WorkerOperation } from "../application/workerProtocol";
 import { registerProviderIpc } from "./providerIpc";
 import { debugError, debugInfo } from "../application/debugLogger";
+import { createRendererEventPublisher } from "./rendererEventPublisher";
 
 export interface IpcContext {
   mainWindow: BrowserWindow | null;
@@ -54,14 +55,15 @@ export interface IpcContext {
 }
 
 export function registerIpc(ctx: IpcContext): void {
-  const { mainWindow, workspaceService, workerService, modelService, toolRegistry, sessionPersistence, providerService, providerRuntimeService, compressor, diagnosticsService, errorSearchService, permissions, agentTaskService, getAppSettings, saveAppSettings, settingsRepo, publishState, selectedContext, requestProviderRuntimeApproval, requestSensitiveOperationApproval, checkWorkerHealth, activeModelRequests, activeModelTexts, activeTaskContexts, terminalModelRequests, setPersistenceQueue, setMainWindow } = ctx;
+  const { workspaceService, workerService, modelService, toolRegistry, sessionPersistence, providerService, providerRuntimeService, compressor, diagnosticsService, errorSearchService, permissions, agentTaskService, getAppSettings, saveAppSettings, settingsRepo, publishState, selectedContext, requestProviderRuntimeApproval, requestSensitiveOperationApproval, checkWorkerHealth, activeModelRequests, activeModelTexts, activeTaskContexts, terminalModelRequests, setPersistenceQueue, setMainWindow } = ctx;
+  const publishRendererEvent = createRendererEventPublisher(() => ctx.mainWindow);
 
   const enqueuePersistence = (label: string, operation: () => Promise<void>): void => {
     debugInfo("persistence", "enqueue", { label });
     const current = ctx.persistenceQueue.then(operation);
     setPersistenceQueue(current.catch((error: unknown) => {
       debugError("persistence", "error", error, { label });
-      mainWindow?.webContents.send("session:persistence-error", { label, message: error instanceof Error ? error.message : "会话持久化失败。" });
+      publishRendererEvent("session:persistence-error", { label, message: error instanceof Error ? error.message : "会话持久化失败。" });
     }));
   };
 
@@ -94,7 +96,7 @@ export function registerIpc(ctx: IpcContext): void {
 
   const publishWorkerEvent = (event: WorkerEvent): WorkerEvent => {
     const context = activeTaskContexts.get(event.task_id);
-    mainWindow?.webContents.send("worker:event", event);
+    publishRendererEvent("worker:event", event);
     persistEvent("worker", event.event_type, { payload: event.payload, error: event.error }, { status: event.status, taskId: event.task_id, requestId: event.request_id }, context);
     if (event.event_type === "worker_finished" || event.status === "failed" || event.status === "cancelled") {
       persistTask(event.task_id, event.status === "cancelled" ? "stopped" : event.status, event.request_id, event.error ?? undefined, context);
@@ -106,7 +108,7 @@ export function registerIpc(ctx: IpcContext): void {
   const publishModelEvent = (requestId: string, event: ModelEvent): void => {
     debugInfo("model-ipc", "publish-event", { requestId, type: event.type });
     const context = activeTaskContexts.get(requestId);
-    mainWindow?.webContents.send("model:event", { requestId, event });
+    publishRendererEvent("model:event", { requestId, event });
     if (event.type === "text_delta") activeModelTexts.set(requestId, `${activeModelTexts.get(requestId) ?? ""}${event.text}`);
     if (event.type === "response_completed") {
       const text = activeModelTexts.get(requestId) ?? "";
@@ -118,13 +120,14 @@ export function registerIpc(ctx: IpcContext): void {
   };
 
   debugInfo("main", "register-ipc");
-  registerProviderIpc({ ipc: ipcMain, service: providerService, runtime: providerRuntimeService, permissions, selectedContext, publishEvent: (event) => mainWindow?.webContents.send("provider:event", event) });
+  registerProviderIpc({ ipc: ipcMain, service: providerService, runtime: providerRuntimeService, permissions, selectedContext, publishEvent: (event) => { publishRendererEvent("provider:event", event); } });
 
   ipcMain.handle("app:get-initialization-state", () => { debugInfo("workspace-ipc", "get-state"); return workspaceService.getState(); });
   ipcMain.handle("workspace:choose-root", async () => {
     debugInfo("workspace-ipc", "choose-root");
-    if (!mainWindow) return workspaceService.getState();
-    const result = await dialog.showOpenDialog(mainWindow, { title: "选择工作数据根目录", properties: ["openDirectory", "createDirectory"] });
+    const currentWindow = ctx.mainWindow;
+    if (!currentWindow) return workspaceService.getState();
+    const result = await dialog.showOpenDialog(currentWindow, { title: "选择工作数据根目录", properties: ["openDirectory", "createDirectory"] });
     if (result.canceled || result.filePaths.length === 0) return workspaceService.getState();
     return publishState(await workspaceService.chooseWorkspaceRoot(result.filePaths[0]));
   });
@@ -201,7 +204,7 @@ export function registerIpc(ctx: IpcContext): void {
         activeTaskContexts.set(requestId, context);
       } catch (sessionError) {
         debugError("model-ipc", "session-persistence-failed", sessionError, { requestId });
-        mainWindow?.webContents.send("session:persistence-warning", {
+        publishRendererEvent("session:persistence-warning", {
           requestId,
           message: "会话持久化失败，模型可能失去上下文记忆。",
         });
@@ -264,7 +267,7 @@ export function registerIpc(ctx: IpcContext): void {
     debugInfo("agent-ipc", "start-request", { promptLength: typeof prompt === "string" ? prompt.length : 0, mode });
     if (typeof prompt !== "string" || !prompt.trim()) throw new Error("任务内容不能为空。");
     if (mode !== "restricted" && mode !== "standard" && mode !== "full") throw new Error("权限模式无效。");
-    const handle = agentTaskService.start(prompt, mode, selectedContext() ?? undefined, (event: AgentEvent) => { debugInfo("agent-ipc", "event", { taskId: event.taskId, type: event.type, status: event.status }); mainWindow?.webContents.send("agent:event", event); });
+    const handle = agentTaskService.start(prompt, mode, selectedContext() ?? undefined, (event: AgentEvent) => { debugInfo("agent-ipc", "event", { taskId: event.taskId, type: event.type, status: event.status }); publishRendererEvent("agent:event", event); });
     void handle.completion.catch(() => undefined);
     return { taskId: handle.taskId, plan: handle.plan };
   });

@@ -104,7 +104,6 @@ export function useAppState() {
   const [llmTested, setLlmTested] = useState(false);
   const llmRequestIdRef = useRef<string | null>(null);
   const [llmThinking, setLlmThinking] = useState(false);
-  const [llmDebugText, setLlmDebugText] = useState("");
   const [mode, setMode] = useState("标准");
   const [networkEnabled, setNetworkEnabledState] = useState(true);
   const [modelConfig, setModelConfig] = useState<ModelConfig>(modelCfg);
@@ -141,13 +140,11 @@ export function useAppState() {
         llmTextRef.current += deltaText;
         setLlmThinking(false);
         setLlmStreaming({ text: llmTextRef.current, index: llmTextRef.current.length });
-        setLlmDebugText(`text_delta[${deltaText.length}]: "${deltaText.slice(0, 80)}" | total: ${llmTextRef.current.length}`);
         console.info("[useAppState] text-delta:", { len: deltaText.length, text: deltaText.slice(0, 30), totalLen: llmTextRef.current.length });
       } else if (event.type === "reasoning_delta") {
         const deltaText = event.text ?? "";
         llmReasoningRef.current += deltaText;
         setLlmThinking(true);
-        setLlmDebugText(`reasoning_delta[${deltaText.length}]: "${deltaText.slice(0, 80)}" | reasoningTotal: ${llmReasoningRef.current.length} | textTotal: ${llmTextRef.current.length}`);
       } else if (event.type === "tool_call_delta" && event.name) {
         setLlmThinking(false);
         const toolName = event.name;
@@ -168,7 +165,6 @@ export function useAppState() {
         const rawText = llmTextRef.current;
         const reasoningText = llmReasoningRef.current;
         const finalText = rawText || reasoningText || "连接测试成功";
-        setLlmDebugText(`DONE | textLen: ${rawText.length} | reasoningLen: ${reasoningText.length} | finalLen: ${finalText.length} | first100: "${finalText.slice(0, 100)}"`);
         console.info("[useAppState] response-completed:", { rawLen: rawText.length, reasoningLen: reasoningText.length, finalLen: finalText.length, firstChars: finalText.slice(0, 50) });
         setLlmMessages((prev) => [...prev.filter((m) => m.role !== "notice"), { role: "assistant", text: finalText }]);
         setLlmTested(true);
@@ -176,7 +172,6 @@ export function useAppState() {
       } else if (event.type === "error") {
         setLlmStreaming(null);
         setLlmThinking(false);
-        setLlmDebugText(`ERROR: ${event.message || "未知错误"}`);
         setLlmMessages((prev) => [...prev.filter((m) => m.role !== "notice"), { role: "error", text: event.message || "连接失败" }]);
         llmRequestIdRef.current = null;
         showToast(`连接失败：${event.message || "未知错误"}`);
@@ -266,7 +261,6 @@ export function useAppState() {
     llmReasoningRef.current = "";
     setLlmStreaming({ text: "", index: 0 });
     setLlmThinking(false);
-    setLlmDebugText("");
     try {
       const result = await window.triMusicAgent.startModel(
         modelConfig,
@@ -301,7 +295,6 @@ export function useAppState() {
     llmReasoningRef.current = "";
     setLlmStreaming({ text: "", index: 0 });
     setLlmThinking(false);
-    setLlmDebugText("");
     try {
       const result = await window.triMusicAgent.startModel(
         modelConfig,
@@ -476,7 +469,6 @@ export function useAppState() {
     compressionThreshold, setCompressionThreshold,
     llmTested, setLlmTested,
     llmThinking, setLlmThinking,
-    llmDebugText,
     llmRequestIdRef,
     networkEnabled, toggleNetwork,
     mode, selectMode,

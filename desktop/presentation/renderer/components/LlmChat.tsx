@@ -3,7 +3,7 @@ import type { UseAppStateResult } from "../hooks/useAppState";
 
 export function LlmChat(state: UseAppStateResult) {
   const {
-    llmMessages, llmStreaming, llmThinking, llmDebugText, promptText, setPromptText,
+    llmMessages, llmStreaming, llmThinking, promptText, setPromptText,
     mode, networkEnabled, modeMenuOpen, setModeMenuOpen,
     conversationMode, routeBack, executionCollapsed, setExecutionCollapsed,
     progress, toolEvents, contextUsage, toggleNetwork, selectMode,
@@ -191,11 +191,6 @@ export function LlmChat(state: UseAppStateResult) {
           >{sendLabel}</button>
         </div>
       </div>
-      {llmDebugText ? (
-        <div style={{ margin: "8px auto 0", maxWidth: 720, padding: "8px 12px", color: "#9ff", fontSize: 11, fontFamily: "monospace", background: "#1a1a1a", border: "1px solid #333", borderRadius: 4, wordBreak: "break-all" }}>
-          DEBUG: {llmDebugText}
-        </div>
-      ) : null}
       <small className="llm-disclaimer">内容由 AI 生成，请仔细甄别</small>
     </section>
   );

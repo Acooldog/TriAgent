@@ -8,6 +8,12 @@
 
 ## 根因分析
 
+### 最终确认
+
+`registerIpc()` 在 `createWindow()` 之前执行，并在注册时解构了 `ctx.mainWindow`。当时窗口尚未创建，因此局部变量永久保存为 `null`；后续 `publishModelEvent()` 虽然输出了发布日志，但可选链直接跳过了 `webContents.send()`。
+
+修复使用动态窗口访问器，在每次发布事件时重新读取当前 `ctx.mainWindow`。同一问题影响的模型、Worker、Provider、Agent 和持久化事件发送路径一并改为动态读取；工作区目录选择也不再使用注册时捕获的窗口引用。
+
 ### 事件链路追踪
 
 ```
@@ -15,7 +21,7 @@
   → onEvent({ type: "text_delta", text: delta.content })
   → modelService.stream() 回调
   → ipcHandlers.publishModelEvent(requestId, event)
-  → mainWindow.webContents.send("model:event", { requestId, event })   ← ✅ 主进程日志确认此处成功
+  → mainWindow.webContents.send("model:event", { requestId, event })   ← ❌ 实际窗口引用为注册时捕获的 null
   → preload.ts onModelEvent handler (ipcRenderer.on)                   ← ❓ 断点可能在此
   → useAppState.ts useEffect onModelEvent listener                      ← ❌ 无任何日志
   → React setState → LlmChat.tsx 渲染                                   ← ❌ 无输出
@@ -39,7 +45,7 @@ Renderer 侧日志（完全缺失）：
 [useAppState] response-completed: ...  ← 从未出现
 ```
 
-**结论：事件未能从主进程到达 Renderer 进程。**
+**结论：事件未能从主进程到达 Renderer 进程，根因是 IPC 注册阶段捕获了尚未创建的窗口引用。**
 
 ## 涉及文件
 
