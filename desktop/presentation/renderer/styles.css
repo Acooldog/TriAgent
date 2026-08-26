@@ -4364,8 +4364,17 @@ select:focus {
 }
 
 .llm-chat-message.user {
-    justify-content: end;
+    display: grid !important;
+    grid-template-columns: 32px 1fr;
+    gap: 12px;
+    justify-content: start !important;
+    align-items: start !important;
     padding: 10px 0;
+}
+
+.llm-chat-message.user .llm-avatar {
+    align-self: start !important;
+    order: 0;
 }
 
 .llm-chat-message.user p {
@@ -4374,6 +4383,7 @@ select:focus {
     padding: 9px 13px;
     border-radius: 8px;
     background: var(--km-bg-tertiary);
+    order: 0;
 }
 
 .llm-chat-message p {
@@ -4393,6 +4403,7 @@ select:focus {
 }
 
 .llm-avatar {
+    align-self: start;
     display: grid;
     place-items: center;
     width: 28px;
@@ -4402,6 +4413,7 @@ select:focus {
     background: #e5e5e5;
     font-size: 10px;
     font-weight: 650;
+    margin-top: 4px;
 }
 
 .user-avatar {

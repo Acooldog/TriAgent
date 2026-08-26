@@ -79,7 +79,7 @@ def _xor_with_mask(data: bytes, mask: bytes) -> bytes:
 
 
 def _sniff_audio_ext(data: bytes) -> str:
-    from src.Infrastructure.adapters.media.transcode.transcoder import fast_detect_container_from_bytes
+    from src.Infrastructure.adapters.media.probe.probe_container import fast_detect_container_from_bytes
 
     container = fast_detect_container_from_bytes(data[:64])
     return container if container != "bin" else "mp3"

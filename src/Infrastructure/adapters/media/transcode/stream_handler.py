@@ -91,15 +91,8 @@ def _handle_stream_message(
             # REPLACE pending_text instead of appending to avoid duplication.
             text_content = str(msg.content) if hasattr(msg, "content") and msg.content else ""
             if text_content:
-                # Guard: if pending_text already has content AND new text is NOT
-                # an accumulation of it (doesn't start with it), flush the old first.
-                # This handles the case where LLM sends TWO separate AIMessages
-                # between tool calls (e.g. "好的我来帮你..." then "先看看目录...").
-                if pending_text:
-                    existing = "".join(pending_text)
-                    if existing and not text_content.startswith(existing):
-                        _flush_pending_text(emitter, pending_text)
-                        emitter._log(f"检测到独立 AIMessage，flush 前置内容后替换", "debug")
+                # Replace, don't append. Each yield is the complete accumulated
+                # response so far from the LLM.
                 pending_text.clear()
                 pending_text.append(text_content)
 
