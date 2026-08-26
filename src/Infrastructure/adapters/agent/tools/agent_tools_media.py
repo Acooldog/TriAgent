@@ -1,6 +1,15 @@
 from __future__ import annotations
 
+import pathlib
+
 from src.Infrastructure.adapters.agent.tools.agent_tools_state import _get_event_sink, _to_path, tool
+from src.Infrastructure.adapters.storage.processed_index import (
+    INDEX_FILENAME as DECRYPT_INDEX_FILENAME,
+    load_index,
+    save_index,
+)
+
+TRANSCODE_INDEX_FILENAME = "_transcode_index.json"
 
 
 def _emit_batch_event(event_type: str, payload: dict) -> None:
@@ -49,6 +58,15 @@ def transcode_audio(input_path: str, target_format: str, output_dir: str = "") -
         total = len(targets)
         print(f"[transcode_audio] 待转换文件 {total} 个")
 
+        # 独立的转码去重索引：按源文件目录存 _transcode_index.json
+        # 维度：src_path + size + mtime + target_format
+        transcode_index: dict[pathlib.Path, dict] = {}
+        for tf in targets:
+            idx_path = tf.parent / TRANSCODE_INDEX_FILENAME
+            if idx_path not in transcode_index:
+                transcode_index[idx_path] = load_index(idx_path)
+        MTIME_TOLERANCE = 1.0
+
         _emit_batch_event("batch_started", {
             "platform_id": f"transcode_{fmt}",
             "input_path": str(src),
@@ -70,6 +88,33 @@ def transcode_audio(input_path: str, target_format: str, output_dir: str = "") -
                 skipped += 1
                 print(f"[transcode_audio] 跳过: {file_path.name} - 同扩展名")
                 continue
+            # 转码去重：查 _transcode_index.json
+            idx_path = file_path.parent / TRANSCODE_INDEX_FILENAME
+            t_idx = transcode_index.get(idx_path, {"files": []})
+            try:
+                stat = file_path.stat()
+            except OSError:
+                stat = None
+            already_transcoded = False
+            for rec in t_idx.get("files", []):
+                rec_path = rec.get("rel", "")
+                rec_container = str(rec.get("container", "")).lower().lstrip(".")
+                rec_size = rec.get("size", 0)
+                rec_mtime = rec.get("mtime", 0)
+                if (
+                    rec_path == str(file_path)
+                    and rec_container == fmt.lower()
+                    and stat is not None
+                    and rec_size == stat.st_size
+                    and abs(rec_mtime - stat.st_mtime) < MTIME_TOLERANCE
+                ):
+                    already_transcoded = True
+                    break
+            if already_transcoded:
+                results.append(f"  跳过: {file_path.name} - 已转码为 {fmt}（见 {TRANSCODE_INDEX_FILENAME}）")
+                skipped += 1
+                print(f"[transcode_audio] 跳过: {file_path.name} - 已转码 {fmt}")
+                continue
             if out_path.exists():
                 out_path = out_path.with_name(f"{file_path.stem}_converted.{fmt}")
                 print(f"[transcode_audio] 重命名以避免覆盖: {out_path.name}")
@@ -82,6 +127,19 @@ def transcode_audio(input_path: str, target_format: str, output_dir: str = "") -
                 info = transcode_file(file_path, out_path, fmt)
                 results.append(f"  成功: {file_path.name} -> {info.get('output_path', out_path)}")
                 success += 1
+                # 记录到转码索引
+                if stat is not None:
+                    import datetime as _dt
+                    t_idx.setdefault("files", []).append({
+                        "rel": str(file_path),
+                        "size": stat.st_size,
+                        "mtime": stat.st_mtime,
+                        "container": fmt,
+                        "output_path": str(out_path),
+                        "at": _dt.datetime.now().isoformat(timespec="seconds"),
+                    })
+                    transcode_index[idx_path] = t_idx
+                    save_index(idx_path, t_idx)
                 _emit_batch_event("file_finished", {
                     "index": i, "total": total,
                     "input_path": str(file_path), "result": "ok",

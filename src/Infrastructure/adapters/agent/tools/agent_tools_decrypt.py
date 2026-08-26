@@ -64,7 +64,12 @@ def _run_decrypt_batch(
     if skipped:
         print(f"{log_prefix} 跳过已处理文件 {len(skipped)} 个（见 {INDEX_FILENAME}）")
     if not pending:
-        return f"所有 {len(skipped)} 个文件均已处理过（见 {INDEX_FILENAME}），本次跳过。"
+        # 文件已经解密过了（解密输出文件应该在 output_dir 里），
+        # 返回明确提示让 Agent 知道可以继续调 transcode 转码
+        return (
+            f"所有 {len(skipped)} 个文件均已在 {INDEX_FILENAME} 中记录，解密结果已存在于 {output_dir}，"
+            f"无需重复解密。可继续调用 transcode_audio 对 {output_dir} 中的文件执行格式转换。"
+        )
 
     total = len(pending)
     _emit_batch_event("batch_started", {
