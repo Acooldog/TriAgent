@@ -27,6 +27,7 @@ Agent 在执行任务前和关键工具调用前，像 Coding Agent 一样先发
 - 新增纯路径解析模块，稳定发现仓库根目录、Worker 入口和 `.venv`。
 - `requirements-private.txt` 显式声明 `langchain-openai`。
 - Agent 操作在完整运行时导入后才启动 stdin 取消监听；导入期间取消仍由 Electron 的进程终止兜底。
+- `agent_log` 的实际级别和脱敏消息写入当前会话 `logs.jsonl`，非日志事件继续使用紧凑事件名。
 
 ## 安全说明
 

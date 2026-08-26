@@ -178,6 +178,8 @@ npm run build:ui
 
 Agent 任务会在开始处理和调用工具前发送简短的中文行动说明，例如先核对路径、扫描文件、再执行解密；这些消息描述可见计划和当前动作，不展示模型的隐含推理。Python Worker 强制使用 UTF-8，并按完整字符和完整行转发 stdout/stderr，避免中文日志乱码或拆成多条事件。开发模式会从仓库根目录自动发现 `.venv` 和 Worker 入口。
 
+Agent 的实际日志内容会经过凭据脱敏后追加到当前会话的 `logs.jsonl`，路径位于工作数据根目录下的 `session/YYYY/MM/DD/<session-id>/logs.jsonl`。后续故障诊断优先读取该文件，无需依赖终端滚动输出。
+
 ## 调试日志
 
 启动后按 `Ctrl+Shift+I` 打开 Electron 开发者工具，在 Console 查看 `[TriMusicAgent][renderer]`、`[bridge]`、`[main]`、`[model-client]`、`[agent]`、`[provider]`、`[runtime]` 和 `[worker]` 日志。日志覆盖点击、IPC、模型请求、审批、Provider 生命周期、进度、取消、超时和错误；API Key、Token、Cookie、Authorization 等敏感值会自动脱敏。

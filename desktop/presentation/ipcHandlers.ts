@@ -14,7 +14,7 @@ import type { ProviderService } from "../application/providerService";
 import type { ProviderRuntimeService } from "../application/providerRuntimeService";
 import type { ProviderRuntimeApprovalRequest } from "../application/providerRuntimeProtocol";
 import type { ChatMessage, ModelConfig, ModelEvent } from "../application/modelProtocol";
-import type { SessionPersistenceService, SessionEventRecord, SessionTaskState } from "../application/sessionPersistence";
+import type { SessionPersistenceService, SessionEventRecord, SessionLogRecord, SessionTaskState } from "../application/sessionPersistence";
 import type { ToolRegistry, ToolManifest } from "../application/toolProtocol";
 import type { WorkspaceService, SessionInfo, WorkspaceState, WorkspaceSettings } from "../application/workspaceService";
 import type { WorkerService } from "../application/workerService";
@@ -22,6 +22,7 @@ import type { WorkerEvent, WorkerOperation } from "../application/workerProtocol
 import { registerProviderIpc } from "./providerIpc";
 import { debugError, debugInfo } from "../application/debugLogger";
 import { createRendererEventPublisher } from "./rendererEventPublisher";
+import { createWorkerSessionLog } from "./workerSessionLog";
 
 export interface IpcContext {
   mainWindow: BrowserWindow | null;
@@ -71,13 +72,13 @@ export function registerIpc(ctx: IpcContext): void {
     if (workspaceService.getState().selectedSessionId === context.session.id) publishState(await workspaceService.refreshSelectedSession());
   };
 
-  const persistEvent = (category: SessionEventRecord["category"], eventType: string, payload: Record<string, unknown>, details: Pick<SessionEventRecord, "status" | "taskId" | "requestId"> = {}, taskContext?: { root: string; session: SessionInfo }): void => {
+  const persistEvent = (category: SessionEventRecord["category"], eventType: string, payload: Record<string, unknown>, details: Pick<SessionEventRecord, "status" | "taskId" | "requestId"> = {}, taskContext?: { root: string; session: SessionInfo }, logRecord?: SessionLogRecord): void => {
     const context = taskContext ?? selectedContext();
     if (!context) return;
     const event: SessionEventRecord = { eventId: randomUUID(), emittedAt: new Date().toISOString(), category, eventType, payload, ...details };
     enqueuePersistence(`event:${eventType}`, async () => {
       await sessionPersistence.recordEvent(context.root, context.session, event);
-      await sessionPersistence.recordLog(context.root, context.session, { emittedAt: event.emittedAt, level: details.status === "failed" ? "error" : "info", message: eventType, context: { category, taskId: details.taskId, requestId: details.requestId } });
+      await sessionPersistence.recordLog(context.root, context.session, logRecord ?? { emittedAt: event.emittedAt, level: details.status === "failed" ? "error" : "info", message: eventType, context: { category, taskId: details.taskId, requestId: details.requestId } });
       await refreshContext(context);
     });
   };
@@ -97,7 +98,7 @@ export function registerIpc(ctx: IpcContext): void {
   const publishWorkerEvent = (event: WorkerEvent): WorkerEvent => {
     const context = activeTaskContexts.get(event.task_id);
     publishRendererEvent("worker:event", event);
-    persistEvent("worker", event.event_type, { payload: event.payload, error: event.error }, { status: event.status, taskId: event.task_id, requestId: event.request_id }, context);
+    persistEvent("worker", event.event_type, { payload: event.payload, error: event.error }, { status: event.status, taskId: event.task_id, requestId: event.request_id }, context, createWorkerSessionLog(event));
     if (event.event_type === "worker_finished" || event.status === "failed" || event.status === "cancelled") {
       persistTask(event.task_id, event.status === "cancelled" ? "stopped" : event.status, event.request_id, event.error ?? undefined, context);
       activeTaskContexts.delete(event.task_id);
