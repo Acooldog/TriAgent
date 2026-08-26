@@ -23,11 +23,7 @@ def _flush_pending_text(
     emitter: AgentEventEmitter,
     pending_text: list[str],
 ) -> str:
-    """
-    LangGraph stream_mode='messages' yields the SAME AIMessage with ACCUMULATED content
-    on every chunk — not a delta. So pending_text must be REPLACED each time, not APPENDED.
-    Otherwise 'Hello' becomes 'Hello Hello world Hello world!' (exponential duplication).
-    """
+    """flush pending_text —— emit 给前端并清空。"""
     text = "".join(pending_text).strip()
     if text:
         emitter._log(f"Agent 回复: {text[:150]}", "info")
@@ -37,6 +33,38 @@ def _flush_pending_text(
         })
     pending_text.clear()
     return text
+
+
+# === 智能 delta 模式检测 ===
+# LangGraph stream_mode='messages' 有时发增量（delta），有时发累积（accumulated）。
+# 不同 provider / langchain 版本行为不同。这里自动检测。
+
+_DELTA_MODE: str | None = None  # None=未检测, "delta"=增量, "accumulated"=累积
+_LAST_AI_CONTENT_LEN: int = 0
+
+
+def _detect_and_append_delta(pending_text: list[str], content: str, emitter: AgentEventEmitter) -> None:
+    """智能追加 delta —— 自动检测是增量还是累积模式。"""
+    global _DELTA_MODE, _LAST_AI_CONTENT_LEN
+    if not content:
+        return
+
+    if _DELTA_MODE is None:
+        # 检测模式：如果当前 content 以上一次 content 为前缀 → 累积模式
+        if content.startswith("".join(pending_text)) and len(content) > len("".join(pending_text)):
+            _DELTA_MODE = "accumulated"
+            emitter._log(f"[delta-detect] 检测到累积模式（content 不断扩展），改用 replace 而非 append", "debug")
+        else:
+            _DELTA_MODE = "delta"
+            emitter._log(f"[delta-detect] 检测到增量模式（每个 chunk 是新 token），使用 append", "debug")
+
+    if _DELTA_MODE == "accumulated":
+        # 累积模式：先清空再 replace
+        pending_text.clear()
+        pending_text.append(content)
+    else:
+        # 增量模式：append
+        pending_text.append(content)
 
 
 def _handle_stream_message(
@@ -92,14 +120,14 @@ def _handle_stream_message(
                     "tool_call_id": tool_call_id,
                 }
         else:
-            # LangGraph stream_mode='messages' 发的是 DELTA（增量）
+            # LangGraph stream_mode='messages' 发 AIMessage 纯文本内容
             text_content = str(msg.content) if hasattr(msg, "content") and msg.content else ""
             if text_content:
                 import re as _re
                 text_content = _re.sub(r"<unused\d+>.*?</unused\d+>", "", text_content, flags=_re.DOTALL)
                 text_content = _re.sub(r"<unused\d+>", "", text_content).strip()
                 if text_content:
-                    pending_text.append(text_content)
+                    _detect_and_append_delta(pending_text, text_content, emitter)
 
     elif isinstance(msg, ToolMessage) or msg_type == "ToolMessage":
         _flush_pending_text(emitter, pending_text)
@@ -193,4 +221,5 @@ __all__ = [
     "_flush_pending_text",
     "_generate_recursion_summary",
     "_is_recursion_error",
+    "_detect_and_append_delta",
 ]

@@ -181,8 +181,19 @@ def run_agent(
                         cancelled = True
                         break
                     event_count += 1
+                    if event_count % 20 == 0:
+                        # 定期 flush pending_text —— 防止纯文本回复堆积导致用户看不到输出
+                        _flush_pending_text(emitter, pending_text)
                     if event_count % 50 == 0:
-                        emitter._log(f"已处理 {event_count} 个流式事件...", "debug")
+                        # 详细 debug —— 看看 LLM 到底在发什么
+                        _mt = type(msg).__name__
+                        _mc = str(getattr(msg, "content", ""))[:30] if hasattr(msg, "content") else ""
+                        _has_tc = bool(getattr(msg, "tool_calls", None)) and len(getattr(msg, "tool_calls", None) or []) > 0
+                        _pt_len = sum(len(p) for p in pending_text)
+                        emitter._log(
+                            f"已处理 {event_count} 事件 | 最新={_mt}(content={_mc!r}, tool_calls={_has_tc}) | pending_text={_pt_len}字符",
+                            "debug",
+                        )
                     msg, metadata = item
                     _handle_stream_message(msg, metadata, emitter, tool_call_registry, pending_text)
 
