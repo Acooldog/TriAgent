@@ -82,7 +82,7 @@ def _handle_stream_message(
                 tool_call_id = tc.get("id", "")
                 if not narrated:
                     emitter.emit("agent_message", {
-                        "content": build_tool_action_message(tool_name),
+                        "content": build_tool_action_message(tool_name, tool_args),
                         "kind": "progress",
                     })
                     narrated = True
@@ -330,9 +330,39 @@ def run_agent(
     except Exception as exc:
         import traceback
         tb = traceback.format_exc()
-        emitter._log(f"Agent 执行异常: {exc}\n{tb}", "error")
         completed_count = len(tool_call_registry)
         tool_summary = [info.get("tool_name", "unknown") for info in tool_call_registry.values()]
+
+        # 检测是否为递归限制错误
+        is_recursion_error = _is_recursion_error(exc)
+
+        if is_recursion_error:
+            emitter._log(f"Agent 达到递归限制，转为总结模式: {exc}", "warning")
+            # 让 Agent 自我总结
+            summary_result = _generate_recursion_summary(
+                emitter, create_chat_model, model_config, tool_call_registry,
+                conversation_messages, str(exc),
+            )
+            emitter.emit("agent_message", {
+                "content": summary_result.get("message", ""),
+                "kind": "progress",
+            })
+            emitter.emit("agent_finished", {
+                "status": "completed",
+                "tool_calls_count": completed_count,
+                "response_preview": summary_result.get("message", "")[:200],
+                "elapsed_sec": round(time.perf_counter() - step_started, 3),
+            })
+            return {
+                "status": "completed",
+                "response": summary_result.get("message", ""),
+                "tool_calls": list(tool_call_registry.values()),
+                "iterations": actual_iterations,
+                "elapsed_sec": round(time.perf_counter() - step_started, 3),
+                "recursion_limit_hit": True,
+            }
+
+        emitter._log(f"Agent 执行异常: {exc}\n{tb}", "error")
         emitter.emit("agent_error", {
             "error": str(exc),
             "completed_tool_calls": completed_count,
@@ -368,3 +398,74 @@ def get_available_tools() -> list[dict[str, str]]:
         {"name": name, "description": TOOL_DESCRIPTIONS.get(name, "")}
         for name in TOOL_NAMES
     ]
+
+
+def _is_recursion_error(exc: Exception) -> bool:
+    """检测是否为 LangGraph 递归限制错误。"""
+    msg = str(exc).lower()
+    # GraphRecursionError 的典型特征
+    return any(kw in msg for kw in (
+        "recursion limit",
+        "recursion_limit",
+        "graph recursion",
+        "max iterations",
+        "maximum number of agent steps",
+    ))
+
+
+def _generate_recursion_summary(
+    emitter: AgentEventEmitter,
+    _create_chat_model: Any,
+    model_config: dict[str, Any],
+    tool_call_registry: dict[str, dict[str, Any]],
+    conversation_messages: list,
+    error_msg: str,
+) -> dict[str, Any]:
+    """在递归限制触发后，让 LLM 总结已完成的工作和遇到的问题。"""
+    try:
+        # 构建工具调用摘要
+        tool_lines = []
+        for i, (tc_id, info) in enumerate(tool_call_registry.items(), 1):
+            tool_name = info.get("tool_name", "unknown")
+            tool_input = str(info.get("tool_input", ""))[:200]
+            tool_result = str(info.get("tool_result", ""))[:200]
+            status = "完成" if tool_result else "执行中"
+            tool_lines.append(f"  {i}. `{tool_name}` — 输入: {tool_input[:80]} — {status}")
+
+        tool_summary_text = "\n".join(tool_lines) if tool_lines else "  （无工具调用记录）"
+
+        # 构建总结 prompt
+        summary_prompt = f"""你是 TriMusicAgent。之前的执行因达到最大迭代次数而中止。
+
+已完成的工具调用：
+{tool_summary_text}
+
+错误信息：{error_msg}
+
+请用中文向用户说明：
+1. 已完成了哪些工作
+2. 遇到了什么问题（为什么会达到迭代上限）
+3. 建议用户下一步怎么做（例如：补充更明确的指令、拆分任务等）
+
+请用简洁的 markdown 格式回复，不要调用任何工具。"""
+
+        # 用纯 LLM 调用生成总结（不带工具）
+        llm = _create_chat_model(model_config)
+        response = llm.invoke(summary_prompt)
+        message = str(response.content) if hasattr(response, "content") else str(response)
+
+        emitter._log(f"递归限制总结生成完成: {message[:100]}", "info")
+        return {"message": message}
+    except Exception as e:
+        emitter._log(f"递归总结生成失败: {e}", "error")
+        # 兜底：直接返回工具调用摘要
+        tool_count = len(tool_call_registry)
+        tool_names = [info.get("tool_name", "unknown") for info in tool_call_registry.values()]
+        return {
+            "message": (
+                f"本次任务已完成 {tool_count} 个工具调用"
+                f"（{', '.join(tool_names)}），"
+                f"但因达到最大迭代次数未能全部完成。"
+                f"建议你检查一下任务是否陷入循环，并给出更明确的指令。"
+            )
+        }

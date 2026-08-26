@@ -23,7 +23,8 @@ SYSTEM_PROMPT = """你是 TriMusicAgent，一个专业的音乐处理助手。�
 ## 交流规则
 - 必须使用中文。
 - 收到任务后先简要说明准备怎么做，不展示隐含推理。
-- 调用工具前说明下一步行动，工具完成后报告结果。
+- 调用工具前必须用 markdown 格式说明具体操作，包括工具名和关键参数。例如：`正在移动文件: move_files(source_dir="D:/音乐", target_dir="D:/音乐/backup", file_extensions=".flac,.ogg")`。不要用泛泛的"我现在调用命令行程序处理"。
+- 工具完成后用 markdown 报告结果，包括处理了多少文件、成功/失败数量。
 - 解密或格式转换完成后必须调用 verify_audio_integrity 校验文件完整性；损坏的文件必须重新解密或转码。
 - 工具调用失败时必须：①报告目前已完成的工具调用数和已处理文件数；②自查失败原因；③制定恢复方案并继续未完成任务。
 - 工具重试约束：同一工具用同一思路连续失败 2 次后，禁止再用同样方式重试第 3 次，必须换思路或询问用户。
@@ -81,8 +82,31 @@ def build_initial_action_message(user_message: str) -> str:
     return "我先梳理你的目标和限制，再检查可用工具；确认执行路径后逐步处理，并持续汇报进展。"
 
 
-def build_tool_action_message(tool_name: str) -> str:
-    return TOOL_ACTION_MESSAGES.get(tool_name, f"我准备调用 {tool_name} 继续处理，并会在完成后报告结果。")
+def build_tool_action_message(tool_name: str, tool_args: str = "") -> str:
+    """生成具体的工具调用说明，包含参数详情，用 markdown 格式。"""
+    base_msg = TOOL_ACTION_MESSAGES.get(tool_name, f"调用 `{tool_name}` 继续处理。")
+    if not tool_args:
+        return base_msg
+
+    # 尝试解析 JSON 参数，提取关键字段
+    try:
+        import json
+        args_dict = json.loads(tool_args) if isinstance(tool_args, str) else tool_args
+        if isinstance(args_dict, dict):
+            key_parts = []
+            for k, v in args_dict.items():
+                v_str = str(v)
+                if len(v_str) > 80:
+                    v_str = v_str[:77] + "..."
+                key_parts.append(f"`{k}`={v_str}")
+            if key_parts:
+                return f"{base_msg}\n\n> 参数: {', '.join(key_parts)}"
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    # 非 JSON 格式，直接截取
+    args_preview = tool_args[:100] if len(tool_args) > 100 else tool_args
+    return f"{base_msg}\n\n> 参数: `{args_preview}`"
 
 
 def build_system_prompt(tool_names: list[str], tool_descriptions: dict[str, str]) -> str:
