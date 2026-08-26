@@ -35,6 +35,58 @@ def _subprocess_window_kwargs() -> dict[str, object]:
     return {}
 
 
+def _run_ffmpeg_safely(
+    command: list[str],
+    timeout: int = 300,
+    desc: str = "ffmpeg",
+) -> subprocess.CompletedProcess[str]:
+    """安全执行 ffmpeg/ffprobe 命令，防止卡死。
+
+    使用 Popen + communicate(timeout=...) 避免 capture_output 的管道死锁，
+    并在超时后强制终止进程树。所有命令添加 -nostdin 防止等待标准输入。
+    """
+    # 确保命令包含 -nostdin，防止 ffmpeg 等待 stdin
+    if "-nostdin" not in command:
+        command = [command[0], "-nostdin", *command[1:]]
+
+    proc = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        **_subprocess_window_kwargs(),
+    )
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+        return subprocess.CompletedProcess(
+            args=command,
+            returncode=proc.returncode,
+            stdout=stdout or "",
+            stderr=stderr or "",
+        )
+    except subprocess.TimeoutExpired:
+        # 强制杀死进程，Windows 上需要 taskkill 终止子进程
+        proc.kill()
+        try:
+            proc.wait(timeout=10)
+        except Exception:
+            pass
+        # Windows 上用 taskkill 兜底
+        if hasattr(subprocess, "CREATE_NO_WINDOW"):
+            try:
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                    capture_output=True,
+                    timeout=5,
+                    **_subprocess_window_kwargs(),
+                )
+            except Exception:
+                pass
+        raise RuntimeError(f"{desc} 超时（{timeout}秒），已强制终止")
+
+
 def normalize_target_format(value: str) -> str:
     normalized = str(value or "auto").strip().lower()
     if normalized == "ogg":
@@ -125,15 +177,11 @@ def probe_audio_container(input_path: pathlib.Path) -> str | None:
         "null",
         "NUL",
     ]
-    completed = subprocess.run(
-        command,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-        **_subprocess_window_kwargs(),
-    )
+    try:
+        completed = _run_ffmpeg_safely(command, timeout=60, desc="音频格式探测")
+    except RuntimeError as exc:
+        print(f"[probe_audio_container] 超时或失败: {input_path.name} - {exc}")
+        return None
     stderr = completed.stderr or ""
     marker = "Input #0, "
     start = stderr.find(marker)
@@ -264,15 +312,23 @@ def probe_media_summary(input_path: pathlib.Path) -> dict[str, Any]:
                 str(input_path),
             ]
             # ffprobe 输出到 stdout，不需要输出文件
-            completed = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                check=False,
-                **_subprocess_window_kwargs(),
-            )
+            try:
+                completed = _run_ffmpeg_safely(command, timeout=60, desc="音频元数据探测")
+            except RuntimeError as exc:
+                print(f"[probe_audio_metadata] ffprobe 超时: {input_path.name} - {exc}")
+                if mutagen_summary is not None:
+                    return mutagen_summary
+                return {
+                    "path": str(input_path),
+                    "probe_source": "ffprobe_timeout",
+                    "container": fast_container,
+                    "audio_streams": 0,
+                    "video_streams": 0,
+                    "cover": False,
+                    "cover_codec": "",
+                    "metadata": {},
+                    "stderr": str(exc),
+                }
             if completed.returncode != 0:
                 if mutagen_summary is not None:
                     return mutagen_summary
@@ -316,16 +372,13 @@ def probe_media_summary(input_path: pathlib.Path) -> dict[str, Any]:
                 "null",
                 "NUL",
             ]
-            completed = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                check=False,
-                **_subprocess_window_kwargs(),
-            )
-            format_name = _extract_format_from_stderr(completed.stderr or "")
+            try:
+                completed = _run_ffmpeg_safely(command, timeout=60, desc="容器类型回退探测")
+            except RuntimeError as exc:
+                print(f"[probe_audio_metadata] ffmpeg fallback 超时: {input_path.name} - {exc}")
+                format_name = ""
+            else:
+                format_name = _extract_format_from_stderr(completed.stderr or "")
             streams = []
             fmt = {"format_name": format_name}
             # ffmpeg 回退：只能获取容器类型，无法获取详细流信息
@@ -465,16 +518,7 @@ def transcode_file(
         str(temp_output),
     ]
     try:
-        completed = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-            timeout=300,
-            **_subprocess_window_kwargs(),
-        )
+        completed = _run_ffmpeg_safely(command, timeout=300, desc="ffmpeg 转码")
         if completed.returncode != 0:
             stderr = completed.stderr.strip() or completed.stdout.strip() or f"ffmpeg rc={completed.returncode}"
             raise RuntimeError(f"ffmpeg transcode failed: {stderr}")
@@ -482,8 +526,10 @@ def transcode_file(
             output_path.unlink()
         temp_output.replace(output_path)
         return {"ffmpeg_path": str(ffmpeg_path), "output_path": str(output_path), "return_code": completed.returncode}
-    except subprocess.TimeoutExpired:
-        raise RuntimeError(f"ffmpeg 转码超时（300秒）: {input_path.name}")
+    except RuntimeError:
+        raise
+    except Exception as exc:
+        raise RuntimeError(f"ffmpeg 转码异常: {exc}")
     finally:
         if temp_output.exists():
             try:
@@ -500,16 +546,7 @@ def _run_ffmpeg_command(
 ) -> dict[str, str | int]:
     """执行 ffmpeg 命令并处理结果。"""
     try:
-        completed = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-            timeout=300,
-            **_subprocess_window_kwargs(),
-        )
+        completed = _run_ffmpeg_safely(command, timeout=300, desc="ffmpeg 执行")
         if completed.returncode != 0:
             stderr = completed.stderr.strip() or completed.stdout.strip() or f"ffmpeg rc={completed.returncode}"
             raise RuntimeError(f"ffmpeg 执行失败: {stderr}")
@@ -521,8 +558,10 @@ def _run_ffmpeg_command(
             "output_path": str(output_path),
             "return_code": completed.returncode,
         }
-    except subprocess.TimeoutExpired:
-        raise RuntimeError(f"ffmpeg 执行超时（300秒）")
+    except RuntimeError:
+        raise
+    except Exception as exc:
+        raise RuntimeError(f"ffmpeg 执行异常: {exc}")
     finally:
         if temp_output.exists():
             try:

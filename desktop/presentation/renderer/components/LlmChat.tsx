@@ -196,25 +196,6 @@ export function LlmChat(state: UseAppStateResult) {
               className="llm-chat-messages"
               dangerouslySetInnerHTML={{ __html: `${messages}${thinkingHtml}${retryHtml}${streamingHtml}` }}
             />
-            {agentQuestion ? (
-              <div className="llm-question-overlay">
-                <div className="llm-question-card">
-                  <div className="llm-question-title">Agent 需要你的确认</div>
-                  <p className="llm-question-text">{agentQuestion.question}</p>
-                  <div className="llm-question-options">
-                    {agentQuestion.options.map((opt) => (
-                      <button
-                        key={opt}
-                        className="llm-question-option"
-                        onClick={() => answerAgentQuestion(opt)}
-                      >
-                        {opt}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ) : null}
           </div>
         ) : (
           <div
@@ -223,6 +204,25 @@ export function LlmChat(state: UseAppStateResult) {
           />
         )}
       </div>
+      {agentQuestion ? (
+        <div className="llm-question-overlay">
+          <div className="llm-question-card">
+            <div className="llm-question-title">Agent 需要你的确认</div>
+            <p className="llm-question-text">{agentQuestion.question}</p>
+            <div className="llm-question-options">
+              {agentQuestion.options.map((opt) => (
+                <button
+                  key={opt}
+                  className="llm-question-option"
+                  onClick={() => answerAgentQuestion(opt)}
+                >
+                  {opt}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
       <button className="to-bottom-button" aria-label="回到底部" onClick={() => {
         const el = document.querySelector(".llm-chat-scroll");
         if (el) el.scrollTop = el.scrollHeight;

@@ -68,31 +68,36 @@ TOOL_DESCRIPTIONS = {
 }
 
 
-# 线程本地存储 ask_user 回调和权限模式，避免多 Agent 并发冲突
-_ask_user_local = threading.local()
+# 使用全局变量存储 ask_user 回调（而非 threading.local），
+# 因为 LangChain 的工具调用可能在不同线程执行，threading.local 会导致回调丢失。
+_ask_user_callback: Any | None = None
+_callback_lock = threading.Lock()
 
 
 def set_ask_user_callback(callback: Any) -> None:
-    """注入 ask_user 工具的回调（worker 启动 agent 前调用）。
-    使用线程本地存储，支持多 Agent 并发。"""
-    _ask_user_local.callback = callback
+    """注入 ask_user 工具的回调（worker 启动 agent 前调用）。"""
+    global _ask_user_callback
+    with _callback_lock:
+        _ask_user_callback = callback
 
 
 def _get_ask_user_callback() -> Any | None:
-    """获取当前线程的 ask_user 回调。"""
-    return getattr(_ask_user_local, "callback", None)
+    """获取 ask_user 回调。"""
+    global _ask_user_callback
+    with _callback_lock:
+        return _ask_user_callback
 
 
 def set_permission_mode(mode: str) -> None:
     """注入权限模式（worker 启动 agent 前调用）。
-    可选值：restricted / standard / full。
-    使用线程本地存储，支持多 Agent 并发。"""
-    _permission_mode_local.mode = mode
+    可选值：restricted / standard / full。"""
+    global _permission_mode
+    _permission_mode = mode
 
 
 def _get_permission_mode() -> str:
-    """获取当前线程的权限模式。默认 standard。"""
-    return getattr(_permission_mode_local, "mode", "standard")
+    """获取当前权限模式。默认 standard。"""
+    return _permission_mode
 
 def _find_kugou_key() -> pathlib.Path | None:
     key = auto_find_kugou_key(_get_paths())
@@ -674,8 +679,8 @@ _DANGEROUS_CLI_COMMANDS: set[str] = {
 # 完整白名单（安全 + 危险）
 _ALLOWED_CLI_COMMANDS = _SAFE_CLI_COMMANDS | _DANGEROUS_CLI_COMMANDS
 
-# 全局权限模式存储（线程本地，支持多 Agent 并发）
-_permission_mode_local = threading.local()
+# 全局权限模式存储（使用全局变量而非 threading.local，因为工具调用可能跨线程）
+_permission_mode: str = "standard"
 
 
 @tool

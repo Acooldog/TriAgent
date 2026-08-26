@@ -4502,6 +4502,10 @@ select:focus {
     background: var(--km-bg-secondary);
     backdrop-filter: blur(12px);
     transition: all .25s ease;
+    max-height: 420px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
 }
 
 .llm-execution-sticky.is-collapsed {
@@ -4553,8 +4557,8 @@ select:focus {
     overflow-y: auto;
     overscroll-behavior: contain;
     padding-right: 4px;
-    /* 确保滚动容器独立，不会溢出 */
-    contain: content;
+    flex: 1;
+    min-height: 0;
 }
 
 .llm-execution-sticky.is-collapsed .llm-execution-events {
