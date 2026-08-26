@@ -6,7 +6,7 @@
  */
 import { useEffect, useRef } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import type { BatchProgressState, HistoryItem, LlmMessage, ToolEvent } from "./useAppState.types";
+import type { BatchProgressState, HistoryItem, LlmMessage, ToolEvent, AgentSegment } from "./useAppState.types";
 
 interface ModelEventDeps {
   llmRequestIdRef: React.MutableRefObject<string | null>;
@@ -87,6 +87,7 @@ interface WorkerEventDeps {
   setTaskStatus: Dispatch<SetStateAction<string>>;
   toolActionPattern: RegExp;
   setBatchProgress: Dispatch<SetStateAction<BatchProgressState>>;
+  setAgentSegments: Dispatch<SetStateAction<AgentSegment[]>>;
 }
 
 export function useWorkerEventListener(deps: WorkerEventDeps) {
@@ -114,6 +115,7 @@ function handleWorkerEvent(args: { deps: WorkerEventDeps; eventType: string; pay
     case "agent_started": {
       const taskId = String(event.task_id ?? "");
       deps.setToolEvents([]);
+      deps.setAgentSegments([]);
       deps.setAgentMessages((prev) => [...prev, { role: "notice", text: "Agent 已启动，正在连接模型和加载工具..." }]);
       if (taskId) {
         deps.setAgentMessages((prev) => {
@@ -148,6 +150,8 @@ function handleWorkerEvent(args: { deps: WorkerEventDeps; eventType: string; pay
       const elapsedSec = Number(payload.elapsed_sec ?? 0);
       const step = Number(payload.step ?? 0);
       const hasResult = toolResult && toolResult !== "执行中...";
+
+      // --- ToolEvent (for ExecutionPanel compatibility) ---
       deps.setToolEvents((prev) => {
         const existingIdx = prev.findIndex((t) => t.step === step && t.name === toolName);
         if (existingIdx >= 0) {
@@ -164,12 +168,42 @@ function handleWorkerEvent(args: { deps: WorkerEventDeps; eventType: string; pay
         return [...prev, { name: toolName, detail: toolInput ? `输入: ${toolInput.slice(0, 60)}` : "执行中", status: "running" as const, toolResult: toolResult.slice(0, 200), elapsedSec, step } as ToolEvent];
       });
       deps.setProgress((prev) => Math.min(90, prev + 8));
+
+      // --- AgentSegment (for segmented execution UI) ---
+      deps.setAgentSegments((prev) => {
+        const segId = `tool-${toolName}-${step}`;
+        const existing = prev.findIndex((s) => s.id === segId);
+        const now = Date.now();
+        const title = `调用 ${toolName}`;
+        const content = toolInput
+          ? `参数: ${toolInput.slice(0, 200)}${toolInput.length > 200 ? "..." : ""}${hasResult ? `\n\n结果: ${toolResult.slice(0, 300)}${toolResult.length > 300 ? "..." : ""}` : ""}`
+          : hasResult ? `结果: ${toolResult.slice(0, 300)}${toolResult.length > 300 ? "..." : ""}` : "执行中...";
+        if (existing >= 0) {
+          const updated = [...prev];
+          updated[existing] = {
+            ...updated[existing],
+            status: hasResult ? "done" : "running",
+            content,
+            toolResult: hasResult ? toolResult.slice(0, 500) : undefined,
+            elapsedSec,
+            finishedAt: hasResult ? now : undefined,
+          };
+          return updated;
+        }
+        return [...prev, {
+          id: segId, type: "tool_call", status: hasResult ? "done" : "running",
+          title, content, createdAt: now, finishedAt: hasResult ? now : undefined,
+          toolName, toolArgs: toolInput.slice(0, 200), toolResult: hasResult ? toolResult.slice(0, 500) : undefined,
+          elapsedSec,
+        }];
+      });
       break;
     }
     case "agent_step_finished": {
       const step = Number(payload.step ?? 0);
       const elapsedSec = Number(payload.elapsed_sec ?? 0);
       deps.setToolEvents((prev) => prev.map((t) => t.status === "running" ? { ...t, status: "done" as const, detail: t.toolResult ? `完成 (${elapsedSec}s)` : t.detail } : t));
+      deps.setAgentSegments((prev) => prev.map((s) => s.status === "running" ? { ...s, status: "done", finishedAt: Date.now() } : s));
       deps.setStepIndex((prev) => Math.max(step, prev));
       deps.setProgress((prev) => Math.min(95, prev + 15));
       break;
@@ -265,6 +299,23 @@ function handleWorkerEvent(args: { deps: WorkerEventDeps; eventType: string; pay
       if (content) {
         const isToolAction = deps.toolActionPattern.test(content);
         deps.setAgentMessages((prev) => [...prev, { role: (isToolAction ? "notice" : "assistant") as LlmMessage["role"], text: content }]);
+        // Thinking/progress messages → create thinking segment (only if it looks like planning/thinking text)
+        if (String(payload.kind ?? "") === "progress" || (!isToolAction && content.length < 200)) {
+          deps.setAgentSegments((prev) => {
+            // Merge consecutive thinking segments by appending content to last one
+            const last = prev[prev.length - 1];
+            if (last && last.type === "thinking" && last.status === "running") {
+              const updated = [...prev];
+              updated[prev.length - 1] = { ...last, content: last.content + "\n" + content };
+              return updated;
+            }
+            return [...prev, {
+              id: `thinking-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              type: "thinking", status: "running",
+              title: "思考中", content, createdAt: Date.now(),
+            }];
+          });
+        }
       }
       break;
     }
@@ -285,6 +336,7 @@ function handleWorkerEvent(args: { deps: WorkerEventDeps; eventType: string; pay
       deps.setProgress(100);
       deps.setTaskStatus(finalStatus === "completed" ? "成功" : "失败");
       deps.setToolEvents((prev) => prev.map((t) => t.status === "running" ? { ...t, status: "done" } : t));
+      deps.setAgentSegments((prev) => prev.map((s) => s.status === "running" ? { ...s, status: "done", finishedAt: Date.now() } : s));
       deps.setAgentQuestion(null);
       deps.agentTaskIdRef.current = null;
       if (finalStatus !== "completed") {

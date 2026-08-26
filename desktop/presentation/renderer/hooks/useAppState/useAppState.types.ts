@@ -64,5 +64,22 @@ export interface BatchProgressState {
   finalMessage?: string;
 }
 
+export type AgentSegmentType = "thinking" | "tool_call" | "result";
+export type AgentSegmentStatus = "running" | "done" | "error";
+
+export interface AgentSegment {
+  id: string;
+  type: AgentSegmentType;
+  status: AgentSegmentStatus;
+  title: string;
+  content: string;
+  createdAt: number;
+  finishedAt?: number;
+  toolName?: string;
+  toolArgs?: string;
+  toolResult?: string;
+  elapsedSec?: number;
+}
+
 // NOTE: UseAppStateResult is defined in useAppState.ts via ReturnType,
 // re-exported from there for consumers.

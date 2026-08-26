@@ -12,10 +12,10 @@ import type { ModelConfig } from "../../../../application/model/modelProtocol";
 import { useAppSettings } from "../../useAppSettings";
 
 // --- Re-exports for consumers ---
-export type { Page, FileItem, HistoryItem, LlmMessage, AgentQuestion, ToolEvent, BatchProgressState } from "./useAppState.types";
+export type { Page, FileItem, HistoryItem, LlmMessage, AgentQuestion, ToolEvent, BatchProgressState, AgentSegment } from "./useAppState.types";
 export { INITIAL_FILES, HISTORY_STORAGE_KEY, loadHistoryFromStorage, PERMISSION_MODE_MAP, REVERSE_MODE_MAP, AGENT_TRIGGER_KEYWORDS, TOOL_ACTION_PATTERN } from "./useAppState.helpers";
 import { INITIAL_FILES, HISTORY_STORAGE_KEY, loadHistoryFromStorage, PERMISSION_MODE_MAP, TOOL_ACTION_PATTERN } from "./useAppState.helpers";
-import type { Page, FileItem, HistoryItem, BatchProgressState } from "./useAppState.types";
+import type { Page, FileItem, HistoryItem, BatchProgressState, AgentSegment } from "./useAppState.types";
 import { useAgentState } from "./useAppState.agent";
 import { useModelEventListener, useWorkerEventListener, useSessionWarningListener } from "./useAppState.events";
 
@@ -65,6 +65,7 @@ export function useAppState() {
     active: false, kind: "generic", totalCount: 0, currentIndex: 0, currentProgress: 0,
     successCount: 0, skippedCount: 0, failedCount: 0, finished: false,
   });
+  const [agentSegments, setAgentSegments] = useState<AgentSegment[]>([]);
   const [compressionDone, setCompressionDone] = useState(false);
   const dashboardPromptRef = useRef<string | null>(null);
 
@@ -136,6 +137,7 @@ export function useAppState() {
     setTaskStatus: agent.setTaskStatus,
     toolActionPattern: TOOL_ACTION_PATTERN,
     setBatchProgress,
+    setAgentSegments,
   });
 
   useSessionWarningListener(showToast);
@@ -261,6 +263,7 @@ export function useAppState() {
     promptText, setPromptText,
     attachedPaths, setAttachedPaths,
     batchProgress,
+    agentSegments,
     compressionDone, setCompressionDone,
     dashboardPromptRef,
     // spread agent state
