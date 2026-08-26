@@ -64,7 +64,7 @@ test("emits the initial action message before runtime setup", () => {
 test("worker publishes the action message before loading the full agent runtime", async () => {
   const events: Array<{ event_type: string; payload: Record<string, unknown> }> = [];
   const client = new PythonWorkerClient({
-    workerScript: path.join(process.cwd(), "desktop", "infrastructure", "publicWorker.py"),
+    workerScript: path.join(process.cwd(), "desktop", "infrastructure", "workers", "publicWorker.py"),
     pythonExecutable: python,
     cwd: process.cwd(),
     defaultTimeoutMs: 10000,

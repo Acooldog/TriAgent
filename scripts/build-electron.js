@@ -31,6 +31,14 @@ async function main() {
     fs.copyFileSync(stylesSrc, path.join(distDir, "renderer", "styles.css"));
   }
 
+  // Copy Python worker script so the packaged app can spawn it.
+  const workerSrc = path.join(desktopDir, "infrastructure", "workers", "publicWorker.py");
+  const workerDestDir = path.join(distDir, "desktop", "infrastructure", "workers");
+  if (fs.existsSync(workerSrc)) {
+    fs.mkdirSync(workerDestDir, { recursive: true });
+    fs.copyFileSync(workerSrc, path.join(workerDestDir, "publicWorker.py"));
+  }
+
   console.log(`Electron build ready: ${distDir}`);
 }
 

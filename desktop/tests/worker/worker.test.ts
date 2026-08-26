@@ -30,7 +30,7 @@ test("parses versioned worker event and rejects malformed output", () => {
 });
 
 test("runs the real Python worker ping operation", async () => {
-  const client = new PythonWorkerClient({ workerScript: path.join(process.cwd(), "desktop", "infrastructure", "publicWorker.py"), defaultTimeoutMs: 5000 });
+  const client = new PythonWorkerClient({ workerScript: path.join(process.cwd(), "desktop", "infrastructure", "workers", "publicWorker.py"), defaultTimeoutMs: 5000 });
   const handle = client.start({ protocol_version: "1", command: "start", request_id: "request-ping", task_id: "task-ping", operation: "ping", payload: {} }, () => undefined);
   const result = await handle.completion;
   assert.equal(result.status, "completed");
