@@ -9,6 +9,7 @@ from src.Infrastructure.adapters.agent.agent_helpers import (
     AIMessage,
     HumanMessage,
     LANGCHAIN_AVAILABLE as _LANGCHAIN_AVAILABLE,
+    ToolMessage,
     build_conversation_messages,
     build_tools_for_llm as _build_tools_for_llm,
     check_langchain_available,
@@ -68,20 +69,29 @@ def run_agent(
         llm = _create_chat_model(model_config)
         emitter._log(f"聊天模型已创建: {model_config.get('model')}")
 
-        # 预测试 LLM 连通性 —— 如果鉴权失败直接报错，而不是让 stream 返回空
-        emitter._log("正在测试 LLM 连通性...")
+        # 轻量预检：只检查 base_url 可达 + api_key 非空（不烧 token）
+        emitter._log("正在检查模型配置...")
+        _bu = str(model_config.get("base_url", ""))
+        _ak = str(model_config.get("api_key", ""))
+        if not _ak:
+            emitter._log("LLM 配置错误：api_key 为空", "error")
+            emitter.emit("agent_step_failed", {"step": 1, "error": "未配置 API Key"})
+            emitter.emit("agent_finished", {"status": "error", "error": "missing_api_key"})
+            return {"status": "error", "error": "missing_api_key"}
         try:
-            _test_result = llm.invoke("ping")
-            emitter._log(f"LLM 连通性测试通过: {str(_test_result)[:80]}")
-        except Exception as _test_exc:
-            import traceback as _tb
-            emitter._log(f"LLM 连通性测试失败: {_test_exc}\n{_tb.format_exc()}", "error")
-            emitter.emit("agent_step_failed", {
-                "step": 1,
-                "error": f"LLM 连接失败: {_test_exc}",
-            })
-            emitter.emit("agent_finished", {"status": "error", "error": "llm_connect_failed"})
-            return {"status": "error", "error": str(_test_exc)}
+            import urllib.request as _ur
+            _req = _ur.Request(_bu, method="HEAD", headers={"User-Agent": "TriMusicAgent/1.0"})
+            _resp = _ur.urlopen(_req, timeout=8)
+            emitter._log(f"模型服务可达 (HTTP {_resp.status})")
+        except Exception as _url_exc:
+            # HEAD 可能返回 405 (Method Not Allowed) — 那也是可达，忽略
+            if hasattr(_url_exc, "code") and _url_exc.code in (405, 401, 403):
+                emitter._log(f"模型服务可达 (HTTP {_url_exc.code})")
+            else:
+                emitter._log(f"模型服务不可达: {_url_exc}", "error")
+                emitter.emit("agent_step_failed", {"step": 1, "error": f"模型服务不可达: {_url_exc}"})
+                emitter.emit("agent_finished", {"status": "error", "error": "llm_unreachable"})
+                return {"status": "error", "error": str(_url_exc)}
 
         emitter._log("正在构建工具列表...")
         tools = _build_tools_for_llm()
@@ -127,10 +137,18 @@ def run_agent(
                         emitter._log(f"已处理 {event_count} 个流式事件...", "debug")
                     msg, metadata = item
                     _handle_stream_message(msg, metadata, emitter, tool_call_registry, pending_text)
+
+                    # === 关键：ToolMessage content 截断，防止每轮重发长结果烧 token ===
+                    if isinstance(msg, ToolMessage) or type(msg).__name__ == "ToolMessage":
+                        _truncate_tool_message(msg, max_chars=300, keep_head=200)
+
                     conversation_messages.append(msg)
+
                     if isinstance(msg, AIMessage) or type(msg).__name__ == "AIMessage":
                         if hasattr(msg, "tool_calls") and msg.tool_calls:
                             actual_iterations += 1
+                            # === 关键：每轮 AIMessage（触发了工具调用）后，清理旧 ToolMessage ===
+                            _prune_old_tool_results(conversation_messages, keep_last_rounds=2)
                 if not cancelled:
                     flushed = _flush_pending_text(emitter, pending_text)
                     if flushed:
@@ -259,6 +277,59 @@ def run_agent(
             "completed_tool_calls": completed_count,
             "tool_calls": list(tool_call_registry.values()),
         }
+
+
+def _truncate_tool_message(msg: Any, max_chars: int = 300, keep_head: int = 200) -> None:
+    """直接修改 ToolMessage.content —— 超过 max_chars 就截断，避免每轮重发长结果烧 token。"""
+    content = getattr(msg, "content", None)
+    if content is None:
+        return
+    text = str(content)
+    if len(text) <= max_chars:
+        return
+    original_len = len(text)
+    truncated = text[:keep_head].rstrip() + f"...(已截断，原始 {original_len} 字符)"
+    # LangChain ToolMessage.content 可以是 str 或 list（多模态）；这里覆盖 str 即可
+    try:
+        msg.content = truncated
+    except Exception:
+        pass
+
+
+def _prune_old_tool_results(messages: list, keep_last_rounds: int = 2) -> None:
+    """清理 conversation_messages 中的旧 ToolMessage。
+
+    LangGraph 的一轮 = 1 个 AIMessage(带 tool_calls) + N 个 ToolMessage。
+    此函数从后往前数，只保留最近 `keep_last_rounds` 轮的 ToolMessage 的原始 content；
+    更早轮的 ToolMessage.content 替换成简短摘要。
+    """
+    # 识别哪些 AIMessage 是"触发了工具调用"的轮次标记
+    tool_round_indices: list[int] = []  # AIMessage 的 index（带 tool_calls）
+    for i, m in enumerate(messages):
+        if isinstance(m, AIMessage) or type(m).__name__ == "AIMessage":
+            tool_calls = getattr(m, "tool_calls", None)
+            if tool_calls:
+                tool_round_indices.append(i)
+
+    if len(tool_round_indices) <= keep_last_rounds:
+        return  # 轮次不够，不用裁剪
+
+    # 找出需要保留的最近 N 轮起始位置
+    rounds_to_keep = tool_round_indices[-keep_last_rounds:]
+    keep_from = rounds_to_keep[0]
+
+    # 把 keep_from 之前的所有 ToolMessage.content 替换成摘要
+    for i in range(keep_from):
+        m = messages[i]
+        if isinstance(m, ToolMessage) or type(m).__name__ == "ToolMessage":
+            orig_text = str(getattr(m, "content", ""))
+            if "(已截断" in orig_text:
+                continue  # 已经截过了
+            name = getattr(m, "name", "tool")
+            try:
+                m.content = f"[{name} 结果已省略 — 属于前序轮次]"
+            except Exception:
+                pass
 
 
 def get_available_tools() -> list[dict[str, str]]:

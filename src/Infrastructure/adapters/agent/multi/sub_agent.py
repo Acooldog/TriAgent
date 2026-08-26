@@ -124,7 +124,13 @@ def run_sub_agent(
         return {"agent_id": agent_id, "role": role, "status": "failed", "reason": "langchain_not_installed"}
 
     # 延迟导入（避免循环依赖）
-    from src.Infrastructure.adapters.agent.agent_executor import _create_chat_model, _handle_stream_message
+    from src.Infrastructure.adapters.agent.agent_executor import (
+        _create_chat_model,
+        _handle_stream_message,
+        _truncate_tool_message,
+        _prune_old_tool_results,
+        ToolMessage,
+    )
     from src.Infrastructure.adapters.agent.multi.tool_registry import get_role_description
 
     tool_names = [getattr(t, "name", t.__name__) for t in tools]
@@ -171,12 +177,19 @@ def run_sub_agent(
 
                 msg, metadata = item
                 _handle_stream_message(msg, metadata, emitter, tool_call_registry, pending_text)
+
+                # ToolMessage content 截断 —— 防止烧 token
+                if isinstance(msg, ToolMessage) or type(msg).__name__ == "ToolMessage":
+                    _truncate_tool_message(msg, max_chars=300, keep_head=200)
+
                 conversation_messages.append(msg)
 
                 msg_type = type(msg).__name__
                 if isinstance(msg, AIMessage) or msg_type == "AIMessage":
                     if hasattr(msg, "tool_calls") and msg.tool_calls:
                         actual_iterations += 1
+                        # 子 Agent 轮次少，只保留最近 1 轮
+                        _prune_old_tool_results(conversation_messages, keep_last_rounds=1)
 
             if not cancelled:
                 flushed = "".join(pending_text).strip()

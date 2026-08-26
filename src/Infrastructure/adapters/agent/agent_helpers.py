@@ -5,7 +5,7 @@ from typing import Any
 try:
     from langchain.agents import create_agent
     from langchain.chat_models import init_chat_model
-    from langchain_core.messages import AIMessage, HumanMessage
+    from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
     LANGCHAIN_AVAILABLE = True
 except ImportError:
@@ -24,6 +24,12 @@ except ImportError:
     class AIMessage:
         def __init__(self, content: str) -> None:
             self.content = content
+
+    class ToolMessage:
+        def __init__(self, content: str = "", name: str = "", tool_call_id: str = "") -> None:
+            self.content = content
+            self.name = name
+            self.tool_call_id = tool_call_id
 
 
 def create_chat_model_func(model_config: dict[str, Any]) -> Any:
@@ -65,6 +71,7 @@ __all__ = [
     "init_chat_model",
     "HumanMessage",
     "AIMessage",
+    "ToolMessage",
     "create_chat_model_func",
     "build_tools_for_llm",
     "build_conversation_messages",
