@@ -50,25 +50,26 @@ export function AgentExecutionSegments({ segments }: Props) {
           border-radius: 8px;
           margin-bottom: 4px;
           overflow: hidden;
-          border-left: 2px solid #475569;
-          background: rgba(71,85,105,0.08);
+          border-left: 2px solid var(--km-label-tertiary, #6b6b6b);
+          background: var(--km-bg-tertiary, #292929);
           transition: all 0.3s ease;
         }
         .agent-segment.status-running {
-          border-left-color: #94a3b8;
-          background: rgba(148,163,184,0.08);
+          border-left-color: var(--km-label-secondary, #8f8f8f);
+          background: var(--km-bg-secondary, #1f1f1f);
         }
         .agent-segment.status-done {
           border-left-color: #22c55e;
-          background: rgba(34,197,94,0.06);
+          background: var(--km-bg-tertiary, #292929);
+          opacity: 0.85;
         }
         .agent-segment.status-done .agent-segment-title-text {
-          color: #94a3b8;
+          color: var(--km-label-secondary, #8f8f8f);
           font-weight: 500;
         }
         .agent-segment.status-error {
           border-left-color: #ef4444;
-          background: rgba(239,68,68,0.06);
+          background: var(--km-bg-tertiary, #292929);
         }
         .agent-segment-header {
           display: flex;
@@ -81,7 +82,7 @@ export function AgentExecutionSegments({ segments }: Props) {
           font-size: 12px;
         }
         .agent-segment-header:hover {
-          background: rgba(255,255,255,0.04);
+          background: var(--km-bg-secondary, #1f1f1f);
         }
         .agent-segment-icon {
           font-size: 14px;
@@ -90,12 +91,13 @@ export function AgentExecutionSegments({ segments }: Props) {
         .agent-segment-title-text {
           flex: 1;
           font-weight: 500;
-          color: #cbd5e1;
+          color: var(--km-label-primary, #ffffffd6);
           font-size: 12px;
         }
         .agent-segment-status {
           font-size: 11px;
           opacity: 0.55;
+          color: var(--km-label-tertiary, #6b6b6b);
         }
         .agent-segment-toggle {
           font-size: 12px;
@@ -111,7 +113,7 @@ export function AgentExecutionSegments({ segments }: Props) {
           padding: 0 12px 8px 12px;
           font-size: 12px;
           line-height: 1.5;
-          color: #94a3b8;
+          color: var(--km-label-secondary, #ffffff8f);
           white-space: pre-wrap;
           word-break: break-word;
           animation: segmentOpen 0.2s ease-out;

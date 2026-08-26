@@ -105,6 +105,7 @@ def transcode_audio(input_path: str, target_format: str, output_dir: str = "") -
             "failed_count": failed,
             "skipped_count": skipped,
             "result_code": "ok" if failed == 0 else "partial",
+            "kind": "transcode",
         })
 
         return header + "\n" + "\n".join(results)

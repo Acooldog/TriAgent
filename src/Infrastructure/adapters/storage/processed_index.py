@@ -63,19 +63,50 @@ def _relative_to(file_path: pathlib.Path, index_dir: pathlib.Path) -> str:
         return file_path.name
 
 
-def is_processed(index: dict, file_path: pathlib.Path, index_dir: pathlib.Path) -> bool:
+def is_processed(
+    index: dict,
+    file_path: pathlib.Path,
+    index_dir: pathlib.Path,
+    output_dir: str | None = None,
+    target_format: str | None = None,
+) -> bool:
+    """检查文件是否已被处理过。
+
+    去重维度：rel + size + mtime + output_dir + target_format(container)。
+    只有输出目录和目标格式都匹配时才视为已处理。任一维度不同 → 允许重新解密。
+
+    Args:
+        output_dir: 本次调用的输出目录（绝对路径字符串）。
+        target_format: 本次调用的目标输出格式，如 "m4a"、"flac"、"mp3"。
+                       与 index 记录的 container 比较。
+    """
     rel = _relative_to(file_path, index_dir)
     try:
         stat = file_path.stat()
     except OSError:
         return False
     for rec in index.get("files", []):
-        if (
+        if not (
             rec.get("rel") == rel
             and rec.get("size") == stat.st_size
             and abs(rec.get("mtime", 0) - stat.st_mtime) < MTIME_TOLERANCE
         ):
-            return True
+            continue
+        # 基础去重 key 匹配 → 进一步检查输出目录和目标格式
+        if output_dir is not None:
+            existing_output = rec.get("output_path", "")
+            existing_parent = str(pathlib.Path(existing_output).parent) if existing_output else ""
+            try:
+                same_dir = pathlib.Path(existing_parent).resolve() == pathlib.Path(output_dir).resolve()
+            except OSError:
+                same_dir = existing_parent == output_dir
+            if not same_dir:
+                return False  # 输出目录不同 → 未处理
+        if target_format is not None:
+            existing_container = str(rec.get("container", "")).lower().lstrip(".")
+            if existing_container and existing_container != target_format.lower().lstrip("."):
+                return False  # 目标格式不同 → 未处理
+        return True
     return False
 
 
@@ -101,8 +132,20 @@ def mark_processed(
     })
 
 
-def plan_files(files: list[pathlib.Path]) -> tuple[list[dict], list[pathlib.Path]]:
+def plan_files(
+    files: list[pathlib.Path],
+    output_dir: str | None = None,
+    target_format: str | None = None,
+) -> tuple[list[dict], list[pathlib.Path]]:
     """按文件所在目录分组，加载各自 index，返回 (pending, skipped)。
+
+    去重维度：rel + size + mtime + output_dir + target_format。
+    任一维度不同 → 允许重新解密。
+
+    Args:
+        output_dir: 本次调用的输出目录。
+        target_format: 本次调用的目标输出格式（如 "m4a"、"flac"、"mp3"）。
+                       会与已记录的 container 字段比较。
 
     pending 项: {"file", "index_dir", "index_path", "index"}
     skipped: 已在 index 中记录的文件列表
@@ -116,7 +159,7 @@ def plan_files(files: list[pathlib.Path]) -> tuple[list[dict], list[pathlib.Path
         idx_path = index_path_for(group_files[0])
         idx = load_index(idx_path)
         for f in group_files:
-            if is_processed(idx, f, index_dir):
+            if is_processed(idx, f, index_dir, output_dir=output_dir, target_format=target_format):
                 skipped.append(f)
             else:
                 pending.append({

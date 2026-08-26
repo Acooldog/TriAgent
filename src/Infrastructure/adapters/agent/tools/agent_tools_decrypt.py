@@ -38,6 +38,7 @@ def _run_decrypt_batch(
     platform_id: str = "",
     input_path: str = "",
     output_dir: str = "",
+    target_format: str | None = None,
 ) -> str:
     """通用批量解密驱动：plan_files → 循环解密 → mark_processed → save_index。
 
@@ -48,13 +49,18 @@ def _run_decrypt_batch(
         empty_msg: 无可处理文件时的返回消息
         platform_id: 平台标识（batch 事件上报用）
         input_path: 输入路径（batch 事件上报用）
-        output_dir: 输出目录（batch 事件上报用）
+        output_dir: 输出目录（batch 事件上报用 + 去重判断）
+        target_format: 目标输出格式（去重判断，允许同一源文件输出到不同格式）
     """
     if not files_to_decrypt:
         return empty_msg
 
     print(f"{log_prefix} 待解密文件 {len(files_to_decrypt)} 个")
-    pending, skipped = plan_files(files_to_decrypt)
+    pending, skipped = plan_files(
+        files_to_decrypt,
+        output_dir=output_dir if output_dir else None,
+        target_format=target_format,
+    )
     if skipped:
         print(f"{log_prefix} 跳过已处理文件 {len(skipped)} 个（见 {INDEX_FILENAME}）")
     if not pending:
@@ -66,6 +72,7 @@ def _run_decrypt_batch(
         "input_path": input_path,
         "output_dir": output_dir,
         "candidate_count": total,
+        "kind": "decrypt",
     })
 
     results: list[str] = []
@@ -123,6 +130,7 @@ def _run_decrypt_batch(
         "failed_count": failed,
         "skipped_count": len(skipped),
         "result_code": "ok" if failed == 0 else "partial",
+        "kind": "decrypt",
     })
 
     return header + "\n" + "\n".join(results)
@@ -185,6 +193,7 @@ def decrypt_kugou(input_path: str, output_dir: str, target_format: str = "auto")
             log_prefix="[decrypt_kugou]",
             empty_msg=f"在 {input_path} 中未找到酷狗加密文件",
             platform_id="kugou", input_path=input_path, output_dir=str(dst),
+            target_format=None if target_format == "auto" else target_format,
         )
     except Exception as exc:
         return f"解密失败：{exc}"

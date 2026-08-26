@@ -18,8 +18,9 @@ export function handleBatchEvent(
   switch (eventType) {
     case "batch_started": {
       const platformId = String(payload.platform_id ?? "");
+      const kind = (payload.kind === "transcode" ? "transcode" : "decrypt") as "decrypt" | "transcode" | "copy" | "generic";
       deps.setBatchProgress({
-        active: true, kind: "decrypt",
+        active: true, kind,
         platformId: platformId || undefined,
         inputPath: String(payload.input_path ?? ""),
         outputDir: String(payload.output_dir ?? ""),
@@ -81,8 +82,10 @@ export function handleBatchEvent(
       const successCount = Number(payload.success_count ?? 0);
       const failedCount = Number(payload.failed_count ?? 0);
       const skippedCount = Number(payload.skipped_count ?? 0);
+      const kind = (payload.kind === "transcode" ? "transcode" : "decrypt") as "decrypt" | "transcode" | "copy" | "generic";
+      const opLabel = kind === "transcode" ? "转换" : "解密";
       deps.setBatchProgress({
-        active: true, kind: "decrypt",
+        active: true, kind,
         platformId: String(payload.platform_id ?? undefined),
         totalCount: Number(payload.candidate_count ?? 0),
         currentIndex: Number(payload.candidate_count ?? 0),
@@ -92,7 +95,7 @@ export function handleBatchEvent(
         successCount, skippedCount, failedCount,
         finished: true,
         finalStatus: resultCode === "ok" || (failedCount === 0 && successCount > 0) ? "completed" : "failed",
-        finalMessage: `解密完成：成功 ${successCount}，跳过 ${skippedCount}，失败 ${failedCount}`,
+        finalMessage: `${opLabel}完成：成功 ${successCount}，跳过 ${skippedCount}，失败 ${failedCount}`,
       });
       break;
     }

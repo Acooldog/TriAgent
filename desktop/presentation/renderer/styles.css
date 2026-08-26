@@ -1590,16 +1590,16 @@ tr:hover td {
 .llm-question-card {
     width: min(520px, calc(100% - 32px));
     padding: 22px 22px 18px;
-    border: 2px solid #2b6a6c;
+    border: 2px solid var(--km-separator, #2b6a6c);
     border-radius: 14px;
-    background: #fff;
-    box-shadow: 0 20px 60px #0b242b50, 0 0 0 1px #00000010;
+    background: var(--km-bg-tertiary, #292929);
+    box-shadow: 0 20px 60px #00000080, 0 0 0 1px #00000010;
 }
 
 .llm-question-title {
     font-size: 14px;
     font-weight: 600;
-    color: #173f42;
+    color: var(--km-label-primary, #ffffffd6);
     margin-bottom: 10px;
     letter-spacing: 0.5px;
 }
@@ -1608,7 +1608,7 @@ tr:hover td {
     margin: 0 0 16px;
     font-size: 15px;
     line-height: 1.55;
-    color: #1c3c3a;
+    color: var(--km-label-secondary, #ffffff8f);
     white-space: pre-wrap;
     word-break: break-word;
 }
@@ -1621,10 +1621,10 @@ tr:hover td {
 
 .llm-question-overlay .llm-question-card button.llm-question-option {
     padding: 11px 14px !important;
-    border: 1px solid var(--line) !important;
+    border: 1px solid var(--km-separator) !important;
     border-radius: 10px !important;
-    background: #f6fbfb !important;
-    color: #173f42 !important;
+    background: var(--km-bg-secondary, #1f1f1f) !important;
+    color: var(--km-label-primary, #ffffffd6) !important;
     font-size: 14px !important;
     line-height: 1.4 !important;
     text-align: left !important;
@@ -1633,8 +1633,8 @@ tr:hover td {
 }
 
 .llm-question-overlay .llm-question-card button.llm-question-option:hover {
-    background: #e0f1f0 !important;
-    border-color: #2b6a6c !important;
+    background: var(--km-bg-tertiary, #292929) !important;
+    border-color: var(--km-label-secondary) !important;
 }
 
 .llm-question-overlay .llm-question-card button.llm-question-option:active {
@@ -4065,7 +4065,7 @@ select:focus {
     --km-separator: #ffffff33;
     display: flex;
     flex-direction: column;
-    min-height: calc(100vh - 28px);
+    height: calc(100vh - 28px);
     margin: -20px -24px -30px;
     padding: 28px clamp(60px, 20vw, 300px) 16px;
     color: var(--km-label-primary);
@@ -4080,6 +4080,10 @@ select:focus {
     color: var(--km-label-secondary);
     font-size: 14px;
     line-height: 20px;
+}
+
+.llm-chat-header>.kimi-action-button {
+    margin-left: auto;
 }
 
 .llm-back {
