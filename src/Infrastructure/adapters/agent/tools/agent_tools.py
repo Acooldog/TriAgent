@@ -32,8 +32,8 @@ from src.Infrastructure.adapters.agent.tools.agent_tools_state import (
 
 
 TOOL_DESCRIPTIONS = {
-    "scan_files": "扫描指定目录下的加密音乐文件（支持 kgma/kgm/kgg/vpr/mflac/mgg/mmp4/ncm/kwm 格式），返回找到的文件列表和数量。",
-    "decrypt_kugou": "解密酷狗音乐加密文件（kgma、kgm、kgg、vpr 等格式），输出为可播放的音频文件。",
+    "scan_files": "递归扫描指定目录下的加密音乐文件（kgma/kgm/kgg/vpr/mflac/mgg/mmp4/ncm/kwm），返回按格式分组的文件列表和总数。拿到结果后直接开始解密，禁止对同一目录反复扫描。",
+    "decrypt_kugou": "解密酷狗音乐加密文件（kgma、kgm、kgg、vpr 格式），输出为可播放的音频文件。",
     "decrypt_qq": "解密 QQ 音乐加密文件（mflac、mgg、mmp4 格式），输出为可播放的音频文件。需要 QQ 音乐客户端已运行。",
     "decrypt_netease": "解密网易云音乐加密文件（ncm 格式），输出为可播放的音频文件。无需运行网易云音乐客户端。",
     "decrypt_kuwo": "解密酷我音乐加密文件（kwm 格式），输出为可播放的音频文件。无需运行酷我音乐客户端。",
@@ -46,7 +46,7 @@ TOOL_DESCRIPTIONS = {
     "rag_retrieve": "在本地知识库中检索与问题相关的已沉淀解决方案/经验（如中文路径处理、失败续传约定）。遇到不确定如何处理的问题时先检索知识库。",
     "rag_ingest": "把一条经验/解决方案写入本地知识库，便于后续检索复用。仅在完成了一条值得沉淀的通用经验时调用。",
     "detect_format": "检测音频文件的容器格式（flac/mp3/m4a/wav/ogg 等），通过读取文件头特征判断。",
-    "list_directory": "列出指定目录下的所有文件和子目录，返回文件名称列表。",
+    "list_directory": "列出指定目录的文件和子目录。仅在确认路径是否存在或查看目录层级结构时使用，不要用来重复 scan_files 已经告诉你的信息。",
     "ask_user": "遇到不确定的操作时询问用户。给出清晰的问题和 2~4 个互斥选项，用户选择后返回所选内容。常用于：处理记录与实际输出不一致、目标文件已存在等无法判断用户意图的场景。",
     "sandbox_manage": "管理文件操作沙箱：授权/取消授权目录、查看当前授权目录。沙箱已默认启用并自动授权用户指定的输入/输出路径，通常无需调用本工具。仅当需要手动调整授权范围时才使用。",
 }
