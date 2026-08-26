@@ -93,8 +93,7 @@ def run_agent(payload: dict[str, Any], runtime: WorkerRuntime) -> int:
         "kind": "progress",
     })
     runtime.log("正在导入 agent_executor...")
-    import importlib
-    _agent_executor_mod = importlib.import_module("src.Infrastructure.agent_executor")
+    from src.Infrastructure.adapters.agent import agent_executor as _agent_executor_mod
     _run_agent = _agent_executor_mod.run_agent
     check_langchain_available = _agent_executor_mod.check_langchain_available
     runtime.log("agent_executor 导入完成")

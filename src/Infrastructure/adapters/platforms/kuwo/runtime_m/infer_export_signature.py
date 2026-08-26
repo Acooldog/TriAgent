@@ -1,4 +1,4 @@
-﻿"""Infer recovered export signature from 180s export-behavior captures."""
+"""Infer recovered export signature from 180s export-behavior captures."""
 
 from __future__ import annotations
 

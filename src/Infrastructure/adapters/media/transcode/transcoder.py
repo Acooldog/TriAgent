@@ -92,25 +92,7 @@ def transcode_file(
         ),
         str(temp_output),
     ]
-    try:
-        completed = _run_ffmpeg_safely(command, timeout=300, desc="ffmpeg 转码")
-        if completed.returncode != 0:
-            stderr = completed.stderr.strip() or completed.stdout.strip() or f"ffmpeg rc={completed.returncode}"
-            raise RuntimeError(f"ffmpeg transcode failed: {stderr}")
-        if output_path.exists():
-            output_path.unlink()
-        temp_output.replace(output_path)
-        return {"ffmpeg_path": str(ffmpeg_path), "output_path": str(output_path), "return_code": completed.returncode}
-    except RuntimeError:
-        raise
-    except Exception as exc:
-        raise RuntimeError(f"ffmpeg 转码异常: {exc}")
-    finally:
-        if temp_output.exists():
-            try:
-                temp_output.unlink()
-            except OSError:
-                pass
+    return _run_ffmpeg_command(command, output_path, temp_output, ffmpeg_path)
 
 
 def attach_cover(input_path: pathlib.Path, output_path: pathlib.Path, cover_path: pathlib.Path) -> dict[str, str | int]:
@@ -196,19 +178,19 @@ class _TranscodeAdapter:
         sample_rate_hz: int | None = None,
         bitrate_kbps: int | None = None,
     ) -> dict[str, Any]:
-        return globals()["transcode_file"](
+        return transcode_file(
             input_path, output_path, target_format,
             sample_rate_hz=sample_rate_hz, bitrate_kbps=bitrate_kbps,
         )
 
     def probe_media_summary(self, path: pathlib.Path) -> dict[str, Any]:
-        return globals()["probe_media_summary"](path)
+        return probe_media_summary(path)
 
     def summary_to_log(self, summary: dict[str, Any]) -> str:
-        return globals()["summary_to_log"](summary)
+        return summary_to_log(summary)
 
     def normalize_target_format(self, value: str) -> str:
-        return globals()["normalize_target_format"](value)
+        return normalize_target_format(value)
 
 
 __all__ = [

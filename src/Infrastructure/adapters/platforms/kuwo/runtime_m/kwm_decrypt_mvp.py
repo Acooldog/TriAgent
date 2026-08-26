@@ -1,4 +1,4 @@
-﻿"""KWMusic KWM decrypt MVP (in-process export call path)."""
+"""KWMusic KWM decrypt MVP (in-process export call path)."""
 
 from __future__ import annotations
 

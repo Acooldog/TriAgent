@@ -1,6 +1,8 @@
 from __future__ import annotations
-import os
+
 import pathlib
+from typing import Any, Callable
+
 from src.Infrastructure.adapters.agent.tools.agent_tools_state import (
     _find_kgg_db,
     _find_kugou_key,
@@ -15,6 +17,62 @@ from src.Infrastructure.adapters.storage.processed_index import (
     plan_files,
     save_index,
 )
+
+
+def _run_decrypt_batch(
+    files_to_decrypt: list[pathlib.Path],
+    decrypt_one: Callable[[pathlib.Path], tuple[str | None, str]],
+    log_prefix: str,
+    empty_msg: str,
+) -> str:
+    """通用批量解密驱动：plan_files → 循环解密 → mark_processed → save_index。
+
+    Args:
+        files_to_decrypt: 已收集的待解密文件列表
+        decrypt_one: 对单个文件执行解密的回调，返回 (output_path, container) 或 (None, "bin")
+        log_prefix: 日志前缀，如 "[decrypt_kugou]"
+        empty_msg: 无可处理文件时的返回消息
+    """
+    if not files_to_decrypt:
+        return empty_msg
+
+    print(f"{log_prefix} 待解密文件 {len(files_to_decrypt)} 个")
+    pending, skipped = plan_files(files_to_decrypt)
+    if skipped:
+        print(f"{log_prefix} 跳过已处理文件 {len(skipped)} 个（见 {INDEX_FILENAME}）")
+    if not pending:
+        return f"所有 {len(skipped)} 个文件均已处理过（见 {INDEX_FILENAME}），本次跳过。"
+
+    results: list[str] = []
+    success = 0
+    failed = 0
+    for item in pending:
+        file_path: pathlib.Path = item["file"]
+        index: dict = item["index"]
+        index_dir: pathlib.Path = item["index_dir"]
+        index_path: pathlib.Path = item["index_path"]
+        print(f"{log_prefix} 开始处理: {file_path.name}")
+        try:
+            out_path, container = decrypt_one(file_path)
+            if out_path:
+                results.append(f"  成功: {file_path.name} -> {out_path} [{container}]")
+                success += 1
+                print(f"{log_prefix} 成功: {file_path.name} -> {container}")
+                mark_processed(index, file_path, index_dir, str(out_path), container)
+                save_index(index_path, index)
+            else:
+                results.append(f"  失败: {file_path.name} - 未识别的音频容器")
+                failed += 1
+        except Exception as exc:
+            results.append(f"  失败: {file_path.name} - {exc}")
+            failed += 1
+            print(f"{log_prefix} 失败: {file_path.name} - {exc}")
+
+    header = f"解密完成：共 {len(pending)} 个待处理，成功 {success}，失败 {failed}，跳过 {len(skipped)}"
+    print(f"{log_prefix} {header}")
+    return header + "\n" + "\n".join(results)
+
+
 @tool
 def scan_files(directory: str, recursive: bool = True, file_types: str = "kugou") -> str:
     """扫描指定目录下的加密音乐文件。
@@ -45,6 +103,8 @@ def scan_files(directory: str, recursive: bool = True, file_types: str = "kugou"
         return "\n".join(parts)
     except Exception as exc:
         return f"扫描失败：{exc}"
+
+
 @tool
 def decrypt_kugou(input_path: str, output_dir: str, target_format: str = "auto") -> str:
     """解密酷狗音乐加密文件（kgma/kgm/kgg/vpr），输出为可播放的音频文件。
@@ -59,49 +119,21 @@ def decrypt_kugou(input_path: str, output_dir: str, target_format: str = "auto")
         key_file = _find_kugou_key()
         if key_file is None:
             return "错误：未找到 kugou_key.xz 公钥文件，请确保 assets 目录下存在该文件"
-        if src.is_file():
-            files_to_decrypt = [src]
-        else:
-            files_to_decrypt = iter_supported_files(src, True)
-        if not files_to_decrypt:
-            return f"在 {input_path} 中未找到酷狗加密文件"
-        pending, skipped = plan_files(files_to_decrypt)
-        if skipped:
-            print(f"[decrypt_kugou] 跳过已处理文件 {len(skipped)} 个（见 {INDEX_FILENAME}）")
-        if not pending:
-            return f"所有 {len(skipped)} 个文件均已处理过（见 {INDEX_FILENAME}），本次跳过。"
-        results = []
-        success = 0
-        failed = 0
-        for item in pending:
-            file_path = item["file"]
-            index = item["index"]
-            index_dir = item["index_dir"]
-            index_path = item["index_path"]
-            try:
-                summary = decode_file(
-                    file_path,
-                    dst,
-                    key_path=key_file,
-                    kgg_db_path=_find_kgg_db() or pathlib.Path(),
-                )
-                out_path = summary.get("output_path", "")
-                container = summary.get("detected_container", "bin")
-                if out_path:
-                    results.append(f"  成功: {file_path.name} -> {out_path} [{container}]")
-                    success += 1
-                    mark_processed(index, file_path, index_dir, str(out_path), container)
-                    save_index(index_path, index)
-                else:
-                    results.append(f"  失败: {file_path.name} - 未识别的音频容器")
-                    failed += 1
-            except Exception as exc:
-                results.append(f"  失败: {file_path.name} - {exc}")
-                failed += 1
-        header = f"解密完成：共 {len(pending)} 个待处理，成功 {success}，失败 {failed}，跳过 {len(skipped)}"
-        return header + "\n" + "\n".join(results)
+        files_to_decrypt = [src] if src.is_file() else iter_supported_files(src, True)
+
+        def _decrypt_one(fp: pathlib.Path) -> tuple[str | None, str]:
+            summary = decode_file(fp, dst, key_path=key_file, kgg_db_path=_find_kgg_db() or pathlib.Path())
+            return summary.get("output_path"), summary.get("detected_container", "bin")
+
+        return _run_decrypt_batch(
+            files_to_decrypt, _decrypt_one,
+            log_prefix="[decrypt_kugou]",
+            empty_msg=f"在 {input_path} 中未找到酷狗加密文件",
+        )
     except Exception as exc:
         return f"解密失败：{exc}"
+
+
 @tool
 def decrypt_qq(input_path: str, output_dir: str) -> str:
     """解密 QQ 音乐加密文件（mflac/mgg/mmp4），输出为可播放的音频文件。需要 QQ 音乐客户端已运行。
@@ -124,50 +156,20 @@ def decrypt_qq(input_path: str, output_dir: str) -> str:
             return f"错误：{_reason or '未检测到运行中的 QQ 音乐客户端，自动启动也未成功。'}"
         print("[decrypt_qq] 运行时校验通过，QQ 音乐进程已就绪")
         files_to_decrypt = adapter.collect_files(src, True)
-        if not files_to_decrypt:
-            return f"在 {input_path} 中未找到 QQ 音乐加密文件（mflac/mgg/mmp4）"
-        print(f"[decrypt_qq] 待解密文件 {len(files_to_decrypt)} 个")
-        pending, skipped = plan_files(files_to_decrypt)
-        if skipped:
-            print(f"[decrypt_qq] 跳过已处理文件 {len(skipped)} 个（见 {INDEX_FILENAME}）")
-        if not pending:
-            return f"所有 {len(skipped)} 个文件均已处理过（见 {INDEX_FILENAME}），本次跳过。"
-        results: list[str] = []
-        success = 0
-        failed = 0
-        for item in pending:
-            file_path = item["file"]
-            index = item["index"]
-            index_dir = item["index_dir"]
-            index_path = item["index_path"]
-            print(f"[decrypt_qq] 开始处理: {file_path.name}")
-            try:
-                summary = adapter.decrypt_one(
-                    file_path,
-                    dst,
-                    {"format_rules": {"mflac": "flac", "mgg": "m4a", "mmp4": "m4a"}},
-                    log_dir=dst,
-                )
-                out_path = summary.get("output_path", "")
-                container = summary.get("detected_container", "bin")
-                if out_path:
-                    results.append(f"  成功: {file_path.name} -> {out_path} [{container}]")
-                    success += 1
-                    print(f"[decrypt_qq] 成功: {file_path.name} -> {container}")
-                    mark_processed(index, file_path, index_dir, str(out_path), container)
-                    save_index(index_path, index)
-                else:
-                    results.append(f"  失败: {file_path.name} - 未识别的音频容器")
-                    failed += 1
-            except Exception as exc:
-                results.append(f"  失败: {file_path.name} - {exc}")
-                failed += 1
-                print(f"[decrypt_qq] 失败: {file_path.name} - {exc}")
-        header = f"解密完成：共 {len(pending)} 个待处理，成功 {success}，失败 {failed}，跳过 {len(skipped)}"
-        print(f"[decrypt_qq] {header}")
-        return header + "\n" + "\n".join(results)
+
+        def _decrypt_one(fp: pathlib.Path) -> tuple[str | None, str]:
+            summary = adapter.decrypt_one(fp, dst, {"format_rules": {"mflac": "flac", "mgg": "m4a", "mmp4": "m4a"}}, log_dir=dst)
+            return summary.get("output_path"), summary.get("detected_container", "bin")
+
+        return _run_decrypt_batch(
+            files_to_decrypt, _decrypt_one,
+            log_prefix="[decrypt_qq]",
+            empty_msg=f"在 {input_path} 中未找到 QQ 音乐加密文件（mflac/mgg/mmp4）",
+        )
     except Exception as exc:
         return f"解密失败：{exc}"
+
+
 @tool
 def decrypt_netease(input_path: str, output_dir: str) -> str:
     """解密网易云音乐加密文件（ncm 格式），输出为可播放的音频文件。无需运行网易云音乐客户端。
@@ -190,45 +192,20 @@ def decrypt_netease(input_path: str, output_dir: str) -> str:
             return "错误：网易云解密运行时校验失败。"
         print("[decrypt_netease] 运行时校验通过")
         files_to_decrypt = adapter.collect_files(src, True)
-        if not files_to_decrypt:
-            return f"在 {input_path} 中未找到网易云音乐加密文件（ncm）"
-        print(f"[decrypt_netease] 待解密文件 {len(files_to_decrypt)} 个")
-        pending, skipped = plan_files(files_to_decrypt)
-        if skipped:
-            print(f"[decrypt_netease] 跳过已处理文件 {len(skipped)} 个（见 {INDEX_FILENAME}）")
-        if not pending:
-            return f"所有 {len(skipped)} 个文件均已处理过（见 {INDEX_FILENAME}），本次跳过。"
-        results: list[str] = []
-        success = 0
-        failed = 0
-        for item in pending:
-            file_path = item["file"]
-            index = item["index"]
-            index_dir = item["index_dir"]
-            index_path = item["index_path"]
-            print(f"[decrypt_netease] 开始处理: {file_path.name}")
-            try:
-                summary = adapter.decrypt_one(file_path, dst, {}, log_dir=dst)
-                out_path = summary.get("output_path", "")
-                container = summary.get("detected_container", "bin")
-                if out_path:
-                    results.append(f"  成功: {file_path.name} -> {out_path} [{container}]")
-                    success += 1
-                    print(f"[decrypt_netease] 成功: {file_path.name} -> {container}")
-                    mark_processed(index, file_path, index_dir, str(out_path), container)
-                    save_index(index_path, index)
-                else:
-                    results.append(f"  失败: {file_path.name} - 未识别的音频容器")
-                    failed += 1
-            except Exception as exc:
-                results.append(f"  失败: {file_path.name} - {exc}")
-                failed += 1
-                print(f"[decrypt_netease] 失败: {file_path.name} - {exc}")
-        header = f"解密完成：共 {len(pending)} 个待处理，成功 {success}，失败 {failed}，跳过 {len(skipped)}"
-        print(f"[decrypt_netease] {header}")
-        return header + "\n" + "\n".join(results)
+
+        def _decrypt_one(fp: pathlib.Path) -> tuple[str | None, str]:
+            summary = adapter.decrypt_one(fp, dst, {}, log_dir=dst)
+            return summary.get("output_path"), summary.get("detected_container", "bin")
+
+        return _run_decrypt_batch(
+            files_to_decrypt, _decrypt_one,
+            log_prefix="[decrypt_netease]",
+            empty_msg=f"在 {input_path} 中未找到网易云音乐加密文件（ncm）",
+        )
     except Exception as exc:
         return f"解密失败：{exc}"
+
+
 @tool
 def decrypt_kuwo(input_path: str, output_dir: str) -> str:
     """解密酷我音乐加密文件（kwm 格式），输出为可播放的音频文件。无需运行酷我音乐客户端。
@@ -236,6 +213,7 @@ def decrypt_kuwo(input_path: str, output_dir: str) -> str:
     """
     try:
         from src.Infrastructure.adapters.platforms.kuwo.unlockmusic_decoder import decrypt_kwm_file
+
         src = _to_path(input_path)
         dst = _to_path(output_dir)
         dst.mkdir(parents=True, exist_ok=True)
@@ -247,41 +225,22 @@ def decrypt_kuwo(input_path: str, output_dir: str) -> str:
             files = [src] if src.suffix.lower() == KWM_SUFFIX else []
         else:
             files = sorted(p for p in src.rglob("*") if p.is_file() and p.suffix.lower() == KWM_SUFFIX)
-        if not files:
-            return f"在 {input_path} 中未找到酷我音乐加密文件（kwm）"
-        print(f"[decrypt_kuwo] 待解密文件 {len(files)} 个")
-        pending, skipped = plan_files(files)
-        if skipped:
-            print(f"[decrypt_kuwo] 跳过已处理文件 {len(skipped)} 个（见 {INDEX_FILENAME}）")
-        if not pending:
-            return f"所有 {len(skipped)} 个文件均已处理过（见 {INDEX_FILENAME}），本次跳过。"
-        results: list[str] = []
-        success = 0
-        failed = 0
-        for item in pending:
-            file_path = item["file"]
-            index = item["index"]
-            index_dir = item["index_dir"]
-            index_path = item["index_path"]
-            print(f"[decrypt_kuwo] 开始处理: {file_path.name}")
-            try:
-                out_base = dst / file_path.stem
-                final_path, ext = decrypt_kwm_file(file_path, out_base)
-                results.append(f"  成功: {file_path.name} -> {final_path} [{ext}]")
-                success += 1
-                print(f"[decrypt_kuwo] 成功: {file_path.name} -> {ext}")
-                mark_processed(index, file_path, index_dir, str(final_path), ext)
-                save_index(index_path, index)
-            except Exception as exc:
-                results.append(f"  失败: {file_path.name} - {exc}")
-                failed += 1
-                print(f"[decrypt_kuwo] 失败: {file_path.name} - {exc}")
-        header = f"解密完成：共 {len(pending)} 个待处理，成功 {success}，失败 {failed}，跳过 {len(skipped)}"
-        print(f"[decrypt_kuwo] {header}")
-        return header + "\n" + "\n".join(results)
+
+        def _decrypt_one(fp: pathlib.Path) -> tuple[str | None, str]:
+            final_path, ext = decrypt_kwm_file(fp, dst / fp.stem)
+            return str(final_path), ext
+
+        return _run_decrypt_batch(
+            files, _decrypt_one,
+            log_prefix="[decrypt_kuwo]",
+            empty_msg=f"在 {input_path} 中未找到酷我音乐加密文件（kwm）",
+        )
     except Exception as exc:
         return f"解密失败：{exc}"
+
+
 __all__ = [
+    "_run_decrypt_batch",
     "scan_files",
     "decrypt_kugou",
     "decrypt_qq",

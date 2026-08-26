@@ -1,4 +1,4 @@
-﻿"""Find probable KWMusic decrypt functions by dynamic stack aggregation.
+"""Find probable KWMusic decrypt functions by dynamic stack aggregation.
 
 This script:
 1. Attaches to kwmusic.exe (or spawns it).

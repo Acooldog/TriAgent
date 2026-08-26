@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import concurrent.futures
 import threading
 import time
 from typing import Any, Callable
@@ -85,7 +86,6 @@ def run_agent(
         graph_config = {"recursion_limit": max(min(max_iterations * 4, 40), 20)}
         emitter._log(f"设置递归限制: {graph_config['recursion_limit']} (max_iterations={max_iterations})", "debug")
 
-        import concurrent.futures
         executor_timeout = 1800
 
         conversation_messages = build_conversation_messages(conversation_history, user_message)

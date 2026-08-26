@@ -10,7 +10,7 @@ const pythonEnv = { ...process.env, PYTHONUTF8: "1", PYTHONIOENCODING: "utf-8" }
 test("builds concise Chinese action messages before agent work", () => {
   const script = [
     "import json",
-    "from src.Infrastructure.agent_progress import build_initial_action_message, build_tool_action_message",
+    "from src.Infrastructure.adapters.agent.agent_progress import build_initial_action_message, build_tool_action_message",
     "print(json.dumps({",
     "  'initial': build_initial_action_message('请把目录里的 kgma 解密到输出目录'),",
     "  'scan': build_tool_action_message('scan_files'),",
@@ -26,13 +26,14 @@ test("builds concise Chinese action messages before agent work", () => {
 test("adds a fallback action message before a silent tool call", () => {
   const script = [
     "import json",
-    "import src.Infrastructure.agent_executor as executor",
+    "from src.Infrastructure.adapters.agent.agent_progress import AgentEventEmitter",
+    "from src.Infrastructure.adapters.media.transcode.stream_handler import _handle_stream_message",
     "events = []",
     "class AIMessage:",
     "    content = ''",
     "    tool_calls = [{'name': 'scan_files', 'args': {'directory': 'D:/music'}, 'id': 'call-1'}]",
-    "emitter = executor.AgentEventEmitter(lambda name, payload: events.append({'name': name, 'payload': payload}))",
-    "executor._handle_stream_message(AIMessage(), {}, emitter, {}, [])",
+    "emitter = AgentEventEmitter(lambda name, payload: events.append({'name': name, 'payload': payload}))",
+    "_handle_stream_message(AIMessage(), {}, emitter, {}, [])",
     "print(json.dumps(events, ensure_ascii=False))",
   ].join("\n");
   const events = JSON.parse(execFileSync(python, ["-c", script], { cwd: process.cwd(), encoding: "utf8", env: pythonEnv })) as Array<{ name: string; payload: Record<string, unknown> }>;
@@ -45,7 +46,7 @@ test("adds a fallback action message before a silent tool call", () => {
 test("emits the initial action message before runtime setup", () => {
   const script = [
     "import json",
-    "import src.Infrastructure.agent_executor as executor",
+    "from src.Infrastructure.adapters.agent import agent_executor as executor",
     "events = []",
     "executor._LANGCHAIN_AVAILABLE = False",
     "executor.run_agent('请解密目录里的 kgma 文件', {}, lambda name, payload: events.append({'name': name, 'payload': payload}))",
