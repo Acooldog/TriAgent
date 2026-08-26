@@ -50,6 +50,19 @@ def run_agent(
     # 注入事件发射回调，让解密/转码工具能发 batch_* 进度事件
     set_event_sink(event_sink)
 
+    # === 统一清理 model_config 所有字段 ===
+    # 前端可能把 base_url / api_key / model 复制粘贴时带上反引号、尾部逗号等
+    from src.Infrastructure.adapters.agent.agent_model import _clean_field
+    if isinstance(model_config, dict):
+        for _k in ("base_url", "api_key", "model", "provider"):
+            _v = model_config.get(_k)
+            if isinstance(_v, str):
+                _original = _v
+                _cleaned = _clean_field(_v)
+                if _cleaned != _original:
+                    emitter._log(f"清理 model_config.{_k}: {_original!r} → {_cleaned!r}", "debug")
+                    model_config[_k] = _cleaned
+
     if not _LANGCHAIN_AVAILABLE:
         emitter._log("langchain 不可用，返回失败", "error")
         emitter.emit("agent_error", {"error": "langchain 未安装"})
