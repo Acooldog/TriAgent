@@ -135,7 +135,7 @@ async function bootstrap(): Promise<void> {
   compressor = new StructuredContextCompressor();
   workspaceService = new WorkspaceService(new FileSystemWorkspaceRepository(), settingsRepo, installationDirectory(), () => new Date(), randomUUID, sessionPersistence);
   const providerRegistry = new ProviderRegistry();
-  providerService = new ProviderService(providerRegistry, new AuthorizedMvpProviderGateway(workerScript, projectRoot), sessionPersistence, refreshContext);
+  providerService = new ProviderService(providerRegistry, new AuthorizedMvpProviderGateway(workerService), sessionPersistence, refreshContext);
   const approval = new ProviderRuntimeStartPolicy({ requestStartApproval: requestProviderRuntimeApproval });
   providerRuntimeService = new ProviderRuntimeService(new FakeMvpProviderRuntimeGateway(), providerRegistry, approval, sessionPersistence, refreshContext, (providerId, error) => { providerService.stopProvider(providerId, new ProviderContractError(error.code, error.message)); }, (event) => mainWindow?.webContents.send("provider:runtime-event", event));
   agentTaskService = new AgentTaskService(providerRuntimeService, providerService, permissions, sessionPersistence, refreshContext);

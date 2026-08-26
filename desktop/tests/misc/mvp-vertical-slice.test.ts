@@ -14,6 +14,8 @@ import { SessionPersistenceService } from "../../application/agent/sessionPersis
 import { FileSessionRepository } from "../../infrastructure/repositories/sessionRepository";
 import { AuthorizedMvpProviderGateway } from "../../infrastructure/providers/authorizedMvpProviderGateway";
 import { PrivateProviderRuntimeGateway } from "../../infrastructure/providers/privateProviderRuntimeGateway";
+import { WorkerService } from "../../application/worker/workerService";
+import { PythonWorkerClient } from "../../infrastructure/workers/pythonWorker";
 import { FileSystemWorkspaceRepository } from "../../infrastructure/repositories/workspaceRepository";
 
 test("私有 Agent MVP 完成计划、审批、运行时、真实解密和 session 持久化闭环", async () => {
@@ -23,7 +25,12 @@ test("私有 Agent MVP 完成计划、审批、运行时、真实解密和 sessi
   const workspaceRepository = new FileSystemWorkspaceRepository();
   const session = await workspaceRepository.createSession(root, new Date("2026-08-23T00:00:00.000Z"), "mvp-session");
   const registry = new ProviderRegistry();
-  const provider = new ProviderService(registry, new AuthorizedMvpProviderGateway(path.join(process.cwd(), "src", "Presentation", "worker.py"), process.cwd(), path.join(process.cwd(), ".venv", "Scripts", "python.exe")), persistence);
+  const worker = new WorkerService(new PythonWorkerClient({
+    workerScript: path.join(process.cwd(), "src", "Presentation", "worker.py"),
+    cwd: process.cwd(),
+    pythonExecutable: path.join(process.cwd(), ".venv", "Scripts", "python.exe"),
+  }));
+  const provider = new ProviderService(registry, new AuthorizedMvpProviderGateway(worker), persistence);
   const runtime = new ProviderRuntimeService(new PrivateProviderRuntimeGateway(), registry, new ProviderRuntimeStartPolicy({ requestStartApproval: async () => true }), persistence);
   const permissions = new PermissionPolicy({ requestApproval: async () => true });
   const agent = new AgentTaskService(runtime, provider, permissions, persistence);

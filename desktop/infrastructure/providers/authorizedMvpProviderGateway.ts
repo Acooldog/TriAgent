@@ -2,9 +2,8 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { ProviderContractError, type ProviderEvent, type ProviderGateway, type ProviderGatewayResult, type ProviderHealth, type ProviderInvocationRequest, type ProviderManifest } from "../../application/provider/providerProtocol";
 import type { WorkerEvent } from "../../application/worker/workerProtocol";
+import type { WorkerService } from "../../application/worker/workerService";
 import { selectKugouProvider } from "./decryptionProviderPolicy";
-import { WorkerService } from "../../application/worker/workerService";
-import { PythonWorkerClient } from "../workers/pythonWorker";
 import { MVP_PROVIDER_MANIFEST } from "./mvpProviderManifest";
 import { decryptUnlockMusicKgm, UnlockMusicUnsupportedError } from "../unlockMusicKgm";
 import { debugError, debugInfo } from "../logging/debugLogger";
@@ -14,8 +13,9 @@ export class AuthorizedMvpProviderGateway implements ProviderGateway {
   private readonly active = new Map<string, string>();
   private readonly cancelled = new Set<string>();
 
-  public constructor(workerScript: string, cwd: string, pythonExecutable?: string) {
-    this.worker = new WorkerService(new PythonWorkerClient({ workerScript, cwd, pythonExecutable }));
+  /** @param worker 由组合根（presentation/main.ts）注入的 WorkerService 实例 */
+  public constructor(worker: WorkerService) {
+    this.worker = worker;
   }
 
   public async discover(): Promise<ProviderManifest[]> { return [MVP_PROVIDER_MANIFEST]; }
