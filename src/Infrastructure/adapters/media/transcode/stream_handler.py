@@ -135,7 +135,7 @@ def _handle_stream_message(
             if not text_content and reasoning_content:
                 # 思考过程：emit 成 thinking 类型事件，不累积到 pending_text
                 emitter.emit("agent_thinking_delta", {"content": reasoning_content})
-                continue
+                return
             if text_content:
                 import re as _re
                 text_content = _re.sub(r"<unused\d+>.*?</unused\d+>", "", text_content, flags=_re.DOTALL)
