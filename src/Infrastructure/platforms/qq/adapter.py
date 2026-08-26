@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import logging
 import pathlib
@@ -55,10 +55,34 @@ class QQPlatformAdapter:
 
     def validate_runtime(self, settings: dict) -> tuple[bool, str | None]:
         process_match = str(settings.get('process_match', 'qqmusic') or 'qqmusic')
+        auto_start = bool(settings.get('auto_start', False))
+
         info = find_process_by_name('QQMusic.exe')
         if info is None:
             info = find_process_by_substring(process_match)
-        return (info is not None, None if info is not None else 'QQ?????')
+
+        if info is not None:
+            logger.info("[QQ adapter] 运行时校验通过：QQ 音乐进程已就绪")
+            return (True, None)
+
+        # 未运行且允许自动启动
+        if auto_start:
+            logger.info("[QQ adapter] QQ 音乐未运行，尝试自动启动...")
+            try:
+                from src.Infrastructure.platforms.qq.runtime.launcher import launch_qqmusic
+                started = launch_qqmusic()
+                if started:
+                    info = find_process_by_name('QQMusic.exe') or find_process_by_substring(process_match)
+                    if info is not None:
+                        logger.info("[QQ adapter] 自动启动成功，进程已就绪")
+                        return (True, None)
+                    return (False, 'QQ 音乐启动了但进程检测仍未通过，请稍后重试')
+                return (False, '自动启动 QQ 音乐失败，未找到 QQMusic.exe 安装路径')
+            except Exception as exc:
+                logger.error(f"[QQ adapter] 自动启动异常: {exc}")
+                return (False, f'自动启动 QQ 音乐时出错: {exc}')
+
+        return (False, 'QQ 音乐未运行且未启用自动启动，请先启动 QQ 音乐或在设置中开启 auto_start')
 
     def collect_files(self, input_path: pathlib.Path, recursive: bool) -> list[pathlib.Path]:
         if input_path.is_file():

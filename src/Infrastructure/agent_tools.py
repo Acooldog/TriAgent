@@ -246,9 +246,9 @@ def decrypt_qq(input_path: str, output_dir: str) -> str:
             return f"错误：QQ 音乐解密运行时不可用 - {exc}"
 
         adapter = build_platform_adapter("qq")
-        ok, _reason = adapter.validate_runtime({"process_match": "qqmusic"})
+        ok, _reason = adapter.validate_runtime({"process_match": "qqmusic", "auto_start": True})
         if not ok:
-            return "错误：未检测到运行中的 QQ 音乐客户端，请先启动 QQ 音乐后重试。"
+            return f"错误：{_reason or '未检测到运行中的 QQ 音乐客户端，自动启动也未成功。'}"
         print("[decrypt_qq] 运行时校验通过，QQ 音乐进程已就绪")
 
         files_to_decrypt = adapter.collect_files(src, True)
