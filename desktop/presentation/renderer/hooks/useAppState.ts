@@ -286,8 +286,8 @@ export function useAppState() {
       } else if (eventType === "agent_message") {
         const content = String(payload.content ?? "");
         if (content) {
-          // 检测是否为工具执行说明（包含参数描述或工具调用关键词）
-          const isToolAction = /参数[:：]|^>\s*`|调用.*工具|执行.*命令|正在调用|正在执行/.test(content);
+          // 检测是否为工具执行说明（包含参数描述、工具调用关键词、或具体工具名）
+          const isToolAction = /参数[:：]|\n>\s*`|^>\s*`|调用.*工具|执行.*命令|正在调用|正在执行|^(正在|我现在|我先).*(扫描|解密|转码|转换|移动|复制|重命名|检测|调用|执行)/m.test(content);
           const role: LlmMessage["role"] = isToolAction ? "notice" : "assistant";
           setAgentMessages((prev) => [...prev, { role, text: content }]);
         }

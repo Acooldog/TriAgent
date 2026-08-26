@@ -148,7 +148,7 @@ export function Dashboard(state: UseAppStateResult) {
               <button className="btn tool-card" onClick={() => navigateTo("task")}><span className="tool-index">01</span><b>批量处理</b><small>查看 TriMusicAgent 执行过程</small><i>打开</i></button>
               <button className="btn tool-card" onClick={() => navigateTo("library")}><span className="tool-index">02</span><b>音乐库</b><small>浏览已识别的音乐结果</small><i>打开</i></button>
               <button className="btn tool-card" onClick={() => navigateTo("diagnostics")}><span className="tool-index">03</span><b>运行诊断</b><small>确认运行环境是否正常</small><i>检查</i></button>
-              <button className="btn tool-card" onClick={() => navigateTo("llm")}><span className="tool-index">04</span><b>模型服务</b><small>配置模型对话服务</small><i>配置</i></button>
+              <button className="btn tool-card" onClick={() => { setConversationMode(false); navigateTo("llm"); }}><span className="tool-index">04</span><b>模型服务</b><small>配置模型对话服务</small><i>配置</i></button>
             </div>
           </div>
         </main>
