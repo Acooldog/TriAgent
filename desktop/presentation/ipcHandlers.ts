@@ -14,7 +14,7 @@ import type { ProviderService } from "../application/providerService";
 import type { ProviderRuntimeService } from "../application/providerRuntimeService";
 import type { ProviderRuntimeApprovalRequest } from "../application/providerRuntimeProtocol";
 import type { ChatMessage, ModelConfig, ModelEvent } from "../application/modelProtocol";
-import type { SessionPersistenceService, SessionEventRecord, SessionLogRecord, SessionTaskState } from "../application/sessionPersistence";
+import type { SessionPersistenceService, SessionTaskState } from "../application/sessionPersistence";
 import type { ToolRegistry, ToolManifest } from "../application/toolProtocol";
 import type { WorkspaceService, SessionInfo, WorkspaceState, WorkspaceSettings } from "../application/workspaceService";
 import type { WorkerService } from "../application/workerService";
@@ -22,6 +22,7 @@ import type { WorkerEvent, WorkerOperation } from "../application/workerProtocol
 import { registerProviderIpc } from "./providerIpc";
 import { debugError, debugInfo } from "../application/debugLogger";
 import { createRendererEventPublisher } from "./rendererEventPublisher";
+import { createSessionEventRecorder } from "./sessionEventRecorder";
 import { createWorkerSessionLog } from "./workerSessionLog";
 
 export interface IpcContext {
@@ -58,42 +59,8 @@ export interface IpcContext {
 export function registerIpc(ctx: IpcContext): void {
   const { workspaceService, workerService, modelService, toolRegistry, sessionPersistence, providerService, providerRuntimeService, compressor, diagnosticsService, errorSearchService, permissions, agentTaskService, getAppSettings, saveAppSettings, settingsRepo, publishState, selectedContext, requestProviderRuntimeApproval, requestSensitiveOperationApproval, checkWorkerHealth, activeModelRequests, activeModelTexts, activeTaskContexts, terminalModelRequests, setPersistenceQueue, setMainWindow } = ctx;
   const publishRendererEvent = createRendererEventPublisher(() => ctx.mainWindow);
-
-  const enqueuePersistence = (label: string, operation: () => Promise<void>): void => {
-    debugInfo("persistence", "enqueue", { label });
-    const current = ctx.persistenceQueue.then(operation);
-    setPersistenceQueue(current.catch((error: unknown) => {
-      debugError("persistence", "error", error, { label });
-      publishRendererEvent("session:persistence-error", { label, message: error instanceof Error ? error.message : "会话持久化失败。" });
-    }));
-  };
-
-  const refreshContext = async (context: { root: string; session: SessionInfo }): Promise<void> => {
-    if (workspaceService.getState().selectedSessionId === context.session.id) publishState(await workspaceService.refreshSelectedSession());
-  };
-
-  const persistEvent = (category: SessionEventRecord["category"], eventType: string, payload: Record<string, unknown>, details: Pick<SessionEventRecord, "status" | "taskId" | "requestId"> = {}, taskContext?: { root: string; session: SessionInfo }, logRecord?: SessionLogRecord): void => {
-    const context = taskContext ?? selectedContext();
-    if (!context) return;
-    const event: SessionEventRecord = { eventId: randomUUID(), emittedAt: new Date().toISOString(), category, eventType, payload, ...details };
-    enqueuePersistence(`event:${eventType}`, async () => {
-      await sessionPersistence.recordEvent(context.root, context.session, event);
-      await sessionPersistence.recordLog(context.root, context.session, logRecord ?? { emittedAt: event.emittedAt, level: details.status === "failed" ? "error" : "info", message: eventType, context: { category, taskId: details.taskId, requestId: details.requestId } });
-      await refreshContext(context);
-    });
-  };
-
-  const persistTask = (taskId: string, status: SessionTaskState["status"], requestId?: string, error?: { code: string; message: string }, taskContext?: { root: string; session: SessionInfo }): void => {
-    const context = taskContext ?? activeTaskContexts.get(taskId) ?? selectedContext();
-    if (!context) return;
-    enqueuePersistence(`task:${taskId}`, async () => {
-      const existing = (await sessionPersistence.load(context.root, context.session)).tasks.find((task) => task.taskId === taskId);
-      const now = new Date().toISOString();
-      const task: SessionTaskState = { taskId, status, startedAt: existing?.startedAt ?? now, updatedAt: now, ...(status !== "running" ? { completedAt: now } : {}), ...(requestId ? { requestId } : existing?.requestId ? { requestId: existing.requestId } : {}), ...(error ? { error } : {}) };
-      await sessionPersistence.updateTask(context.root, context.session, task);
-      await refreshContext(context);
-    });
-  };
+  const refreshContext = async (context: { root: string; session: SessionInfo }): Promise<void> => { if (workspaceService.getState().selectedSessionId === context.session.id) publishState(await workspaceService.refreshSelectedSession()); };
+  const { enqueuePersistence, persistEvent, persistTask } = createSessionEventRecorder({ sessionPersistence, selectedContext, resolveTaskContext: (taskId) => activeTaskContexts.get(taskId) ?? selectedContext(), refreshContext, getQueue: () => ctx.persistenceQueue, setQueue: setPersistenceQueue, reportPersistenceError: (label, message) => publishRendererEvent("session:persistence-error", { label, message }) });
 
   const publishWorkerEvent = (event: WorkerEvent): WorkerEvent => {
     const context = activeTaskContexts.get(event.task_id);
