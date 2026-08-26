@@ -170,11 +170,13 @@ npm run build:ui
 
 正式 Electron Renderer 直接加载迁移后的原型入口和资源，保留处理台、模型服务、当前任务、音乐库、任务历史、诊断中心、设置、审批、错误恢复、会话压缩、流式输出、停止和时间线折叠交互。原型按钮通过 Presentation 层 bridge 接入 Application IPC，不再把模拟状态当作真实结果。
 
-启动：`npm run start:electron`。若本地没有 Python 虚拟环境，先创建 `.venv` 并使用 `requirements-private.txt` 安装私有运行时依赖；然后选择非 C 盘工作区、创建会话、配置通用 OpenAI-compatible 模型并提交自然语言解密任务。私有版本使用一个授权的本地 Provider 完成 KGM v3 到 MP3 的可验证闭环，输出、session、日志、时间线、产物引用、取消、失败恢复和重启停止状态均由现有持久化协议记录。
+启动：`npm run start:electron`。若本地没有 Python 虚拟环境，先创建 `.venv`，再执行 `.venv\Scripts\python.exe -m pip install -r requirements-private.txt` 安装私有运行时依赖；然后选择非 C 盘工作区、创建会话、配置通用 OpenAI-compatible 模型并提交自然语言解密任务。私有版本使用一个授权的本地 Provider 完成 KGM v3 到 MP3 的可验证闭环，输出、session、日志、时间线、产物引用、取消、失败恢复和重启停止状态均由现有持久化协议记录。
 
 模型设置页提供 API Key、Thinking、最大 Token 和 Temperature。智谱 GLM-4.5 配置示例：Base URL `https://open.bigmodel.cn/api/paas/v4`，模型名 `glm-4.5`，Thinking `enabled`，最大 Token `4096`，Temperature `0.6`。保存设置和测试连接均通过 Electron IPC 执行，API Key 不写入 session 或日志。
 
 模型、Worker、Provider、Agent 和持久化事件会在发送时读取当前 Electron 窗口，避免 IPC 早于窗口创建注册时丢失 Renderer 事件；模型的流式推理与回复文本可在会话页面持续渲染。
+
+Agent 任务会在开始处理和调用工具前发送简短的中文行动说明，例如先核对路径、扫描文件、再执行解密；这些消息描述可见计划和当前动作，不展示模型的隐含推理。Python Worker 强制使用 UTF-8，并按完整字符和完整行转发 stdout/stderr，避免中文日志乱码或拆成多条事件。开发模式会从仓库根目录自动发现 `.venv` 和 Worker 入口。
 
 ## 调试日志
 

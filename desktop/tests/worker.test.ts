@@ -35,6 +35,23 @@ test("runs the real Python worker ping operation", async () => {
   const result = await handle.completion;
   assert.equal(result.status, "completed");
   assert.equal(result.resultCode, 0);
+  assert.equal(result.event.payload.message, "Python worker 已就绪。");
+});
+
+test("forces UTF-8 for the Python worker process", async () => {
+  const process = new FakeWorkerProcess();
+  let options: Record<string, unknown> | undefined;
+  const client = new PythonWorkerClient({
+    workerScript: "unused",
+    spawnWorker: (_command, _args, spawnOptions) => { options = spawnOptions as Record<string, unknown>; return process; },
+    defaultTimeoutMs: 1000,
+  });
+  const handle = client.start({ protocol_version: "1", command: "start", request_id: "request-env", task_id: "task-env", operation: "ping", payload: {} }, () => undefined);
+  process.stdout.write(eventLine("task-env", "request-env"));
+  await handle.completion;
+  const env = options?.env as Record<string, string>;
+  assert.equal(env.PYTHONUTF8, "1");
+  assert.equal(env.PYTHONIOENCODING, "utf-8");
 });
 
 test("normalizes protocol errors and timeouts", async () => {
@@ -48,6 +65,36 @@ test("normalizes protocol errors and timeouts", async () => {
   const timeoutClient = new PythonWorkerClient({ workerScript: "unused", spawnWorker: () => idle, defaultTimeoutMs: 20 });
   const timeoutHandle = timeoutClient.start({ protocol_version: "1", command: "start", request_id: "request-timeout", task_id: "task-timeout", operation: "ping", payload: {} }, () => undefined);
   await assert.rejects(timeoutHandle.completion, (error: unknown) => error instanceof WorkerBridgeError && error.code === "worker-timeout");
+});
+
+test("preserves UTF-8 worker events split across byte chunks", async () => {
+  const process = new FakeWorkerProcess();
+  const events: ReturnType<typeof parseWorkerEvent>[] = [];
+  const client = new PythonWorkerClient({ workerScript: "unused", spawnWorker: () => process, defaultTimeoutMs: 1000 });
+  const handle = client.start({ protocol_version: "1", command: "start", request_id: "request-utf8", task_id: "task-utf8", operation: "agent", payload: {} }, (event) => events.push(event));
+  const line = Buffer.from(`${JSON.stringify({ protocol_version: "1", request_id: "request-utf8", task_id: "task-utf8", event_type: "agent_log", status: "running", payload: { message: "中文进度" }, error: null, emitted_at: new Date().toISOString() })}\n`, "utf8");
+  const splitAt = line.indexOf(Buffer.from("中", "utf8")) + 1;
+  process.stdout.write(line.subarray(0, splitAt));
+  process.stdout.write(line.subarray(splitAt));
+  process.stdout.write(eventLine("task-utf8", "request-utf8"));
+  await handle.completion;
+  assert.equal(events[0]?.payload.message, "中文进度");
+});
+
+test("buffers UTF-8 stderr by complete lines", async () => {
+  const process = new FakeWorkerProcess();
+  const events: ReturnType<typeof parseWorkerEvent>[] = [];
+  const client = new PythonWorkerClient({ workerScript: "unused", spawnWorker: () => process, defaultTimeoutMs: 1000 });
+  const handle = client.start({ protocol_version: "1", command: "start", request_id: "request-stderr", task_id: "task-stderr", operation: "agent", payload: {} }, (event) => events.push(event));
+  const line = Buffer.from("中文错误\n", "utf8");
+  const splitAt = line.indexOf(Buffer.from("中", "utf8")) + 1;
+  process.stderr.write(line.subarray(0, splitAt));
+  process.stderr.write(line.subarray(splitAt));
+  process.stdout.write(eventLine("task-stderr", "request-stderr"));
+  await handle.completion;
+  const logs = events.filter((event) => event.event_type === "agent_log");
+  assert.equal(logs.length, 1);
+  assert.equal(logs[0]?.payload.message, "[stderr] 中文错误");
 });
 
 test("sends a cancel command and terminates an active worker", async () => {

@@ -1,6 +1,5 @@
 import { app, BrowserWindow, dialog } from "electron";
 import { randomUUID } from "node:crypto";
-import fs from "node:fs";
 import path from "node:path";
 import { BUILT_IN_TOOL_MANIFESTS } from "../application/builtInTools";
 import { AgentTaskService } from "../application/agentTaskService";
@@ -24,6 +23,7 @@ import { AuthorizedMvpProviderGateway } from "../infrastructure/authorizedMvpPro
 import { FakeMvpProviderRuntimeGateway } from "../infrastructure/fakeMvpProviderRuntimeGateway";
 import { DuckDuckGoErrorSearchGateway } from "../infrastructure/duckDuckGoErrorSearch";
 import { PythonWorkerClient } from "../infrastructure/pythonWorker";
+import { resolveProjectRoot, resolvePythonExecutable, resolveWorkerScript } from "../infrastructure/pythonRuntimePaths";
 import { OpenAiCompatibleClient } from "../infrastructure/openAiCompatibleClient";
 import { JsonSettingsRepository } from "../infrastructure/settingsRepository";
 import { SystemDiagnosticsGateway } from "../infrastructure/systemDiagnostics";
@@ -114,46 +114,15 @@ async function checkWorkerHealth(): Promise<boolean> {
   return (await handle.completion).status === "completed";
 }
 
-function resolveWorkerScript(configuredPath: string | undefined, appPath: string, projectRoot: string): string {
-  if (configuredPath && fs.existsSync(configuredPath)) {
-    debugInfo("python-worker", "using configured worker script", { path: configuredPath });
-    return configuredPath;
-  }
-  const candidates = [
-    path.join(projectRoot, "desktop", "infrastructure", "publicWorker.py"),
-    path.join(appPath, "desktop", "infrastructure", "publicWorker.py"),
-    path.resolve(appPath, "publicWorker.py"),
-  ];
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) {
-      debugInfo("python-worker", "found worker script", { path: candidate });
-      return candidate;
-    }
-  }
-  const fallback = path.join(projectRoot, "desktop", "infrastructure", "publicWorker.py");
-  debugInfo("python-worker", "worker script not found, using fallback", { path: fallback });
-  return fallback;
-}
-
 async function bootstrap(): Promise<void> {
   settingsRepo = settingsRepository();
   appSettings = await settingsRepo.load();
   debugInfo("settings", "loaded", { workspaceRoot: appSettings.workspace.workspaceRoot, hasModelConfig: Boolean(appSettings.model.defaultConfig.baseUrl) });
 
   const appPath = app.getAppPath();
-  const projectRoot = path.resolve(appPath, "..", "..");
-  const workerScript = resolveWorkerScript(appSettings.worker.scriptPath, appPath, projectRoot);
-
-  let pythonExe = process.env.TRIMUSIC_PYTHON;
-  if (!pythonExe) {
-    const venvPython = path.join(projectRoot, ".venv", process.platform === "win32" ? "Scripts" : "bin", process.platform === "win32" ? "python.exe" : "python");
-    if (fs.existsSync(venvPython)) {
-      pythonExe = venvPython;
-      debugInfo("python-worker", "auto-detected venv python", { path: venvPython });
-    } else {
-      pythonExe = "python";
-    }
-  }
+  const projectRoot = resolveProjectRoot(appPath, __dirname);
+  const workerScript = resolveWorkerScript(appSettings.worker.scriptPath, projectRoot, appPath);
+  const pythonExe = resolvePythonExecutable(process.env.TRIMUSIC_PYTHON, projectRoot, process.platform);
   debugInfo("python-worker", "using python", { python: pythonExe, appPath, projectRoot, workerScript });
 
   workerService = new WorkerService(new PythonWorkerClient({ workerScript, pythonExecutable: pythonExe, cwd: projectRoot }));

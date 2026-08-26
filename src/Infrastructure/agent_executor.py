@@ -3,6 +3,13 @@ from __future__ import annotations
 import time
 from typing import Any, Callable
 
+from src.Infrastructure.agent_model import create_chat_model
+from src.Infrastructure.agent_progress import (
+    AgentEventEmitter,
+    build_initial_action_message,
+    build_system_prompt,
+    build_tool_action_message,
+)
 from src.Infrastructure.agent_tools import ALL_TOOLS, TOOL_NAMES, TOOL_DESCRIPTIONS
 
 try:
@@ -29,85 +36,10 @@ except ImportError:
             self.content = content
 
 
-SYSTEM_PROMPT = """你是 TriMusicAgent，一个专业的音乐处理助手。你需要像一个能干的助手一样与用户交流。
-
-你的能力包括：
-1. 扫描和识别加密音乐文件（酷狗 kgma/kgm/kgg/vpr 格式）
-2. 使用 UnlockMusic 完整算法解密酷狗音乐文件
-3. 管理文件（复制、移动）
-4. 检测音频格式
-
-## 交流规则（非常重要！）
-
-你必须用中文与用户交流，并遵循以下风格：
-
-1. **收到任务时**先回应用户，例如："好的，我来帮你扫描一下这个目录。" 或 "了解了，我现在开始处理。"
-2. **调用工具前**告诉用户你要做什么，例如："我先来扫描一下这个目录，看看有哪些加密文件。"
-3. **工具调用后**告诉用户结果，例如："扫描完成！找到了 5 个加密文件。" 或 "解密成功，文件已经保存到..."
-4. **遇到问题时**坦诚告知，例如："遇到了一个问题，正在尝试另一种方式..." 或 "这个文件解密失败了，可能是密钥不对。"
-5. **完成任务时**做一个总结，例如："全部完成！共处理了 10 个文件，成功 8 个，失败 2 个。"
-
-## 重要执行规则：
-- 解密工具 decrypt_kugou 使用 UnlockMusic 完整解密算法，是酷狗音乐解密的首选方案
-- 每次只调用一个工具，等待结果后再决定下一步
-- 如果扫描到文件，告诉用户找到了多少个，然后建议解密
-- 解密完成后，报告成功/失败数量和解密后文件的位置"""
-
-
-class AgentEventEmitter:
-    def __init__(self, event_sink: Callable[[str, dict[str, Any]], None]) -> None:
-        self._sink = event_sink
-
-    def _log(self, message: str, level: str = "info") -> None:
-        try:
-            self._sink("agent_log", {
-                "level": level,
-                "message": message,
-                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime()),
-            })
-        except Exception:
-            pass
-
-    def emit(self, event_type: str, payload: dict[str, Any] | None = None) -> None:
-        self._log(f"发射事件: {event_type}", "debug")
-        try:
-            self._sink(event_type, payload or {})
-        except Exception as exc:
-            self._log(f"事件发射失败: {event_type} - {exc}", "error")
-
-
 def _create_chat_model(model_config: dict[str, Any]):
     if not _LANGCHAIN_AVAILABLE:
         raise RuntimeError("langchain 未安装")
-
-    model_name = str(model_config.get("model", "glm-4.5"))
-    base_url = str(model_config.get("base_url", "https://open.bigmodel.cn/api/paas/v4"))
-    api_key = str(model_config.get("api_key", ""))
-    temperature = float(model_config.get("temperature", 0.7))
-
-    if not api_key:
-        raise RuntimeError("未配置 API Key")
-
-    provider = str(model_config.get("provider", "openai")).lower()
-
-    kwargs = {
-        "model": model_name,
-        "model_provider": provider,
-        "base_url": base_url,
-        "api_key": api_key,
-        "temperature": temperature,
-    }
-
-    max_tokens = model_config.get("max_tokens")
-    if max_tokens:
-        kwargs["max_tokens"] = int(max_tokens)
-
-    return init_chat_model(**kwargs)
-
-
-def _build_system_prompt() -> str:
-    tool_descriptions = "\n".join(f"- {name}: {TOOL_DESCRIPTIONS.get(name, '')}" for name in TOOL_NAMES)
-    return f"{SYSTEM_PROMPT}\n\n可用工具：\n{tool_descriptions}"
+    return create_chat_model(model_config, init_chat_model)
 
 
 def _build_tools_for_llm() -> list:
@@ -142,11 +74,17 @@ def _handle_stream_message(
         has_tool_calls = hasattr(msg, "tool_calls") and msg.tool_calls
 
         if has_tool_calls:
-            _flush_pending_text(emitter, pending_text)
+            narrated = bool(_flush_pending_text(emitter, pending_text))
             for tc in msg.tool_calls:
                 tool_name = tc.get("name", "unknown")
                 tool_args = str(tc.get("args", ""))[:500]
                 tool_call_id = tc.get("id", "")
+                if not narrated:
+                    emitter.emit("agent_message", {
+                        "content": build_tool_action_message(tool_name),
+                        "kind": "progress",
+                    })
+                    narrated = True
                 emitter._log(f"调用工具: {tool_name}, 参数: {tool_args[:80]}", "info")
                 emitter.emit("agent_tool_call", {
                     "tool_name": tool_name,
@@ -193,9 +131,15 @@ def run_agent(
     event_sink: Callable[[str, dict[str, Any]], None],
     max_iterations: int = 15,
     stop_requested: Callable[[], bool] | None = None,
+    announce_start: bool = True,
 ) -> dict[str, Any]:
     emitter = AgentEventEmitter(event_sink)
     emitter.emit("agent_started", {"message": user_message, "model": model_config.get("model", "")})
+    if announce_start:
+        emitter.emit("agent_message", {
+            "content": build_initial_action_message(user_message),
+            "kind": "progress",
+        })
 
     if not _LANGCHAIN_AVAILABLE:
         emitter._log("langchain 不可用，返回失败", "error")
@@ -212,7 +156,7 @@ def run_agent(
         tools = _build_tools_for_llm()
         emitter._log(f"已加载 {len(tools)} 个工具: {TOOL_NAMES}")
 
-        system_prompt = _build_system_prompt()
+        system_prompt = build_system_prompt(TOOL_NAMES, TOOL_DESCRIPTIONS)
 
         emitter._log("正在创建 agent...")
         agent = create_agent(llm, tools, system_prompt=system_prompt)

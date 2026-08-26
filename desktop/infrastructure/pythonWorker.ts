@@ -1,5 +1,6 @@
 import { spawn, type SpawnOptions } from "node:child_process";
 import type { Readable } from "node:stream";
+import { StringDecoder } from "node:string_decoder";
 import { buildCancelRequest, isTerminalWorkerEvent, parseWorkerEvent, type WorkerEvent, type WorkerStartRequest } from "../application/workerProtocol";
 import type { WorkerCompletion, WorkerRunHandle, WorkerRunner } from "../application/workerService";
 import { debugError, debugInfo } from "../application/debugLogger";
@@ -40,6 +41,9 @@ interface ActiveRun {
   settled: boolean;
   cancellationRequested: boolean;
   buffer: string;
+  stderrBuffer: string;
+  stdoutDecoder: StringDecoder;
+  stderrDecoder: StringDecoder;
   timeout: NodeJS.Timeout;
 }
 
@@ -62,38 +66,22 @@ export class PythonWorkerClient implements WorkerRunner {
     if (this.active.has(request.task_id)) throw new WorkerBridgeError("worker-start-failed", "该 Agent 任务已有一个活动 worker。");
     let processHandle: WorkerProcess;
     try {
-      processHandle = this.spawnWorker(this.pythonExecutable, [this.options.workerScript], { cwd: this.options.cwd, env: { ...process.env, PYTHONUNBUFFERED: "1" }, stdio: ["pipe", "pipe", "pipe"] });
+      processHandle = this.spawnWorker(this.pythonExecutable, [this.options.workerScript], { cwd: this.options.cwd, env: { ...process.env, PYTHONUNBUFFERED: "1", PYTHONUTF8: "1", PYTHONIOENCODING: "utf-8" }, stdio: ["pipe", "pipe", "pipe"] });
     } catch (error) {
       throw new WorkerBridgeError("worker-start-failed", error instanceof Error ? error.message : "无法启动 Python worker。");
     }
     let resolveCompletion!: (result: WorkerCompletion) => void;
     let rejectCompletion!: (error: WorkerBridgeError) => void;
     const completion = new Promise<WorkerCompletion>((resolve, reject) => { resolveCompletion = resolve; rejectCompletion = reject; });
-    const active: ActiveRun = { request, process: processHandle, resolve: resolveCompletion, reject: rejectCompletion, settled: false, cancellationRequested: false, buffer: "", timeout: setTimeout(() => undefined, 2 ** 31 - 1) };
+    const active: ActiveRun = { request, process: processHandle, resolve: resolveCompletion, reject: rejectCompletion, settled: false, cancellationRequested: false, buffer: "", stderrBuffer: "", stdoutDecoder: new StringDecoder("utf8"), stderrDecoder: new StringDecoder("utf8"), timeout: setTimeout(() => undefined, 2 ** 31 - 1) };
     clearTimeout(active.timeout);
     active.timeout = setTimeout(() => this.fail(active, "worker-timeout", "Python worker 超时，任务已停止。", true), timeoutMs);
     this.active.set(request.task_id, active);
     processHandle.stdout.on("data", (chunk: Buffer | string) => this.consumeOutput(active, chunk, onEvent));
-    processHandle.stderr.on("data", (chunk: Buffer | string) => {
-      const text = chunk.toString().trim();
-      if (text) {
-        debugInfo("worker", "stderr", { requestId: request.request_id, taskId: request.task_id, output: text.slice(0, 500) });
-        try {
-          onEvent({
-            protocol_version: "1",
-            request_id: request.request_id,
-            task_id: request.task_id,
-            event_type: "agent_log",
-            status: "running",
-            payload: { level: "error", message: `[stderr] ${text.slice(0, 300)}`, timestamp: new Date().toISOString() },
-            error: null,
-            emitted_at: new Date().toISOString(),
-          });
-        } catch { /* ignore forwarding errors */ }
-      }
-    });
+    processHandle.stderr.on("data", (chunk: Buffer | string) => this.consumeStderr(active, chunk, onEvent));
     processHandle.on("error", (error: Error) => { debugError("worker", "process-error", error, { requestId: request.request_id, taskId: request.task_id }); this.fail(active, "worker-start-failed", error.message, true); });
     processHandle.on("close", (code: number | null) => {
+      if (!active.settled) this.flushStderr(active, onEvent);
       if (!active.settled) this.fail(active, active.cancellationRequested ? "worker-cancelled" : "worker-exited", active.cancellationRequested ? "Python worker 已取消。" : `Python worker 已退出（${code ?? "未知"}）。`, false);
     });
     try { processHandle.stdin.write(`${JSON.stringify(request)}\n`); } catch (error) { this.fail(active, "worker-start-failed", error instanceof Error ? error.message : "无法写入 worker 请求。", true); }
@@ -113,7 +101,7 @@ export class PythonWorkerClient implements WorkerRunner {
   public activeTaskIds(): string[] { return [...this.active.keys()]; }
 
   private consumeOutput(active: ActiveRun, chunk: Buffer | string, onEvent: (event: WorkerEvent) => void): void {
-    active.buffer += chunk.toString();
+    active.buffer += typeof chunk === "string" ? chunk : active.stdoutDecoder.write(chunk);
     let newline = active.buffer.indexOf("\n");
     while (newline >= 0) {
       const line = active.buffer.slice(0, newline).trim();
@@ -133,6 +121,40 @@ export class PythonWorkerClient implements WorkerRunner {
       }
       newline = active.buffer.indexOf("\n");
     }
+  }
+
+  private consumeStderr(active: ActiveRun, chunk: Buffer | string, onEvent: (event: WorkerEvent) => void): void {
+    active.stderrBuffer += typeof chunk === "string" ? chunk : active.stderrDecoder.write(chunk);
+    let newline = active.stderrBuffer.indexOf("\n");
+    while (newline >= 0) {
+      const line = active.stderrBuffer.slice(0, newline).trim();
+      active.stderrBuffer = active.stderrBuffer.slice(newline + 1);
+      if (line) this.publishStderrLine(active, line, onEvent);
+      newline = active.stderrBuffer.indexOf("\n");
+    }
+  }
+
+  private flushStderr(active: ActiveRun, onEvent: (event: WorkerEvent) => void): void {
+    active.stderrBuffer += active.stderrDecoder.end();
+    const line = active.stderrBuffer.trim();
+    active.stderrBuffer = "";
+    if (line) this.publishStderrLine(active, line, onEvent);
+  }
+
+  private publishStderrLine(active: ActiveRun, line: string, onEvent: (event: WorkerEvent) => void): void {
+    debugInfo("worker", "stderr", { requestId: active.request.request_id, taskId: active.request.task_id, output: line.slice(0, 500) });
+    try {
+      onEvent({
+        protocol_version: "1",
+        request_id: active.request.request_id,
+        task_id: active.request.task_id,
+        event_type: "agent_log",
+        status: "running",
+        payload: { level: "error", message: `[stderr] ${line.slice(0, 300)}`, timestamp: new Date().toISOString() },
+        error: null,
+        emitted_at: new Date().toISOString(),
+      });
+    } catch { /* ignore forwarding errors */ }
   }
 
   private complete(active: ActiveRun, event: WorkerEvent): void {

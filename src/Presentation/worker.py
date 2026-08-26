@@ -15,6 +15,11 @@ if str(PROJECT_ROOT) not in sys.path:
 
 PROTOCOL_VERSION = "1"
 
+for _stream in (sys.stdout, sys.stderr):
+    _reconfigure = getattr(_stream, "reconfigure", None)
+    if callable(_reconfigure):
+        _reconfigure(encoding="utf-8", errors="strict")
+
 
 class WorkerRequestError(ValueError):
     pass
@@ -124,6 +129,11 @@ def run_agent(payload: dict[str, Any], runtime: WorkerRuntime) -> int:
     model_config.setdefault("base_url", "https://open.bigmodel.cn/api/paas/v4")
     max_iterations = int(payload.get("max_iterations", 15) or 15)
 
+    from src.Infrastructure.agent_progress import build_initial_action_message
+    runtime.emit("agent_message", payload={
+        "content": build_initial_action_message(user_message),
+        "kind": "progress",
+    })
     runtime.log("正在导入 agent_executor (步骤 1/3: 加载模块)...")
     import importlib
     runtime.log("正在导入 agent_executor (步骤 2/3: 执行 import)...")
@@ -132,6 +142,7 @@ def run_agent(payload: dict[str, Any], runtime: WorkerRuntime) -> int:
     _run_agent = _agent_executor_mod.run_agent
     check_langchain_available = _agent_executor_mod.check_langchain_available
     runtime.log("agent_executor 导入完成")
+    threading.Thread(target=read_cancel, args=(runtime,), daemon=True).start()
 
     langchain_ok = check_langchain_available()
     runtime.log(f"langchain 状态: {'已安装' if langchain_ok else '未安装'}")
@@ -169,6 +180,7 @@ def run_agent(payload: dict[str, Any], runtime: WorkerRuntime) -> int:
                 event_sink=event_sink,
                 max_iterations=max_iterations,
                 stop_requested=runtime.cancelled.is_set,
+                announce_start=False,
             )
         runtime.log(f"Agent 执行完成，结果: status={result.get('status')}, response_len={len(str(result.get('response', '')))}")
 
@@ -214,7 +226,8 @@ def main() -> int:
         runtime.emit("worker_finished", status="failed", payload={"result_code": 1}, error={"code": "worker-request-error", "message": str(exc)})
         return 1
     runtime = WorkerRuntime(request["request_id"], request["task_id"])
-    threading.Thread(target=read_cancel, args=(runtime,), daemon=True).start()
+    if request["operation"] != "agent":
+        threading.Thread(target=read_cancel, args=(runtime,), daemon=True).start()
     return run_request(request, runtime)
 
 
