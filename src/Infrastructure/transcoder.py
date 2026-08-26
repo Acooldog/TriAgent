@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import base64
 import json
@@ -62,23 +62,53 @@ def resolve_ffmpeg_path(paths: RuntimePaths | None = None) -> pathlib.Path | Non
     return None
 
 
-def fast_detect_container(path: pathlib.Path) -> str:
-    if not path.exists() or path.stat().st_size < 4:
+def resolve_ffprobe_path(paths: RuntimePaths | None = None) -> pathlib.Path | None:
+    """查找 ffprobe 可执行文件，与 ffmpeg 同目录。"""
+    paths = paths or RuntimePaths.discover()
+    candidates: list[pathlib.Path] = []
+    for pattern in ("ffprobe*.exe", "ffprobe.exe"):
+        candidates.extend(sorted(paths.assets_dir.glob(pattern)))
+        candidates.extend(sorted((paths.bundle_dir / "assets").glob(pattern)))
+        candidates.extend(sorted((paths.root_dir / "assets").glob(pattern)))
+    # 也检查 ffmpeg 同目录下是否有 ffprobe
+    ffmpeg_path = resolve_ffmpeg_path(paths)
+    if ffmpeg_path is not None:
+        sibling = ffmpeg_path.parent / ffmpeg_path.name.replace("ffmpeg", "ffprobe")
+        if sibling.exists() and sibling.is_file():
+            candidates.insert(0, sibling)
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        if candidate.exists() and candidate.is_file():
+            return candidate
+    return None
+
+
+def fast_detect_container_from_bytes(head: bytes) -> str:
+    if len(head) < 4:
         return "bin"
-    head = path.read_bytes()[:64]
-    if head.startswith(b"fLaC"):
+    if head[:4] == b"fLaC":
         return "flac"
-    if head.startswith(b"OggS"):
+    if head[:4] == b"OggS":
         return "ogg"
-    if head.startswith(b"RIFF") and len(head) >= 12 and head[8:12] == b"WAVE":
+    if head[:4] == b"RIFF" and len(head) >= 12 and head[8:12] == b"WAVE":
         return "wav"
-    if head.startswith(b"ID3"):
+    if head[:3] == b"ID3":
         return "mp3"
     if len(head) >= 2 and head[0] == 0xFF and head[1] in (0xFB, 0xF3, 0xF2):
         return "mp3"
     if len(head) >= 12 and head[4:8] == b"ftyp":
         return "m4a"
     return "bin"
+
+
+def fast_detect_container(path: pathlib.Path) -> str:
+    if not path.exists() or path.stat().st_size < 4:
+        return "bin"
+    return fast_detect_container_from_bytes(path.read_bytes()[:64])
 
 
 def probe_audio_container(input_path: pathlib.Path) -> str | None:
@@ -195,9 +225,10 @@ def _probe_media_summary_with_mutagen(input_path: pathlib.Path, container_hint: 
 def probe_media_summary(input_path: pathlib.Path) -> dict[str, Any]:
     paths = RuntimePaths.discover()
     ffmpeg_path = resolve_ffmpeg_path(paths)
+    ffprobe_path = resolve_ffprobe_path(paths)
     fast_container = fast_detect_container(input_path)
     mutagen_summary = _probe_media_summary_with_mutagen(input_path, fast_container)
-    if ffmpeg_path is None or not input_path.exists():
+    if (ffmpeg_path is None and ffprobe_path is None) or not input_path.exists():
         if mutagen_summary is not None:
             return mutagen_summary
         return {
@@ -210,48 +241,105 @@ def probe_media_summary(input_path: pathlib.Path) -> dict[str, Any]:
             "cover_codec": "",
             "metadata": {},
         }
+
+    # 优先使用 ffprobe（支持 JSON 输出流信息）
+    probe_exe = ffprobe_path or ffmpeg_path
+    is_ffprobe = ffprobe_path is not None
     fd, temp_name = tempfile.mkstemp(suffix=".json")
     os.close(fd)
     pathlib.Path(temp_name).unlink(missing_ok=True)
     try:
-        command = [
-            str(ffmpeg_path),
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-print_format",
-            "json",
-            "-show_format",
-            "-show_streams",
-            "-i",
-            str(input_path),
-            temp_name,
-        ]
-        completed = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-            **_subprocess_window_kwargs(),
-        )
-        temp_path = pathlib.Path(temp_name)
-        if completed.returncode != 0 or not temp_path.exists():
-            if mutagen_summary is not None:
-                return mutagen_summary
+        if is_ffprobe:
+            # ffprobe 命令：输出 JSON 格式的流和容器信息
+            command = [
+                str(ffprobe_path),
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-print_format",
+                "json",
+                "-show_format",
+                "-show_streams",
+                "-i",
+                str(input_path),
+            ]
+            # ffprobe 输出到 stdout，不需要输出文件
+            completed = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+                **_subprocess_window_kwargs(),
+            )
+            if completed.returncode != 0:
+                if mutagen_summary is not None:
+                    return mutagen_summary
+                return {
+                    "path": str(input_path),
+                    "probe_source": "ffprobe_failed",
+                    "container": fast_container,
+                    "audio_streams": 0,
+                    "video_streams": 0,
+                    "cover": False,
+                    "cover_codec": "",
+                    "metadata": {},
+                    "stderr": (completed.stderr or "").strip(),
+                }
+            # ffprobe 输出到 stdout
+            try:
+                data = json.loads(completed.stdout)
+            except (json.JSONDecodeError, ValueError):
+                if mutagen_summary is not None:
+                    return mutagen_summary
+                return {
+                    "path": str(input_path),
+                    "probe_source": "ffprobe_parse_failed",
+                    "container": fast_container,
+                    "audio_streams": 0,
+                    "video_streams": 0,
+                    "cover": False,
+                    "cover_codec": "",
+                    "metadata": {},
+                }
+        else:
+            # 回退到 ffmpeg（使用 null 输出探测容器类型）
+            command = [
+                str(ffmpeg_path),
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                str(input_path),
+                "-f",
+                "null",
+                "NUL",
+            ]
+            completed = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+                **_subprocess_window_kwargs(),
+            )
+            format_name = _extract_format_from_stderr(completed.stderr or "")
+            streams = []
+            fmt = {"format_name": format_name}
+            # ffmpeg 回退：只能获取容器类型，无法获取详细流信息
             return {
                 "path": str(input_path),
-                "probe_source": "ffprobe_failed",
-                "container": fast_container,
-                "audio_streams": 0,
+                "probe_source": "ffmpeg_fallback",
+                "container": _normalize_container(format_name or fast_container),
+                "audio_streams": 1,
                 "video_streams": 0,
-                "cover": False,
-                "cover_codec": "",
-                "metadata": {},
-                "stderr": (completed.stderr or "").strip(),
+                "cover": bool((mutagen_summary or {}).get("cover")),
+                "cover_codec": str((mutagen_summary or {}).get("cover_codec") or ""),
+                "metadata": dict((mutagen_summary or {}).get("metadata") or {}),
             }
-        data = json.loads(temp_path.read_text(encoding="utf-8", errors="replace"))
+
         streams = list(data.get("streams") or [])
         fmt = data.get("format") or {}
         audio_streams = [stream for stream in streams if str(stream.get("codec_type")) == "audio"]
@@ -265,8 +353,7 @@ def probe_media_summary(input_path: pathlib.Path) -> dict[str, Any]:
             None,
         )
         container = str(fmt.get("format_name") or fast_detect_container(input_path)).split(",", 1)[0].strip().lower()
-        if container == "ogg":
-            container = "m4a"
+        container = _normalize_container(container)
         return {
             "path": str(input_path),
             "probe_source": "ffprobe_json",
@@ -279,6 +366,23 @@ def probe_media_summary(input_path: pathlib.Path) -> dict[str, Any]:
         }
     finally:
         pathlib.Path(temp_name).unlink(missing_ok=True)
+
+
+def _extract_format_from_stderr(stderr: str) -> str:
+    """从 ffmpeg stderr 中提取容器格式名。"""
+    marker = "Input #0, "
+    start = stderr.find(marker)
+    if start < 0:
+        return ""
+    after = stderr[start + len(marker):]
+    return after.split(",", 1)[0].strip().lower()
+
+
+def _normalize_container(container: str) -> str:
+    """规范化容器类型名。"""
+    if container == "ogg":
+        return "m4a"
+    return container
 
 
 def summary_to_log(summary: dict[str, Any]) -> str:
@@ -385,122 +489,13 @@ def transcode_file(
                 pass
 
 
-def attach_cover(input_path: pathlib.Path, output_path: pathlib.Path, cover_path: pathlib.Path) -> dict[str, str | int]:
-    paths = RuntimePaths.discover()
-    ffmpeg_path = resolve_ffmpeg_path(paths)
-    if ffmpeg_path is None:
-        raise FileNotFoundError("missing bundled ffmpeg executable in assets")
-    if output_path.suffix.lower() not in {".m4a", ".mp3", ".flac"}:
-        return {
-            "ffmpeg_path": str(ffmpeg_path),
-            "output_path": str(output_path),
-            "return_code": 0,
-            "skipped": "unsupported_cover_container",
-        }
-    temp_output = output_path.with_name(f".{output_path.stem}.cover.{time.time_ns()}{output_path.suffix}")
-    if output_path.suffix.lower() == ".m4a":
-        command = [
-            str(ffmpeg_path),
-            "-y",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-i",
-            str(input_path),
-            "-i",
-            str(cover_path),
-            "-map",
-            "0:a:0",
-            "-map",
-            "1:v:0",
-            "-c:a",
-            "copy",
-            "-c:v",
-            "mjpeg",
-            "-disposition:v:0",
-            "attached_pic",
-            "-metadata:s:v",
-            "title=Cover",
-            "-metadata:s:v",
-            "comment=Cover (front)",
-            str(temp_output),
-        ]
-    elif output_path.suffix.lower() == ".mp3":
-        command = [
-            str(ffmpeg_path),
-            "-y",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-i",
-            str(input_path),
-            "-i",
-            str(cover_path),
-            "-map",
-            "0:a:0",
-            "-map",
-            "1:v:0",
-            "-c:a",
-            "copy",
-            "-c:v",
-            "mjpeg",
-            "-id3v2_version",
-            "3",
-            "-metadata:s:v",
-            "title=Cover",
-            "-metadata:s:v",
-            "comment=Cover (front)",
-            str(temp_output),
-        ]
-    else:
-        picture_data = cover_path.read_bytes()
-        picture_b64 = base64.b64encode(picture_data).decode("ascii")
-        mime = "image/png" if cover_path.suffix.lower() == ".png" else "image/jpeg"
-        with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".meta", delete=False) as meta_file:
-            meta_file.write(";FFMETADATA1\n")
-            meta_file.write(f"metadata_block_picture={picture_b64}\n")
-            meta_path = pathlib.Path(meta_file.name)
-        try:
-            command = [
-                str(ffmpeg_path),
-                "-y",
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-i",
-                str(input_path),
-                "-f",
-                "ffmetadata",
-                "-i",
-                str(meta_path),
-                "-map_metadata",
-                "1",
-                "-map",
-                "0:a:0",
-                "-c:a",
-                "copy",
-                "-metadata",
-                f"comment=Cover MIME {mime}",
-                str(temp_output),
-            ]
-            completed = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                check=False,
-                **_subprocess_window_kwargs(),
-            )
-        finally:
-            meta_path.unlink(missing_ok=True)
-        if completed.returncode != 0:
-            stderr = completed.stderr.strip() or completed.stdout.strip() or f"ffmpeg rc={completed.returncode}"
-            raise RuntimeError(f"ffmpeg attach cover failed: {stderr}")
-        if output_path.exists():
-            output_path.unlink()
-        temp_output.replace(output_path)
-        return {"ffmpeg_path": str(ffmpeg_path), "output_path": str(output_path), "return_code": completed.returncode}
+def _run_ffmpeg_command(
+    command: list[str],
+    output_path: pathlib.Path,
+    temp_output: pathlib.Path,
+    ffmpeg_path: pathlib.Path,
+) -> dict[str, str | int]:
+    """执行 ffmpeg 命令并处理结果。"""
     try:
         completed = subprocess.run(
             command,
@@ -513,16 +508,84 @@ def attach_cover(input_path: pathlib.Path, output_path: pathlib.Path, cover_path
         )
         if completed.returncode != 0:
             stderr = completed.stderr.strip() or completed.stdout.strip() or f"ffmpeg rc={completed.returncode}"
-            raise RuntimeError(f"ffmpeg attach cover failed: {stderr}")
+            raise RuntimeError(f"ffmpeg 执行失败: {stderr}")
         if output_path.exists():
             output_path.unlink()
         temp_output.replace(output_path)
-        return {"ffmpeg_path": str(ffmpeg_path), "output_path": str(output_path), "return_code": completed.returncode}
+        return {
+            "ffmpeg_path": str(ffmpeg_path),
+            "output_path": str(output_path),
+            "return_code": completed.returncode,
+        }
     finally:
         if temp_output.exists():
             try:
                 temp_output.unlink()
             except OSError:
                 pass
+
+
+def attach_cover(input_path: pathlib.Path, output_path: pathlib.Path, cover_path: pathlib.Path) -> dict[str, str | int]:
+    """为音频文件添加封面图片。"""
+    paths = RuntimePaths.discover()
+    ffmpeg_path = resolve_ffmpeg_path(paths)
+    if ffmpeg_path is None:
+        raise FileNotFoundError("missing bundled ffmpeg executable in assets")
+    if output_path.suffix.lower() not in {".m4a", ".mp3", ".flac"}:
+        return {
+            "ffmpeg_path": str(ffmpeg_path),
+            "output_path": str(output_path),
+            "return_code": 0,
+            "skipped": "unsupported_cover_container",
+        }
+
+    temp_output = output_path.with_name(f".{output_path.stem}.cover.{time.time_ns()}{output_path.suffix}")
+    suffix = output_path.suffix.lower()
+
+    if suffix == ".m4a":
+        command = [
+            str(ffmpeg_path), "-y", "-hide_banner", "-loglevel", "error",
+            "-i", str(input_path), "-i", str(cover_path),
+            "-map", "0:a:0", "-map", "1:v:0",
+            "-c:a", "copy", "-c:v", "mjpeg",
+            "-disposition:v:0", "attached_pic",
+            "-metadata:s:v", "title=Cover",
+            "-metadata:s:v", "comment=Cover (front)",
+            str(temp_output),
+        ]
+    elif suffix == ".mp3":
+        command = [
+            str(ffmpeg_path), "-y", "-hide_banner", "-loglevel", "error",
+            "-i", str(input_path), "-i", str(cover_path),
+            "-map", "0:a:0", "-map", "1:v:0",
+            "-c:a", "copy", "-c:v", "mjpeg",
+            "-id3v2_version", "3",
+            "-metadata:s:v", "title=Cover",
+            "-metadata:s:v", "comment=Cover (front)",
+            str(temp_output),
+        ]
+    else:  # .flac
+        picture_data = cover_path.read_bytes()
+        picture_b64 = base64.b64encode(picture_data).decode("ascii")
+        mime = "image/png" if cover_path.suffix.lower() == ".png" else "image/jpeg"
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".meta", delete=False) as meta_file:
+            meta_file.write(";FFMETADATA1\n")
+            meta_file.write(f"metadata_block_picture={picture_b64}\n")
+            meta_path = pathlib.Path(meta_file.name)
+        try:
+            command = [
+                str(ffmpeg_path), "-y", "-hide_banner", "-loglevel", "error",
+                "-i", str(input_path),
+                "-f", "ffmetadata", "-i", str(meta_path),
+                "-map_metadata", "1",
+                "-map", "0:a:0",
+                "-c:a", "copy",
+                "-metadata", f"comment=Cover MIME {mime}",
+                str(temp_output),
+            ]
+        finally:
+            meta_path.unlink(missing_ok=True)
+
+    return _run_ffmpeg_command(command, output_path, temp_output, ffmpeg_path)
 
 
