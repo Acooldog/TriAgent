@@ -56,16 +56,21 @@ def _handle_stream_message(
             # We must emit the real content (if any) instead of discarding it for a canned message.
             narrated = bool(_flush_pending_text(emitter, pending_text))
             msg_content = str(msg.content) if hasattr(msg, "content") and msg.content else ""
-            if msg_content.strip() and not narrated:
-                # Emit LLM's real natural-language reply first
-                emitter.emit("agent_message", {
-                    "content": msg_content.strip(),
-                })
+            # 过滤讯飞 Spark 等模型可能发的不标准标签
+            import re as _re
+            msg_content = _re.sub(r"<unused\d+>.*?</unused\d+>", "", msg_content, flags=_re.DOTALL).strip()
+            msg_content = _re.sub(r"<unused\d+>", "", msg_content).strip()
+            if msg_content and not narrated:
+                emitter.emit("agent_message", {"content": msg_content})
                 narrated = True
             for tc in msg.tool_calls:
-                tool_name = tc.get("name", "unknown")
-                tool_args = str(tc.get("args", ""))[:500]
-                tool_call_id = tc.get("id", "")
+                tool_name = str(tc.get("name", "") or "").strip()
+                tool_args = str(tc.get("args", "") or "")[:500]
+                tool_call_id = str(tc.get("id", "") or "")
+                # 过滤空 tool_name（讯飞 Spark 可能返回无效 tool_call）
+                if not tool_name:
+                    emitter._log(f"跳过无效 tool_call（空 name）: {tc}", "debug")
+                    continue
                 if not narrated:
                     emitter.emit("agent_message", {
                         "content": build_tool_action_message(tool_name, tool_args),
@@ -87,11 +92,14 @@ def _handle_stream_message(
                     "tool_call_id": tool_call_id,
                 }
         else:
-            # LangGraph stream_mode='messages' 发的是 DELTA（增量），不是累积。
-            # 每次只到一个小片段，必须 APPEND 累积，不能 clear 覆盖！
+            # LangGraph stream_mode='messages' 发的是 DELTA（增量）
             text_content = str(msg.content) if hasattr(msg, "content") and msg.content else ""
             if text_content:
-                pending_text.append(text_content)
+                import re as _re
+                text_content = _re.sub(r"<unused\d+>.*?</unused\d+>", "", text_content, flags=_re.DOTALL)
+                text_content = _re.sub(r"<unused\d+>", "", text_content).strip()
+                if text_content:
+                    pending_text.append(text_content)
 
     elif isinstance(msg, ToolMessage) or msg_type == "ToolMessage":
         _flush_pending_text(emitter, pending_text)
