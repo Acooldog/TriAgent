@@ -34,6 +34,12 @@ export interface LlmMessage {
   text: string;
 }
 
+export interface AgentQuestion {
+  questionId: string;
+  question: string;
+  options: string[];
+}
+
 export interface ToolEvent {
   name: string;
   detail: string;
@@ -43,21 +49,9 @@ export interface ToolEvent {
   step?: number;
 }
 
-const INITIAL_FILES: FileItem[] = [
-  { id: "f1", title: "晴天.mgg", artist: "周杰伦", platform: "QQ 音乐", input: "mgg", output: "flac", size: "8.62 MB", status: "处理中", cover: "cover-a" },
-  { id: "f2", title: "夜曲.ncm", artist: "周杰伦", platform: "网易云音乐", input: "ncm", output: "flac", size: "25.31 MB", status: "待处理", cover: "cover-b" },
-  { id: "f3", title: "稻香.qmc3", artist: "周杰伦", platform: "QQ 音乐", input: "qmc3", output: "flac", size: "9.14 MB", status: "待处理", cover: "cover-c" },
-  { id: "f4", title: "说好的幸福呢.mp3", artist: "周杰伦", platform: "本地文件", input: "mp3", output: "flac", size: "10.21 MB", status: "已完成", cover: "cover-d" },
-  { id: "f5", title: "七里香.kgm", artist: "周杰伦", platform: "QQ 音乐", input: "kgm", output: "mp3", size: "7.08 MB", status: "失败", cover: "cover-e" },
-];
-
-const INITIAL_HISTORY: HistoryItem[] = [
-  { id: "h1", title: "周杰伦音乐批量处理", date: "今天 14:32", total: 5, time: "00:06:32", success: 4, failed: 1, status: "部分失败" },
-  { id: "h2", title: "清理歌单处理", date: "今天 11:08", total: 12, time: "00:12:44", success: 12, failed: 0, status: "成功" },
-  { id: "h3", title: "网易云歌曲导出处理", date: "昨天 19:24", total: 28, time: "00:18:23", success: 25, failed: 3, status: "部分失败" },
-  { id: "h4", title: "QQ 音乐批量处理", date: "昨天 16:10", total: 18, time: "00:15:08", success: 18, failed: 0, status: "成功" },
-  { id: "h5", title: "旧歌曲恢复处理", date: "更早 08-19", total: 7, time: "00:05:21", success: 7, failed: 0, status: "成功" },
-];
+// 初始为空数组，等待实际数据加载
+const INITIAL_FILES: FileItem[] = [];
+const INITIAL_HISTORY: HistoryItem[] = [];
 
 const PERMISSION_MODE_MAP: Record<PermissionMode, string> = { restricted: "受限", standard: "标准", full: "完全访问" };
 const REVERSE_MODE_MAP: Record<string, PermissionMode> = { "受限": "restricted", "标准": "standard", "完全访问": "full" };
@@ -101,6 +95,7 @@ export function useAppState() {
   const [modeMenuOpen, setModeMenuOpen] = useState(false);
   const [toolEvents, setToolEvents] = useState<ToolEvent[]>([]);
   const [agentMessages, setAgentMessages] = useState<LlmMessage[]>([]);
+  const [agentQuestion, setAgentQuestion] = useState<AgentQuestion | null>(null);
   const [conversationMode, setConversationMode] = useState(false);
   const [autoCompression, setAutoCompression] = useState(false);
   const [compressionThreshold, setCompressionThreshold] = useState(80);
@@ -191,6 +186,11 @@ export function useAppState() {
       if (event.task_id !== agentTaskIdRef.current) return;
       const { event_type: eventType, payload, status } = event;
       if (eventType === "agent_log") {
+        const level = String(payload.level ?? "info");
+        const message = String(payload.message ?? "");
+        if (message) {
+          console.info(`[Agent.${level}]`, message);
+        }
         return;
       } else if (eventType === "agent_started") {
         setToolEvents([]);
@@ -250,12 +250,22 @@ export function useAppState() {
         if (content) {
           setAgentMessages((prev) => [...prev, { role: "assistant", text: content }]);
         }
+      } else if (eventType === "agent_question") {
+        const questionId = String(payload.question_id ?? "");
+        const question = String(payload.question ?? "");
+        const optionsRaw = Array.isArray(payload.options) ? (payload.options as unknown[]) : [];
+        const options = optionsRaw.map((o) => String(o)).filter((o) => o.trim().length > 0);
+        console.info("[useAppState] agent-question:", { questionId, question: question.slice(0, 80), optionsCount: options.length });
+        if (questionId && question && options.length >= 2) {
+          setAgentQuestion({ questionId, question, options });
+        }
       } else if (eventType === "agent_finished") {
         const finalStatus = String(payload.status ?? status);
         setProcessing(false);
         setProgress(100);
         setTaskStatus(finalStatus === "completed" ? "成功" : "失败");
         setToolEvents((prev) => prev.map((t) => t.status === "running" ? { ...t, status: "done" } : t));
+        setAgentQuestion(null);
         agentTaskIdRef.current = null;
         if (finalStatus !== "completed") {
           const errMsg = String(event.error?.message ?? "Agent 执行失败");
@@ -384,7 +394,6 @@ export function useAppState() {
       setPromptText("");
       setConversationMode(true);
       setAgentMessages([{ role: "user", text: userText }]);
-      setAgentLogs([]);
       setToolEvents([]);
       setStepIndex(0);
       setProgress(0);
@@ -535,6 +544,41 @@ export function useAppState() {
     showToast("任务已停止");
   }, [showToast]);
 
+  const sendSupplement = useCallback(async () => {
+    if (!processing) { showToast("任务未在运行"); return; }
+    const userText = promptText.trim();
+    if (!userText) { showToast("先输入补充内容"); return; }
+    const taskId = agentTaskIdRef.current;
+    if (!taskId) { showToast("任务未启动"); return; }
+    setPromptText("");
+    setAgentMessages((prev) => [...prev, { role: "user", text: userText }]);
+    try {
+      await window.triMusicAgent.sendWorkerSupplement(taskId, userText);
+      console.info("[useAppState] supplement sent:", userText.slice(0, 80));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "补充发送失败";
+      setAgentMessages((prev) => [...prev, { role: "error", text: message }]);
+      showToast(message);
+    }
+  }, [processing, promptText, showToast]);
+
+  const answerAgentQuestion = useCallback(async (answer: string) => {
+    const q = agentQuestion;
+    if (!q) { showToast("当前没有待回答的问题"); return; }
+    const taskId = agentTaskIdRef.current;
+    if (!taskId) { showToast("任务未启动"); setAgentQuestion(null); return; }
+    setAgentQuestion(null);
+    setAgentMessages((prev) => [...prev, { role: "user", text: answer }]);
+    try {
+      await window.triMusicAgent.sendWorkerAnswer(taskId, q.questionId, answer);
+      console.info("[useAppState] answer sent:", { questionId: q.questionId, answer: answer.slice(0, 80) });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "回答发送失败";
+      setAgentMessages((prev) => [...prev, { role: "error", text: message }]);
+      showToast(message);
+    }
+  }, [agentQuestion, showToast]);
+
   const addFile = useCallback((folder = false) => {
     const suffix = queue.length + 1;
     if (folder) {
@@ -550,8 +594,6 @@ export function useAppState() {
       showToast("已添加模拟音乐文件");
     }
   }, [queue.length, showToast]);
-
-  const [llmChatSent, setLlmChatSent] = useState(false);
 
   const resetModel = useCallback(async () => {
     const defaultModel = { ...modelConfig, model: "DeepSeek-R1" };
@@ -593,6 +635,7 @@ export function useAppState() {
     modeMenuOpen, setModeMenuOpen,
     toolEvents, setToolEvents,
     agentMessages, setAgentMessages,
+    agentQuestion, setAgentQuestion, answerAgentQuestion,
     conversationMode, setConversationMode,
     autoCompression, setAutoCompression,
     compressionThreshold, setCompressionThreshold,
@@ -605,11 +648,10 @@ export function useAppState() {
     saveConfig, testModelConnection,
     sendPrompt, compressContext, submitFromDashboard, dashboardPromptRef,
     resetSettings, createSession,
-    startProcessing, stopProcessing,
+    startProcessing, stopProcessing, sendSupplement,
     addFile,
     workspaceRoot,
     resetModel,
-    llmChatSent,
   };
 }
 

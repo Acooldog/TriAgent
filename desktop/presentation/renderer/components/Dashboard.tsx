@@ -138,9 +138,9 @@ export function Dashboard(state: UseAppStateResult) {
             <button className="btn suggestion-refresh" onClick={() => showToast("已刷新建议")}>刷新建议</button>
           </div>
           <div className="writer-stats">
-            <article className="writer-stat"><span>处理情况</span><strong>{queue.length}</strong><small>待处理文件</small><div className="stat-meta"><b>18</b><small>本周已完成</small></div></article>
-            <article className="writer-stat"><span>本地任务</span><strong>24</strong><small>累计 TriMusicAgent 任务</small><div className="stat-meta"><b>92%</b><small>成功完成率</small></div></article>
-            <article className="writer-stat"><span>最近使用</span><strong>00:06</strong><small>平均处理时间</small><div className="stat-meta"><b>{mode}</b><small>当前权限模式</small></div></article>
+            <article className="writer-stat"><span>处理情况</span><strong>{queue.length}</strong><small>待处理文件</small><div className="stat-meta"><b>{queue.length > 0 ? '处理中' : '暂无'}</b><small>当前状态</small></div></article>
+            <article className="writer-stat"><span>本地任务</span><strong>{history.length}</strong><small>已完成任务</small><div className="stat-meta"><b>{history.length > 0 ? history.length : '暂无'}</b><small>累计 TriMusicAgent 任务</small></div></article>
+            <article className="writer-stat"><span>权限模式</span><strong>{mode}</strong><small>当前运行模式</small><div className="stat-meta"><b>{progress}%</b><small>当前进度</small></div></article>
           </div>
           <div className="tool-section">
             <div className="section-head"><h3>常用入口</h3><button className="btn plain-action" onClick={() => navigateTo("history")}>查看任务历史</button></div>
@@ -165,12 +165,16 @@ export function Dashboard(state: UseAppStateResult) {
           </article>
           <article className="aside-card aside-recent">
             <div className="section-head"><h3>最近任务</h3><button className="btn plain-action" onClick={() => navigateTo("history")}>全部</button></div>
-            {history.slice(0, 3).map((item) => (
-              <button key={item.id} className="btn aside-task" onClick={() => navigateTo("history")}>
-                <span className="task-mark">{item.status === "成功" ? "OK" : "error"}</span>
-                <span><b>{item.title}</b><small>{item.date}</small></span>
-              </button>
-            ))}
+            {history.length === 0 ? (
+              <p className="aside-empty">暂无历史任务，开始你的第一个任务吧</p>
+            ) : (
+              history.slice(0, 3).map((item) => (
+                <button key={item.id} className="btn aside-task" onClick={() => navigateTo("history")}>
+                  <span className="task-mark">{item.status === "成功" ? "OK" : "error"}</span>
+                  <span><b>{item.title}</b><small>{item.date}</small></span>
+                </button>
+              ))
+            )}
           </article>
         </aside>
       </div>
