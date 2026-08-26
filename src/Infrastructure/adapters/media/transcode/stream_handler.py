@@ -87,12 +87,10 @@ def _handle_stream_message(
                     "tool_call_id": tool_call_id,
                 }
         else:
-            # LangGraph stream_mode='messages' — 验证是累积还是 delta
+            # LangGraph stream_mode='messages' 发的是 DELTA（增量），不是累积。
+            # 每次只到一个小片段，必须 APPEND 累积，不能 clear 覆盖！
             text_content = str(msg.content) if hasattr(msg, "content") and msg.content else ""
             if text_content:
-                print(f"[STREAM-AIMSG] content={text_content[:120]!r}", file=__import__("sys").stderr)
-                # REPLACE 假设是累积内容；如果是 delta 再改回 append
-                pending_text.clear()
                 pending_text.append(text_content)
 
     elif isinstance(msg, ToolMessage) or msg_type == "ToolMessage":
