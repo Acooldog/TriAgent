@@ -157,6 +157,7 @@ def run_agent(
         def _stream_once(messages: list) -> None:
             nonlocal last_ai_message, stream_error, event_count, actual_iterations, cancelled
             nonlocal _total_estimated_input_tokens, _total_truncate_saved, _total_prune_saved
+            _thinking_count = 0  # 本轮深度思考块计数
             try:
                 # === stream 前：估算本轮 LLM 输入 token ===
                 _ch, _tk = _estimate_tokens(messages)
@@ -182,6 +183,27 @@ def run_agent(
                         cancelled = True
                         break
                     event_count += 1
+
+                    # === 深度思考进度提示 ===
+                    _content_now = str(getattr(msg, "content", "")) if hasattr(msg, "content") else ""
+                    _tc_now = bool(getattr(msg, "tool_calls", None)) and len(getattr(msg, "tool_calls", None) or []) > 0
+                    if isinstance(msg, (AIMessage, AIMessageChunk)) or type(msg).__name__ in ("AIMessage", "AIMessageChunk"):
+                        if not _content_now and not _tc_now:
+                            # 累计思考事件
+                            _thinking_count += 1
+                            if _thinking_count > 0 and _thinking_count % 30 == 0:
+                                emitter._log(
+                                    f"模型正在深度思考... (已收到 {_thinking_count} 个思考块)",
+                                    "info",
+                                )
+                                emitter.emit("agent_thinking_delta", {
+                                    "content": f"⏳ 模型正在深度思考... ({_thinking_count} chunks)",
+                                })
+                        else:
+                            if _thinking_count > 0:
+                                emitter._log(f"思考结束，开始输出内容/工具调用（思考了 {_thinking_count} 块）", "info")
+                                _thinking_count = 0
+
                     if event_count % 20 == 0:
                         # 定期 flush pending_text —— 防止纯文本回复堆积导致用户看不到输出
                         _flush_pending_text(emitter, pending_text)

@@ -101,30 +101,46 @@ def _handle_stream_message(
                 tool_name = str(tc.get("name", "") or "").strip()
                 tool_args = str(tc.get("args", "") or "")[:500]
                 tool_call_id = str(tc.get("id", "") or "")
-                # 过滤空 tool_name（讯飞 Spark 可能返回无效 tool_call）
-                if not tool_name:
-                    emitter._log(f"跳过无效 tool_call（空 name）: {tc}", "debug")
-                    continue
-                if not narrated:
-                    emitter.emit("agent_message", {
-                        "content": build_tool_action_message(tool_name, tool_args),
-                        "kind": "progress",
+
+                if tool_name:
+                    # 完整 tool_call：有 name，正常注册
+                    if not narrated:
+                        emitter.emit("agent_message", {
+                            "content": build_tool_action_message(tool_name, tool_args),
+                            "kind": "progress",
+                        })
+                        narrated = True
+                    emitter._log(f"调用工具: {tool_name}, 参数: {tool_args[:80]}", "info")
+                    emitter.emit("agent_tool_call", {
+                        "tool_name": tool_name,
+                        "tool_input": tool_args,
+                        "tool_result": "执行中...",
+                        "elapsed_sec": 0,
+                        "step": len(tool_call_registry) + 1,
                     })
-                    narrated = True
-                emitter._log(f"调用工具: {tool_name}, 参数: {tool_args[:80]}", "info")
-                emitter.emit("agent_tool_call", {
-                    "tool_name": tool_name,
-                    "tool_input": tool_args,
-                    "tool_result": "执行中...",
-                    "elapsed_sec": 0,
-                    "step": len(tool_call_registry) + 1,
-                })
-                tool_call_registry[tool_call_id] = {
-                    "tool_name": tool_name,
-                    "tool_input": tool_args,
-                    "tool_result": "",
-                    "tool_call_id": tool_call_id,
-                }
+                    tool_call_registry[tool_call_id] = {
+                        "tool_name": tool_name,
+                        "tool_input": tool_args,
+                        "tool_result": "",
+                        "tool_call_id": tool_call_id,
+                    }
+                else:
+                    # 空 name 的 tool_call chunk：可能是 provider 把 args 拆到独立 chunk
+                    # 找到 registry 里最匹配的 entry 合并
+                    matched = None
+                    if tool_call_id and tool_call_id in tool_call_registry:
+                        matched = tool_call_registry[tool_call_id]
+                    elif tool_call_registry:
+                        # fallback：合并到最后一个 entry
+                        matched = list(tool_call_registry.values())[-1]
+                    if matched and tool_args:
+                        existing = matched["tool_input"]
+                        matched["tool_input"] = (existing + tool_args)[:500]
+                        emitter._log(f"补充工具参数: {matched['tool_name']} += {tool_args[:80]}", "debug")
+                    elif matched:
+                        emitter._log(f"tool_call chunk (无 name 无 args): {tc}", "debug")
+                    else:
+                        emitter._log(f"跳过无法匹配的 tool_call chunk: {tc}", "debug")
         else:
             # LangGraph stream_mode='messages' 发 AIMessage/AIMessageChunk 纯文本内容
             # 部分 provider（腾讯混元 hy3 等推理模型）把思考过程放在 reasoning_content
