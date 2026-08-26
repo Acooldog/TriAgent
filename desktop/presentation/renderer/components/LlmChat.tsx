@@ -133,13 +133,15 @@ export function LlmChat(state: UseAppStateResult) {
   const esc = (s: string): string => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt", '"': "&quot;", "'": "&#39;" }[c]!));
 
   const messages = isTaskMode
-    ? state.agentMessages.map((message) =>
-      message.role === "user"
-        ? `<div class="llm-chat-message user"><div class="llm-chat-md">${renderMarkdown(message.text)}</div><span class="llm-avatar user-avatar">你</span></div>`
-        : message.role === "error"
-          ? `<div class="llm-chat-message assistant"><span class="llm-avatar">T</span><div><p style="color:var(--系统错误色,#ff3b30)">${esc(message.text)}</p></div></div>`
-          : `<div class="llm-chat-message assistant"><span class="llm-avatar">T</span><div class="llm-chat-md">${renderMarkdown(message.text)}</div></div>`
-    ).join("")
+    ? state.agentMessages
+      .filter((message) => message.role !== "notice")
+      .map((message) =>
+        message.role === "user"
+          ? `<div class="llm-chat-message user"><div class="llm-chat-md">${renderMarkdown(message.text)}</div><span class="llm-avatar user-avatar">你</span></div>`
+          : message.role === "error"
+            ? `<div class="llm-chat-message assistant"><span class="llm-avatar">T</span><div><p style="color:var(--系统错误色,#ff3b30)">${esc(message.text)}</p></div></div>`
+            : `<div class="llm-chat-message assistant"><span class="llm-avatar">T</span><div class="llm-chat-md">${renderMarkdown(message.text)}</div></div>`
+      ).join("")
     : llmMessages.map((message) => {
       if (message.role === "error") {
         return `<div class="llm-error-message"><div><strong>AI 连接错误</strong><p>${esc(message.text)}</p></div><button>重试</button></div>`;

@@ -10,7 +10,7 @@ const SUGGESTIONS = [
 ];
 
 export function Dashboard(state: UseAppStateResult) {
-  const { queue, history, progress, processing, mode, promptText, setPromptText, navigateTo, startProcessing, sendPrompt, submitFromDashboard, setAttachedPaths, attachedPaths, showToast, autoCompression, setAutoCompression, compressionThreshold, setCompressionThreshold } = state;
+  const { queue, history, progress, processing, mode, promptText, setPromptText, navigateTo, setConversationMode, startProcessing, sendPrompt, submitFromDashboard, setAttachedPaths, attachedPaths, showToast, autoCompression, setAutoCompression, compressionThreshold, setCompressionThreshold } = state;
 
   const [typewriterText, setTypewriterText] = useState("");
   const [phraseIdx, setPhraseIdx] = useState(0);
@@ -66,7 +66,7 @@ export function Dashboard(state: UseAppStateResult) {
   }, [charIdx, deleting, phraseIdx]);
 
   const activeTask = processing ? (
-    <button className="active-task-card" onClick={() => navigateTo("task")}>
+    <button className="active-task-card" onClick={() => { setConversationMode(true); navigateTo("llm"); }}>
       <span className="active-progress"><b>{progress}%</b></span>
       <span className="active-task-copy"><small>进行中的任务</small><strong>正在处理音乐文件</strong><em>TriMusicAgent 正在执行工具调用</em></span>
       <span className="active-task-arrow">继续</span>

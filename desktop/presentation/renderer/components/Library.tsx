@@ -58,8 +58,14 @@ export function History(state: UseAppStateResult) {
       // 没有存储消息，显示恢复提示
       setAgentMessages([{ role: "notice" as const, text: `正在恢复历史会话：${item.title}` }]);
     }
+    // 如果任务仍在进行中，确保 processing 状态正确
+    if (item.status === "处理中") {
+      // 任务在后台继续运行，UI 会通过 worker 事件接收更新
+      showToast(`任务仍在后台运行中，正在恢复会话：${item.title.slice(0, 20)}`);
+    } else {
+      showToast(`已恢复会话：${item.title.slice(0, 20)}`);
+    }
     navigateTo("llm");
-    showToast(`已恢复会话：${item.title.slice(0, 20)}`);
   };
 
   return (

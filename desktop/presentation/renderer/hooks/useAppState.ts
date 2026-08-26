@@ -28,6 +28,7 @@ export interface HistoryItem {
   failed: number;
   status: string;
   messages?: LlmMessage[];
+  taskId?: string;
 }
 
 export interface LlmMessage {
@@ -194,8 +195,44 @@ export function useAppState() {
         }
         return;
       } else if (eventType === "agent_started") {
+        const taskId = String(event.task_id ?? "");
         setToolEvents([]);
         setAgentMessages((prev) => [...prev, { role: "notice", text: "Agent 已启动，正在连接模型和加载工具..." }]);
+        // 立即创建历史条目，状态为"处理中"
+        if (taskId) {
+          setAgentMessages((prev) => {
+            const userMsg = prev.find((m) => m.role === "user");
+            const title = userMsg?.text?.slice(0, 40) || "未命名任务";
+            setHistory((h) => {
+              const existingIdx = h.findIndex((item) => item.taskId && item.taskId === taskId);
+              if (existingIdx >= 0) {
+                const updated = [...h];
+                updated[existingIdx] = {
+                  ...updated[existingIdx],
+                  title,
+                  date: new Date().toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }),
+                  status: "处理中",
+                  messages: prev,
+                };
+                return updated;
+              }
+              const newItem: HistoryItem = {
+                id: `hist_${taskId}`,
+                title,
+                date: new Date().toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }),
+                total: 0,
+                time: "",
+                success: 0,
+                failed: 0,
+                status: "处理中",
+                messages: prev,
+                taskId,
+              };
+              return [newItem, ...h];
+            });
+            return prev;
+          });
+        }
       } else if (eventType === "agent_ready") {
         const tools = Array.isArray(payload.tools) ? (payload.tools as string[]) : [];
         setAgentMessages((prev) => [...prev, { role: "notice", text: `已加载 ${tools.length} 个工具: ${tools.join(", ")}` }]);
@@ -249,7 +286,10 @@ export function useAppState() {
       } else if (eventType === "agent_message") {
         const content = String(payload.content ?? "");
         if (content) {
-          setAgentMessages((prev) => [...prev, { role: "assistant", text: content }]);
+          // 检测是否为工具执行说明（包含参数描述或工具调用关键词）
+          const isToolAction = /参数[:：]|^>\s*`|调用.*工具|执行.*命令|正在调用|正在执行/.test(content);
+          const role: LlmMessage["role"] = isToolAction ? "notice" : "assistant";
+          setAgentMessages((prev) => [...prev, { role, text: content }]);
         }
       } else if (eventType === "agent_question") {
         const questionId = String(payload.question_id ?? "");
@@ -262,6 +302,7 @@ export function useAppState() {
         }
       } else if (eventType === "agent_finished") {
         const finalStatus = String(payload.status ?? status);
+        const taskId = String(event.task_id ?? "");
         setProcessing(false);
         setProgress(100);
         setTaskStatus(finalStatus === "completed" ? "成功" : "失败");
@@ -280,7 +321,7 @@ export function useAppState() {
           setHistory((h) => {
             const title = currentMessages.find((m) => m.role === "user")?.text?.slice(0, 40) || "未命名任务";
             const newItem: HistoryItem = {
-              id: `hist_${Date.now()}`,
+              id: taskId ? `hist_${taskId}` : `hist_${Date.now()}`,
               title,
               date: new Date().toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }),
               total: 0,
@@ -289,8 +330,16 @@ export function useAppState() {
               failed: finalStatus === "failed" ? 1 : 0,
               status: finalStatus === "completed" ? "成功" : finalStatus === "cancelled" ? "已停止" : "失败",
               messages: currentMessages,
+              taskId: taskId || undefined,
             };
             console.info("[useAppState] saved to history:", newItem);
+            // 如果已有相同 taskId 的条目，更新它；否则创建新条目
+            const existingIdx = h.findIndex((item) => item.taskId && item.taskId === taskId);
+            if (existingIdx >= 0) {
+              const updated = [...h];
+              updated[existingIdx] = { ...updated[existingIdx], ...newItem };
+              return updated;
+            }
             return [newItem, ...h];
           });
           return currentMessages;
@@ -322,7 +371,6 @@ export function useAppState() {
     console.info("[useAppState] navigate:", target);
     setRouteHistory((prev) => [...prev, target]);
     setPage(target);
-    setConversationMode(false);
   }, []);
 
   const routeBack = useCallback(() => {
@@ -333,7 +381,6 @@ export function useAppState() {
       setPage(next[next.length - 1] || "dashboard");
       return next;
     });
-    setConversationMode(false);
   }, []);
 
   const toggleNetwork = useCallback(async () => {
