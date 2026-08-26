@@ -116,9 +116,46 @@ def run_agent(
         emitter._log(f"当前共 {len(conversation_messages)} 条对话消息（含历史）", "debug")
         cancel_event = threading.Event()
 
+        # === token 估算日志 ===
+        _total_estimated_input_tokens = 0  # 累计发给 LLM 的输入 token（估算）
+        _total_pruned_chars = 0            # 累计被截断/裁剪掉的字符数
+        _total_truncate_saved = 0          # 截断工具输出省的字符
+        _total_prune_saved = 0             # 裁剪旧轮次省的字符
+
+        def _estimate_tokens(msgs: list) -> tuple[int, int]:
+            """粗估 conversation_messages 的字符数和 token 数（1 token ≈ 3.5 字符，中英混合）。"""
+            total_chars = 0
+            for m in msgs:
+                c = getattr(m, "content", "") or ""
+                if isinstance(c, list):
+                    c = str(c)
+                total_chars += len(str(c))
+            return total_chars, int(total_chars / 3.5)
+
+        def _classify_msgs(msgs: list) -> str:
+            """按消息类型分类统计，方便看哪种消息占空间。"""
+            counts: dict[str, int] = {}
+            for m in msgs:
+                t = type(m).__name__
+                c = getattr(m, "content", "") or ""
+                counts[t] = counts.get(t, 0) + len(str(c))
+            parts = [f"{k}:{v}ch" for k, v in counts.items()]
+            return " ".join(parts)
+
         def _stream_once(messages: list) -> None:
             nonlocal last_ai_message, stream_error, event_count, actual_iterations, cancelled
+            nonlocal _total_estimated_input_tokens, _total_truncate_saved, _total_prune_saved
             try:
+                # === stream 前：估算本轮 LLM 输入 token ===
+                _ch, _tk = _estimate_tokens(messages)
+                _total_estimated_input_tokens += _tk
+                emitter._log(
+                    f"[token#{actual_iterations + 1}] 本轮输入 ≈ {_tk} tokens "
+                    f"({_ch} 字符) — {_classify_msgs(messages)}",
+                    "info",
+                )
+                emitter._log(f"[token#{actual_iterations + 1}] 累计输入 ≈ {_total_estimated_input_tokens} tokens", "debug")
+
                 for item in agent_inst.stream(
                     {"messages": messages},
                     config=graph_config,
@@ -140,7 +177,14 @@ def run_agent(
 
                     # === 关键：ToolMessage content 截断，防止每轮重发长结果烧 token ===
                     if isinstance(msg, ToolMessage) or type(msg).__name__ == "ToolMessage":
-                        _truncate_tool_message(msg, max_chars=300, keep_head=200)
+                        _trunc_saved = _truncate_tool_message(msg, max_chars=300, keep_head=200)
+                        if _trunc_saved > 0:
+                            _total_truncate_saved += _trunc_saved
+                            _name = getattr(msg, "name", "tool")
+                            emitter._log(
+                                f"[token] 截断 ToolMessage({_name}) 节省 {_trunc_saved} 字符 ≈ {int(_trunc_saved/3.5)} tokens",
+                                "info",
+                            )
 
                     conversation_messages.append(msg)
 
@@ -148,7 +192,13 @@ def run_agent(
                         if hasattr(msg, "tool_calls") and msg.tool_calls:
                             actual_iterations += 1
                             # === 关键：每轮 AIMessage（触发了工具调用）后，清理旧 ToolMessage ===
-                            _prune_old_tool_results(conversation_messages, keep_last_rounds=2)
+                            _pr_saved = _prune_old_tool_results(conversation_messages, keep_last_rounds=2)
+                            if _pr_saved > 0:
+                                _total_prune_saved += _pr_saved
+                                emitter._log(
+                                    f"[token] 裁剪旧轮次节省 {_pr_saved} 字符 ≈ {int(_pr_saved/3.5)} tokens",
+                                    "info",
+                                )
                 if not cancelled:
                     flushed = _flush_pending_text(emitter, pending_text)
                     if flushed:
@@ -218,6 +268,17 @@ def run_agent(
         emitter._log(f"Agent 最终输出: {str(last_ai_message)[:200]}")
         emitter._log(f"Agent 执行完成，共调用 {len(tool_calls_made)} 个工具")
 
+        # === token 消耗汇总 ===
+        _total_saved_chars = _total_truncate_saved + _total_prune_saved
+        _total_saved_tokens = int(_total_saved_chars / 3.5)
+        emitter._log(
+            f"[token 汇总] 累计输入 ≈ {_total_estimated_input_tokens} tokens | "
+            f"截断节省 ≈ {int(_total_truncate_saved/3.5)} tokens | "
+            f"裁剪节省 ≈ {int(_total_prune_saved/3.5)} tokens | "
+            f"**节流总计 ≈ {_total_saved_tokens} tokens**（相当于 {_total_saved_tokens/1000:.1f}K）",
+            "info",
+        )
+
         emitter.emit("agent_finished", {
             "status": "completed", "tool_calls_count": len(tool_calls_made),
             "response_preview": str(last_ai_message)[:200] if last_ai_message else "",
@@ -279,32 +340,27 @@ def run_agent(
         }
 
 
-def _truncate_tool_message(msg: Any, max_chars: int = 300, keep_head: int = 200) -> None:
-    """直接修改 ToolMessage.content —— 超过 max_chars 就截断，避免每轮重发长结果烧 token。"""
+def _truncate_tool_message(msg: Any, max_chars: int = 300, keep_head: int = 200) -> int:
+    """直接修改 ToolMessage.content —— 超过 max_chars 就截断。返回节省的字符数。"""
     content = getattr(msg, "content", None)
     if content is None:
-        return
+        return 0
     text = str(content)
     if len(text) <= max_chars:
-        return
+        return 0
     original_len = len(text)
     truncated = text[:keep_head].rstrip() + f"...(已截断，原始 {original_len} 字符)"
-    # LangChain ToolMessage.content 可以是 str 或 list（多模态）；这里覆盖 str 即可
+    saved = original_len - len(truncated)
     try:
         msg.content = truncated
     except Exception:
         pass
+    return saved
 
 
-def _prune_old_tool_results(messages: list, keep_last_rounds: int = 2) -> None:
-    """清理 conversation_messages 中的旧 ToolMessage。
-
-    LangGraph 的一轮 = 1 个 AIMessage(带 tool_calls) + N 个 ToolMessage。
-    此函数从后往前数，只保留最近 `keep_last_rounds` 轮的 ToolMessage 的原始 content；
-    更早轮的 ToolMessage.content 替换成简短摘要。
-    """
-    # 识别哪些 AIMessage 是"触发了工具调用"的轮次标记
-    tool_round_indices: list[int] = []  # AIMessage 的 index（带 tool_calls）
+def _prune_old_tool_results(messages: list, keep_last_rounds: int = 2) -> int:
+    """清理 conversation_messages 中的旧 ToolMessage。返回节省的字符数。"""
+    tool_round_indices: list[int] = []
     for i, m in enumerate(messages):
         if isinstance(m, AIMessage) or type(m).__name__ == "AIMessage":
             tool_calls = getattr(m, "tool_calls", None)
@@ -312,24 +368,28 @@ def _prune_old_tool_results(messages: list, keep_last_rounds: int = 2) -> None:
                 tool_round_indices.append(i)
 
     if len(tool_round_indices) <= keep_last_rounds:
-        return  # 轮次不够，不用裁剪
+        return 0
 
-    # 找出需要保留的最近 N 轮起始位置
     rounds_to_keep = tool_round_indices[-keep_last_rounds:]
     keep_from = rounds_to_keep[0]
 
-    # 把 keep_from 之前的所有 ToolMessage.content 替换成摘要
+    total_saved = 0
     for i in range(keep_from):
         m = messages[i]
         if isinstance(m, ToolMessage) or type(m).__name__ == "ToolMessage":
             orig_text = str(getattr(m, "content", ""))
             if "(已截断" in orig_text:
-                continue  # 已经截过了
+                continue
             name = getattr(m, "name", "tool")
+            summary = f"[{name} 结果已省略 — 属于前序轮次]"
+            saved = len(orig_text) - len(summary)
+            if saved > 0:
+                total_saved += saved
             try:
-                m.content = f"[{name} 结果已省略 — 属于前序轮次]"
+                m.content = summary
             except Exception:
                 pass
+    return total_saved
 
 
 def get_available_tools() -> list[dict[str, str]]:
