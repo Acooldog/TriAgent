@@ -5,7 +5,7 @@ import { normalizeProviderRuntimeError, ProviderRuntimeError, sanitizeRuntimePay
 import { validateProviderManifest } from "./providerProtocol";
 import type { ProviderRegistry } from "./providerRegistry";
 import type { ProviderSessionContext } from "./providerService";
-import { debugError, debugInfo } from "../debugLogger";
+import { debugError, debugInfo } from "../../infrastructure/logging/debugLogger";
 
 interface RuntimeOperation { kind: "start" | "stop" | "health" | "recover"; controller: AbortController; promise: Promise<ProviderRuntimeState>; }
 

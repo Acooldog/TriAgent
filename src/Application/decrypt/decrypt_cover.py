@@ -40,7 +40,7 @@ def _emit_event(config: BatchRunConfig, event_name: str, payload: dict[str, Any]
 def _maybe_attach_cover(
     logger: logging.Logger, config: BatchRunConfig, cover_service: CoverArtPort,
     source_path: pathlib.Path, output_path: pathlib.Path, *, index: int, total_count: int,
-    transcode_port: TranscodePort | None = None,
+    transcode_port: TranscodePort,
 ) -> None:
     """Attach cover art. ``transcode_port`` provides media probing (optional for backward compat)."""
     if output_path.suffix.lower() not in {".m4a", ".mp3", ".flac"}:
@@ -79,7 +79,7 @@ def _maybe_attach_cover(
 def _maybe_supplement_album_metadata(
     logger: logging.Logger, config: BatchRunConfig, cover_service: CoverArtPort,
     source_path: pathlib.Path, output_path: pathlib.Path, *, index: int, total_count: int,
-    transcode_port: TranscodePort | None = None,
+    transcode_port: TranscodePort,
 ) -> None:
     """Supplement album metadata. ``transcode_port`` provides media probing (optional for backward compat)."""
     if output_path.suffix.lower() not in {".m4a", ".wav"}:
@@ -115,19 +115,12 @@ def _maybe_supplement_album_metadata(
     })
 
 
-def _probe_media(path: pathlib.Path, transcode_port: TranscodePort | None) -> dict[str, Any]:
-    """Probe a media file. Uses the injected port, falls back to Infrastructure if not provided."""
-    if transcode_port is not None:
-        return transcode_port.probe_media_summary(path)
-    from src.Infrastructure.adapters.media.transcode.transcoder import probe_media_summary
-    return probe_media_summary(path)
+def _probe_media(path: pathlib.Path, transcode_port: TranscodePort) -> dict[str, Any]:
+    return transcode_port.probe_media_summary(path)
 
 
-def _summary_log(summary: dict[str, Any], transcode_port: TranscodePort | None) -> str:
-    if transcode_port is not None:
-        return transcode_port.summary_to_log(summary)
-    from src.Infrastructure.adapters.media.transcode.transcoder import summary_to_log
-    return summary_to_log(summary)
+def _summary_log(summary: dict[str, Any], transcode_port: TranscodePort) -> str:
+    return transcode_port.summary_to_log(summary)
 
 
 __all__ = [

@@ -12,7 +12,7 @@ import time
 from typing import Any
 
 from src.Application.decrypt.decrypt_timing import _copy_timing
-from src.Domain.ports import CoverArtPort, ManifestPort, TranscodePort
+from src.Domain.ports import CoverArtPort, LoggingPort, ManifestPort, TranscodePort
 from src.Application.decrypt.decrypt_post import (
     _PreparedArtifact,
     _artifact_needs_transcode,
@@ -32,14 +32,14 @@ from src.Application.decrypt.decrypt_post import (
     _auto_transcode_after_decode,
 )
 from src.Application.models import BatchRunConfig, FileResult
-from src.Infrastructure.adapters.runtime.runtime_logging import timing_text
 
 
 def _resolve_batch_transcode_choice(
     logger: logging.Logger,
     config: BatchRunConfig,
     prepared_artifacts: list[_PreparedArtifact],
-    transcode_port: TranscodePort | None = None,
+    transcode_port: TranscodePort,
+    logging_port: LoggingPort,
     *,
     failed_count: int,
     stopped_early: bool,
@@ -53,10 +53,7 @@ def _resolve_batch_transcode_choice(
         return False, pending
 
     def _format_target(value: str) -> str:
-        if transcode_port is not None and hasattr(transcode_port, "normalize_target_format"):
-            return transcode_port.normalize_target_format(value)  # type: ignore[union-attr]
-        from src.Infrastructure.adapters.media.transcode.transcoder import normalize_target_format as _nf
-        return _nf(value)
+        return transcode_port.normalize_target_format(value)
 
     payload = {
         "platform_id": config.platform_id,
@@ -110,7 +107,8 @@ def _finalize_prepared_artifact(
     cover_service: CoverArtPort,
     manifest_repo: ManifestPort,
     prepared: _PreparedArtifact,
-    transcode_port: TranscodePort | None = None,
+    transcode_port: TranscodePort,
+    logging_port: LoggingPort,
     *,
     should_transcode: bool,
     transcode_sample_rate_hz: int | None,
@@ -173,7 +171,7 @@ def _finalize_prepared_artifact(
             logger.info("skip_duplicate_after_decode: %s -> %s", prepared.input_path.name, final_target)
             logger.info("[timing] file_done [%d/%d] %s reason=already_decrypted %s",
                         prepared.index, prepared.total_count, prepared.input_path.name,
-                        timing_text(prepared.file_timing))
+                        logging_port.timing_text(prepared.file_timing))
             result = FileResult(
                 ok=True, skipped=True, platform_id=config.platform_id,
                 input_path=str(prepared.input_path), output_path=str(final_target),
@@ -204,7 +202,7 @@ def _finalize_prepared_artifact(
         logger.info("success: %s -> %s", prepared.input_path.name, published)
         logger.info("[timing] file_done [%d/%d] %s reason=success %s",
                     prepared.index, prepared.total_count, prepared.input_path.name,
-                    timing_text(prepared.file_timing))
+                    logging_port.timing_text(prepared.file_timing))
         result = FileResult(
             ok=True, skipped=False, platform_id=config.platform_id,
             input_path=str(prepared.input_path), output_path=str(published),
@@ -224,7 +222,7 @@ def _finalize_prepared_artifact(
         logger.warning("failed: %s reason=%s", prepared.input_path.name, exc)
         logger.info("[timing] file_done [%d/%d] %s reason=%s %s",
                     prepared.index, prepared.total_count, exc,
-                    timing_text(prepared.file_timing))
+                    logging_port.timing_text(prepared.file_timing))
         result = FileResult(
             ok=False, skipped=False, platform_id=config.platform_id,
             input_path=str(prepared.input_path), reason=str(exc),

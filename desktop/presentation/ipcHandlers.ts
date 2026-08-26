@@ -20,7 +20,7 @@ import type { WorkspaceService, SessionInfo, WorkspaceState, WorkspaceSettings }
 import type { WorkerService } from "../application/worker/workerService";
 import type { WorkerEvent, WorkerOperation } from "../application/worker/workerProtocol";
 import { registerProviderIpc } from "./providerIpc";
-import { debugError, debugInfo } from "../application/debugLogger";
+import { debugError, debugInfo } from "../infrastructure/logging/debugLogger";
 import { createRendererEventPublisher } from "./rendererEventPublisher";
 import { createSessionEventRecorder } from "./sessionEventRecorder";
 import { createWorkerSessionLog } from "./workerSessionLog";

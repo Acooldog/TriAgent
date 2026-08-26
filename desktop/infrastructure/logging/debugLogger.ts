@@ -1,3 +1,9 @@
+/** Infrastructure-level debug logging with redaction.
+ *
+ * Moved from application/ because this is a cross-cutting technical concern
+ * (console output + sensitive-field redaction), not business logic. Both
+ * Application and Presentation layers may depend on it.
+ */
 type DebugValue = Record<string, unknown> | unknown[] | string | number | boolean | null | undefined;
 
 const SENSITIVE_KEY = /api[-_]?key|authorization|token|secret|cookie|credential|password|private[-_]?key/i;

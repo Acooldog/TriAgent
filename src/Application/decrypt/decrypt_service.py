@@ -43,8 +43,8 @@ def run_batch(config: BatchRunConfig, adapter: PlatformAdapter, ports: Applicati
     """Run a decryption batch. ``ports`` is optional; when ``None`` defaults are used."""
     resolved_ports = _lazy_setup_ports(ports)
     paths = resolved_ports.runtime
-    from src.Infrastructure.adapters.runtime.runtime_logging import setup_logger, timing_text, write_batch_reports
-    logger, log_path, log_dir = setup_logger(paths)
+    logger, log_path, log_dir = resolved_ports.logging.setup_logger(paths)
+    timing_text = resolved_ports.logging.timing_text
     cover_service = resolved_ports.cover_service
     manifest_repo = resolved_ports.manifest_repo
     transcode_port = resolved_ports.transcode
@@ -195,7 +195,7 @@ def run_batch(config: BatchRunConfig, adapter: PlatformAdapter, ports: Applicati
     should_transcode = False
     if prepared_artifacts:
         should_transcode, pending_transcode = _resolve_batch_transcode_choice(
-            logger, config, prepared_artifacts, transcode_port,
+            logger, config, prepared_artifacts, transcode_port, resolved_ports.logging,
             failed_count=failed_count, stopped_early=stopped_early,
         )
         if should_transcode and pending_transcode:
@@ -209,7 +209,7 @@ def run_batch(config: BatchRunConfig, adapter: PlatformAdapter, ports: Applicati
     for prepared in prepared_artifacts:
         status, result = _finalize_prepared_artifact(
             logger, config, cover_service, manifest_repo, prepared,
-            transcode_port,
+            transcode_port, resolved_ports.logging,
             should_transcode=should_transcode,
             transcode_sample_rate_hz=transcode_sample_rate_hz,
             transcode_bitrate_kbps=transcode_bitrate_kbps,
@@ -253,7 +253,7 @@ def run_batch(config: BatchRunConfig, adapter: PlatformAdapter, ports: Applicati
         candidate_count=len(files), timing_batch_total=timing_batch_total,
         timing_batch_avg=timing_batch_avg, timing_hotspot_stage=timing_hotspot_stage,
     )
-    batch_json, batch_txt = write_batch_reports(log_dir, config.platform_id, results, summary)
+    batch_json, batch_txt = resolved_ports.logging.write_batch_reports(log_dir, config.platform_id, results, summary)
     logger.info("[timing] batch_total: %s", timing_text(timing_batch_total))
     logger.info("[timing] batch_avg: %s", timing_text(timing_batch_avg))
     logger.info("[timing] batch_hotspot: stage=%s total_sec=%.3fs ratio=%.2f%% wall=%.3fs",

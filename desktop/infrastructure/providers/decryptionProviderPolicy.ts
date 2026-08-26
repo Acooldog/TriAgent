@@ -1,3 +1,10 @@
+/** Decrypt provider selection policy.
+ *
+ * Moved from application/provider/ because this is infrastructure-level
+ * routing logic — choosing which decrypt provider to use based on capability
+ * availability. The Application layer should consume this via a Policy
+ * interface if needed, but the concrete strategy lives here.
+ */
 export type DecryptProviderKind = "primary" | "fallback";
 
 export interface DecryptProviderCandidate { kind: DecryptProviderKind; available: boolean; reason?: string; }

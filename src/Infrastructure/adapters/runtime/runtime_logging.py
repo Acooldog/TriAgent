@@ -8,10 +8,34 @@ from dataclasses import asdict
 from datetime import datetime
 
 from src.Domain.models import BatchSummary, FileResult, TIMING_STAGE_KEYS
+from src.Domain.ports import LoggingPort, RuntimePort
 from src.Infrastructure.adapters.runtime.runtime_paths import RuntimePaths
 
 
 APP_LOGGER_NAME = "qkkdecrypt"
+
+
+class _LoggingAdapter:
+    """Infrastructure adapter implementing ``src.Domain.ports.LoggingPort``.
+
+    Wraps the module-level helper functions so the Application layer can
+    inject a single dependency instead of importing individual utilities.
+    """
+
+    def setup_logger(self, paths: RuntimePort) -> tuple[logging.Logger, pathlib.Path, pathlib.Path]:
+        return setup_logger(paths)
+
+    def timing_text(self, value: dict[str, float]) -> str:
+        return timing_text(value)
+
+    def write_batch_reports(
+        self,
+        log_dir: pathlib.Path,
+        platform_id: str,
+        results: list[FileResult],
+        summary: BatchSummary,
+    ) -> tuple[pathlib.Path, pathlib.Path]:
+        return write_batch_reports(log_dir, platform_id, results, summary)
 
 
 def today_log_dir(paths: RuntimePaths) -> pathlib.Path:

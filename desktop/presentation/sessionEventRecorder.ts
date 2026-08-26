@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { debugError, debugInfo } from "../application/debugLogger";
+import { debugError, debugInfo } from "../infrastructure/logging/debugLogger";
 import type { SessionEventRecord, SessionLogRecord, SessionPersistenceService, SessionTaskState } from "../application/agent/sessionPersistence";
 import type { SessionInfo } from "../application/workspace/workspaceService";
 

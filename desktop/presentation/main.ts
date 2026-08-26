@@ -29,7 +29,7 @@ import { JsonSettingsRepository } from "../infrastructure/repositories/settingsR
 import { SystemDiagnosticsGateway } from "../infrastructure/systemDiagnostics";
 import { FileSystemWorkspaceRepository } from "../infrastructure/repositories/workspaceRepository";
 import { registerIpc, type IpcContext } from "./ipcHandlers";
-import { debugError, debugInfo } from "../application/debugLogger";
+import { debugError, debugInfo } from "../infrastructure/logging/debugLogger";
 import { configureAppUserModelId, notifyTaskOutcome } from "../application/agent/taskNotifier";
 
 let mainWindow: BrowserWindow | null = null;

@@ -5,7 +5,8 @@ import type { ProviderRuntimeService } from "../provider/providerRuntimeService"
 import type { ProviderService, ProviderSessionContext } from "../provider/providerService";
 import type { SessionPersistenceService } from "./sessionPersistence";
 import type { PermissionPolicy } from "../settings/permissionPolicy";
-import { debugError, debugInfo } from "../debugLogger";
+import { debugError, debugInfo } from "../../infrastructure/logging/debugLogger";
+import { MVP_PROVIDER_ID, MVP_CAPABILITY_ID } from "../../infrastructure/providers/constants";
 
 export interface AgentPlanStep {
   stepId: string;
@@ -37,9 +38,6 @@ export interface AgentTaskHandle {
   completion: Promise<{ taskId: string; output: unknown }>;
 }
 
-export const MVP_PROVIDER_ID = "mvp.local.decrypt";
-export const MVP_CAPABILITY_ID = "music.decrypt";
-
 export class AgentTaskService {
   private readonly active = new Map<string, { providerTaskId?: string; providerId: string; context?: ProviderSessionContext }>();
 
@@ -51,7 +49,7 @@ export class AgentTaskService {
     private readonly onSessionChanged: (context: ProviderSessionContext) => Promise<void> = async () => undefined,
     private readonly now: () => Date = () => new Date(),
     private readonly createId: () => string = randomUUID,
-  ) {}
+  ) { }
 
   public createPlan(prompt: string): AgentPlan {
     debugInfo("agent", "create-plan", { promptLength: prompt.length });

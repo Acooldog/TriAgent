@@ -3,7 +3,7 @@ import type { ArtifactReference, SessionEventRecord, SessionPersistenceService, 
 import type { SessionInfo } from "../workspace/workspaceService";
 import { ProviderContractError, normalizeProviderError, sanitizeProviderData, validateArtifacts, validateProviderEvent, validateProviderOutput, type ProviderCall, type ProviderCapabilityManifest, type ProviderEvent, type ProviderGateway, type ProviderHealth, type ProviderInvocationRequest, type ProviderRegistration } from "./providerProtocol";
 import type { ProviderRegistry } from "./providerRegistry";
-import { debugError, debugInfo } from "../debugLogger";
+import { debugError, debugInfo } from "../../infrastructure/logging/debugLogger";
 
 export interface ProviderSessionContext { root: string; session: SessionInfo; }
 export interface ProviderCallHandle { requestId: string; taskId: string; completion: Promise<{ requestId: string; taskId: string; output: unknown }>; }

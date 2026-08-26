@@ -78,14 +78,9 @@ def _transcode_audio_profile(settings: dict[str, Any]) -> tuple[int | None, int 
     return normalize_sample_rate(settings.get("transcode_sample_rate_hz")), normalize_bitrate(settings.get("transcode_bitrate_kbps"))
 
 
-def _log_media_summary(logger: logging.Logger, label: str, path: pathlib.Path, transcode_port: TranscodePort | None = None) -> dict[str, Any]:
-    if transcode_port is not None:
-        summary = transcode_port.probe_media_summary(path)
-        logger.info("%s: %s | %s", label, path.name, transcode_port.summary_to_log(summary))
-    else:
-        from src.Infrastructure.adapters.media.transcode.transcoder import probe_media_summary, summary_to_log
-        summary = probe_media_summary(path)
-        logger.info("%s: %s | %s", label, path.name, summary_to_log(summary))
+def _log_media_summary(logger: logging.Logger, label: str, path: pathlib.Path, transcode_port: TranscodePort) -> dict[str, Any]:
+    summary = transcode_port.probe_media_summary(path)
+    logger.info("%s: %s | %s", label, path.name, transcode_port.summary_to_log(summary))
     return summary
 
 
@@ -97,12 +92,12 @@ def _validate_summary(logger: logging.Logger, label: str, path: pathlib.Path, su
     return None
 
 
-def _artifact_needs_transcode(desired_target: str, detected_container: str, transcode_port: TranscodePort | None = None) -> bool:
+def _artifact_needs_transcode(desired_target: str, detected_container: str, transcode_port: TranscodePort) -> bool:
     target_format = _normalize_target_format(desired_target, transcode_port)
     return not (target_format == "auto" or detected_container == "bin" or target_format == detected_container)
 
 
-def _normalize_final_target(desired_target: str, detected_container: str, *, transcode_enabled: bool, transcode_port: TranscodePort | None = None) -> str:
+def _normalize_final_target(desired_target: str, detected_container: str, *, transcode_enabled: bool, transcode_port: TranscodePort) -> str:
     if not transcode_enabled:
         return str(detected_container or "bin").lower()
     normalized = _normalize_target_format(desired_target, transcode_port)
@@ -113,29 +108,18 @@ def _normalize_final_target(desired_target: str, detected_container: str, *, tra
     return normalized
 
 
-def _normalize_target_format(value: str, transcode_port: TranscodePort | None) -> str:
-    """Normalize target format. Prefers transcode_port.normalize; falls back to Infrastructure."""
-    if transcode_port is not None and hasattr(transcode_port, "normalize_target_format"):
-        return transcode_port.normalize_target_format(value)  # type: ignore[union-attr]
-    from src.Infrastructure.adapters.media.transcode.transcoder import normalize_target_format as _infra_norm
-    return _infra_norm(value)
+def _normalize_target_format(value: str, transcode_port: TranscodePort) -> str:
+    """Normalize target format via transcode_port (Domain Protocol)."""
+    return transcode_port.normalize_target_format(value)
 
 
 def _maybe_transcode(
     logger: logging.Logger, input_path: pathlib.Path, target_format: str,
     current_path: pathlib.Path, detected_container: str, file_timing: dict[str, float],
-    transcode_port: TranscodePort | None = None,
+    transcode_port: TranscodePort,
     *, sample_rate_hz: int | None = None, bitrate_kbps: int | None = None,
 ) -> tuple[pathlib.Path, str, dict[str, Any] | None]:
-    if transcode_port is None:
-        from src.Infrastructure.adapters.media.transcode.transcoder import transcode_file as _infra_transcode
-        _transcode_fn = _infra_transcode
-        _normalize_fn = _normalize_target_format
-    else:
-        _transcode_fn = transcode_port.transcode_file
-        _normalize_fn = lambda v, _p=transcode_port: _normalize_target_format(v, _p)
-
-    target_format = _normalize_fn(target_format)
+    target_format = transcode_port.normalize_target_format(target_format)
     if target_format == "auto" or detected_container == "bin" or target_format == detected_container:
         return current_path, detected_container, None
     started = time.perf_counter()
@@ -147,7 +131,10 @@ def _maybe_transcode(
         profile_parts.append(f"{bitrate_kbps}kbps")
     profile_text = f" [{' / '.join(profile_parts)}]" if profile_parts else ""
     logger.info("transcoding: %s -> %s%s", current_path.name, target_path.suffix, profile_text)
-    meta = _transcode_fn(current_path, target_path, target_format, sample_rate_hz=sample_rate_hz, bitrate_kbps=bitrate_kbps)
+    meta = transcode_port.transcode_file(
+        current_path, target_path, target_format,
+        sample_rate_hz=sample_rate_hz, bitrate_kbps=bitrate_kbps,
+    )
     logger.info("transcoding_ffmpeg: %s", meta.get("ffmpeg_path", ""))
     if current_path.exists():
         current_path.unlink()

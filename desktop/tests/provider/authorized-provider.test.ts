@@ -3,7 +3,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { MVP_CAPABILITY_ID, MVP_PROVIDER_ID } from "../../application/agent/agentTaskService";
+import { MVP_CAPABILITY_ID, MVP_PROVIDER_ID } from "../../infrastructure/providers/constants";
 import { AuthorizedMvpProviderGateway } from "../../infrastructure/providers/authorizedMvpProviderGateway";
 
 test("私有 Provider 使用合法 KGM 样本完成真实解密并返回 MP3 产物", async () => {

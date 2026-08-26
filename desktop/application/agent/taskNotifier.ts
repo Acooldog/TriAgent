@@ -1,5 +1,5 @@
 import { app, Notification, shell } from "electron";
-import { debugError, debugInfo } from "../debugLogger";
+import { debugError, debugInfo } from "../../infrastructure/logging/debugLogger";
 
 const APP_USER_MODEL_ID = "com.trimusicagent.app";
 

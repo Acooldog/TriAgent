@@ -140,21 +140,15 @@ def run_transcode_batch(
     recursive: bool = True,
     max_workers: int = 2,
     event_sink: EventSink | None = None,
-    transcode_port: TranscodePort | None = None,
+    transcode_port: TranscodePort,
 ) -> TranscodeBatchResult:
     """Run a transcode batch.
 
     Args:
         transcode_port: Infrastructure adapter providing ``transcode_file``.
-            When ``None`` the function falls back to
-            ``Infrastructure.transcoder.transcode_file`` for backward compat.
+            Required — the Application layer depends only on the Domain Protocol.
     """
-    # Lazy import preserves the old default behaviour when callers do not
-    # provide a port; new callers (Presentation layer) should always inject one.
-    if transcode_port is None:
-        from src.Infrastructure.adapters.media.transcode.transcoder import transcode_file as _transcode_file  # type: ignore[no-redef]
-    else:
-        _transcode_file = transcode_port.transcode_file  # type: ignore[assignment]
+    _transcode_file = transcode_port.transcode_file  # type: ignore[assignment]
 
     started = time.perf_counter()
     jobs, warnings = build_transcode_jobs(input_paths, output_dir, rules, recursive=recursive)

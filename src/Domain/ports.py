@@ -96,6 +96,8 @@ class TranscodePort(Protocol):
 
     def summary_to_log(self, summary: dict[str, Any]) -> str: ...
 
+    def normalize_target_format(self, value: str) -> str: ...
+
 
 # ---------------------------------------------------------------------------
 # ManifestPort — 输出清单读写
@@ -109,6 +111,24 @@ class ManifestPort(Protocol):
     def get_platform(self, output_path: pathlib.Path) -> str | None: ...
     def set_platform(self, output_path: pathlib.Path, platform_id: str) -> None: ...
     def remove(self, output_path: pathlib.Path) -> None: ...
+
+
+# ---------------------------------------------------------------------------
+# LoggingPort — 运行时日志、计时与批处理报告
+# ---------------------------------------------------------------------------
+
+class LoggingPort(Protocol):
+    """Port for application-level logging, timing formatting, and batch report writing."""
+
+    def setup_logger(self, paths: RuntimePort) -> tuple[Any, pathlib.Path, pathlib.Path]: ...
+    def timing_text(self, value: dict[str, float]) -> str: ...
+    def write_batch_reports(
+        self,
+        log_dir: pathlib.Path,
+        platform_id: str,
+        results: list[Any],
+        summary: Any,
+    ) -> tuple[pathlib.Path, pathlib.Path]: ...
 
 
 # ---------------------------------------------------------------------------
@@ -132,6 +152,7 @@ class ApplicationPorts:
     cover_service: CoverArtPort
     manifest_repo: ManifestPort
     transcode: TranscodePort
+    logging: LoggingPort
 
 
 __all__ = [
@@ -142,5 +163,6 @@ __all__ = [
     "AlbumMetadataResult",
     "TranscodePort",
     "ManifestPort",
+    "LoggingPort",
     "ApplicationPorts",
 ]

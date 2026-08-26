@@ -23,6 +23,7 @@ def build_default_ports() -> ApplicationPorts:
     # Application tests patch DI cleanly.
     from src.Infrastructure.adapters.media.cover.cover_art_service import CoverArtService
     from src.Infrastructure.adapters.media.transcode.transcoder import _TranscodeAdapter
+    from src.Infrastructure.adapters.runtime.runtime_logging import _LoggingAdapter
     from src.Infrastructure.adapters.runtime.runtime_paths import RuntimePaths
     from src.Infrastructure.adapters.storage.output_manifest_repository import OutputManifestRepository
 
@@ -33,6 +34,7 @@ def build_default_ports() -> ApplicationPorts:
         cover_service=CoverArtService(),
         manifest_repo=OutputManifestRepository(paths.output_manifest),
         transcode=_TranscodeAdapter(),
+        logging=_LoggingAdapter(),
     )
 
 

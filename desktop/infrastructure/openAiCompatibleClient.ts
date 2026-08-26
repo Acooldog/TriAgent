@@ -1,5 +1,5 @@
 import { ModelClientError, type ModelClient, type ModelEvent, type ModelRequest, type ModelResult, type ToolCall } from "../application/model/modelProtocol";
-import { debugError, debugInfo } from "../application/debugLogger";
+import { debugError, debugInfo } from "./logging/debugLogger";
 
 export type FetchImplementation = (input: string, init?: RequestInit) => Promise<Response>;
 

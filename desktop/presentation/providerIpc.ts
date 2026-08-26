@@ -5,7 +5,7 @@ import type { ProviderService, ProviderSessionContext } from "../application/pro
 import type { ProviderRuntimeService } from "../application/provider/providerRuntimeService";
 import type { ProviderRuntimeStartRequest } from "../application/provider/providerRuntimeProtocol";
 import type { PermissionPolicy } from "../application/settings/permissionPolicy";
-import { debugError, debugInfo } from "../application/debugLogger";
+import { debugError, debugInfo } from "../infrastructure/logging/debugLogger";
 
 export interface ProviderIpcDependencies {
   ipc: IpcMain;
