@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type CSSProperties } from "react";
 import type { UseAppStateResult } from "../hooks/useAppState";
 import type { ToolEvent } from "../hooks/useAppState";
 import { renderMarkdown } from "../markdown";
@@ -175,7 +175,6 @@ export function LlmChat(state: UseAppStateResult) {
   const modeMenuHtml = modeMenuOpen
     ? `<div class="llm-mode-menu">${["受限", "标准", "完全访问"].map((m) => `<button data-mode="${m}">${m}</button>`).join("")}</div>`
     : "";
-  const sendLabel = llmStreaming ? "■" : "↑";
 
   return (
     <section className={`page llm-chat-page ${isTaskMode ? "task-chat-page" : ""}`}>
@@ -293,7 +292,7 @@ export function LlmChat(state: UseAppStateResult) {
             </div>
             <button className="llm-context-network" onClick={toggleNetwork}>{networkEnabled ? "联网检索模式" : "离线"}</button>
           </div>
-          <span className="context-meter" style={{ "--usage": `${contextUsage}%` } as React.CSSProperties}><b>{contextUsage}%</b></span>
+          <span className="context-meter" style={{ "--usage": `${contextUsage}%` } as CSSProperties}><b>{contextUsage}%</b></span>
           <button
             className={`llm-send ${isInterrupt ? "is-interrupt" : ""}`}
             aria-label={isInterrupt ? "中断" : "发送"}

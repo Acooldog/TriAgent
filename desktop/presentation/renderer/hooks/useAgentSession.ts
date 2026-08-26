@@ -1,16 +1,16 @@
-import { useCallback } from "react";
+import { useCallback, type Dispatch, type SetStateAction, type MutableRefObject } from "react";
 
 export interface UseAgentSessionInput {
   setPromptText: (v: string) => void;
-  setAgentMessages: React.Dispatch<React.SetStateAction<any[]>>;
-  setToolEvents: React.Dispatch<React.SetStateAction<any[]>>;
-  setStepIndex: React.Dispatch<React.SetStateAction<number>>;
-  setProgress: React.Dispatch<React.SetStateAction<number>>;
+  setAgentMessages: Dispatch<SetStateAction<any[]>>;
+  setToolEvents: Dispatch<SetStateAction<any[]>>;
+  setStepIndex: Dispatch<SetStateAction<number>>;
+  setProgress: Dispatch<SetStateAction<number>>;
   setProcessing: (v: boolean) => void;
   setTaskStatus: (v: string) => void;
-  setAgentQuestion: React.Dispatch<React.SetStateAction<any | null>>;
-  agentTaskIdRef: React.MutableRefObject<string | null>;
-  setAgentTaskIdRef: (ref: React.MutableRefObject<string | null>) => void;
+  setAgentQuestion: Dispatch<SetStateAction<any | null>>;
+  agentTaskIdRef: MutableRefObject<string | null>;
+  setAgentTaskIdRef: (ref: MutableRefObject<string | null>) => void;
   modelConfig: any;
   permMode: string;
   showToast: (msg: string) => void;
