@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { UseAppStateResult } from "../hooks/useAppState";
+import type { UseAppStateResult } from "../../hooks/useAppState/useAppState";
 
 const HEADLINE_PHRASES = ["我能为你做什么", "想解密音乐吗？", "bilibili关注牢大了吗"];
 const SUGGESTIONS = [

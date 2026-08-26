@@ -1,13 +1,13 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { ProviderContractError, type ProviderEvent, type ProviderGateway, type ProviderGatewayResult, type ProviderHealth, type ProviderInvocationRequest, type ProviderManifest } from "../application/provider/providerProtocol";
-import type { WorkerEvent } from "../application/worker/workerProtocol";
-import { selectKugouProvider } from "../application/decryptionProviderPolicy";
-import { WorkerService } from "../application/workerService";
-import { PythonWorkerClient } from "./pythonWorker";
+import { ProviderContractError, type ProviderEvent, type ProviderGateway, type ProviderGatewayResult, type ProviderHealth, type ProviderInvocationRequest, type ProviderManifest } from "../../application/provider/providerProtocol";
+import type { WorkerEvent } from "../../application/worker/workerProtocol";
+import { selectKugouProvider } from "../../application/provider/decryptionProviderPolicy";
+import { WorkerService } from "../../application/worker/workerService";
+import { PythonWorkerClient } from "../workers/pythonWorker";
 import { MVP_PROVIDER_MANIFEST } from "./mvpProviderManifest";
 import { decryptUnlockMusicKgm, UnlockMusicUnsupportedError } from "../unlockMusicKgm";
-import { debugError, debugInfo } from "../application/debugLogger";
+import { debugError, debugInfo } from "../../application/debugLogger";
 
 export class AuthorizedMvpProviderGateway implements ProviderGateway {
   private readonly worker: WorkerService;

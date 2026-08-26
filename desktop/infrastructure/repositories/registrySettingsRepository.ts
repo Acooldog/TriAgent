@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type { WorkspaceSettings } from "../application/workspace/workspaceService";
+import type { WorkspaceSettings } from "../../application/workspace/workspaceService";
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_KEY = "HKCU\\Software\\TriMusicAgent";

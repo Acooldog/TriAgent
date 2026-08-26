@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { ProviderHealth, ProviderManifest } from "../application/provider/providerProtocol";
-import type { ProviderRuntimeDescriptor, ProviderRuntimeExit, ProviderRuntimeInstance } from "../application/provider/providerRuntimeProtocol";
-import { PrivateProviderRuntimeGateway, type PrivateProviderRuntimeBackend } from "../infrastructure/privateProviderRuntimeGateway";
+import type { ProviderHealth, ProviderManifest } from "../../application/provider/providerProtocol";
+import type { ProviderRuntimeDescriptor, ProviderRuntimeExit, ProviderRuntimeInstance } from "../../application/provider/providerRuntimeProtocol";
+import { PrivateProviderRuntimeGateway, type PrivateProviderRuntimeBackend } from "../../infrastructure/providers/privateProviderRuntimeGateway";
 import { providerManifestFixture } from "./providerFixture";
 
 class BackendFixture implements PrivateProviderRuntimeBackend {

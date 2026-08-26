@@ -1,9 +1,9 @@
 import { spawn, type SpawnOptions } from "node:child_process";
 import type { Readable } from "node:stream";
 import { StringDecoder } from "node:string_decoder";
-import { buildAnswerRequest, buildCancelRequest, buildSupplementRequest, isTerminalWorkerEvent, parseWorkerEvent, type WorkerEvent, type WorkerStartRequest } from "../application/worker/workerProtocol";
-import type { WorkerCompletion, WorkerRunHandle, WorkerRunner } from "../application/workerService";
-import { debugError, debugInfo } from "../application/debugLogger";
+import { buildAnswerRequest, buildCancelRequest, buildSupplementRequest, isTerminalWorkerEvent, parseWorkerEvent, type WorkerEvent, type WorkerStartRequest } from "../../application/worker/workerProtocol";
+import type { WorkerCompletion, WorkerRunHandle, WorkerRunner } from "../../application/worker/workerService";
+import { debugError, debugInfo } from "../../application/debugLogger";
 
 export type WorkerBridgeErrorCode = "worker-start-failed" | "worker-protocol-error" | "worker-cancelled" | "worker-timeout" | "worker-exited";
 

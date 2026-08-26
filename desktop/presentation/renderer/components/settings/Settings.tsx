@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { UseAppStateResult } from "../hooks/useAppState";
+import type { UseAppStateResult } from "../../hooks/useAppState/useAppState";
 import { SettingsTabContent } from "./SettingsTabContent";
 
 const TABS: [string, string][] = [

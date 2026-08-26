@@ -3,8 +3,8 @@ import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import path from "node:path";
 import { test } from "node:test";
-import { parseWorkerEvent } from "../application/worker/workerProtocol";
-import { PythonWorkerClient, WorkerBridgeError, type WorkerProcess } from "../infrastructure/pythonWorker";
+import { parseWorkerEvent } from "../../application/worker/workerProtocol";
+import { PythonWorkerClient, WorkerBridgeError, type WorkerProcess } from "../../infrastructure/workers/pythonWorker";
 
 class FakeWorkerProcess extends EventEmitter implements WorkerProcess {
   public readonly stdin = new PassThrough();

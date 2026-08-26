@@ -3,17 +3,17 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { AgentTaskService, MVP_PROVIDER_ID } from "../application/agentTaskService";
-import { PermissionPolicy } from "../application/settings/permissionPolicy";
-import { ProviderRegistry } from "../application/providerRegistry";
-import { ProviderRuntimeService } from "../application/providerRuntimeService";
-import { ProviderRuntimeStartPolicy } from "../application/providerRuntimePolicy";
-import { ProviderService } from "../application/providerService";
-import { SessionPersistenceService } from "../application/agent/sessionPersistence";
-import { FileSessionRepository } from "../infrastructure/sessionRepository";
-import { AuthorizedMvpProviderGateway } from "../infrastructure/authorizedMvpProviderGateway";
-import { PrivateProviderRuntimeGateway } from "../infrastructure/privateProviderRuntimeGateway";
-import { FileSystemWorkspaceRepository } from "../infrastructure/workspaceRepository";
+import { AgentTaskService, MVP_PROVIDER_ID } from "../../application/agent/agentTaskService";
+import { PermissionPolicy } from "../../application/settings/permissionPolicy";
+import { ProviderRegistry } from "../../application/provider/providerRegistry";
+import { ProviderRuntimeService } from "../../application/provider/providerRuntimeService";
+import { ProviderRuntimeStartPolicy } from "../../application/provider/providerRuntimePolicy";
+import { ProviderService } from "../../application/provider/providerService";
+import { SessionPersistenceService } from "../../application/agent/sessionPersistence";
+import { FileSessionRepository } from "../../infrastructure/repositories/sessionRepository";
+import { AuthorizedMvpProviderGateway } from "../../infrastructure/providers/authorizedMvpProviderGateway";
+import { PrivateProviderRuntimeGateway } from "../../infrastructure/providers/privateProviderRuntimeGateway";
+import { FileSystemWorkspaceRepository } from "../../infrastructure/repositories/workspaceRepository";
 
 test("私有 Agent MVP 完成计划、审批、运行时、真实解密和 session 持久化闭环", async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "trimusic-agent-mvp-"));

@@ -1,10 +1,10 @@
 import { appendFile, mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import type { ChatMessage } from "../application/model/modelProtocol";
-import type { CompressionCheckpoint } from "../application/settings/contextCompression";
-import type { ArtifactReference, CheckpointReference, SessionEventRecord, SessionLogRecord, SessionState, SessionStore, SessionTaskState, SessionSnapshot } from "../application/agent/sessionPersistence";
-import type { SessionInfo } from "../application/workspace/workspaceService";
+import type { ChatMessage } from "../../application/model/modelProtocol";
+import type { CompressionCheckpoint } from "../../application/settings/contextCompression";
+import type { ArtifactReference, CheckpointReference, SessionEventRecord, SessionLogRecord, SessionState, SessionStore, SessionTaskState, SessionSnapshot } from "../../application/agent/sessionPersistence";
+import type { SessionInfo } from "../../application/workspace/workspaceService";
 
 export class FileSessionRepository implements SessionStore {
   private readonly queues = new Map<string, Promise<void>>();

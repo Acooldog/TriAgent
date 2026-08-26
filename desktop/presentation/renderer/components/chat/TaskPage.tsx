@@ -1,4 +1,4 @@
-import type { UseAppStateResult, FileItem } from "../hooks/useAppState";
+import type { UseAppStateResult, FileItem } from "../../hooks/useAppState/useAppState";
 
 const STEPS = ["格式识别", "调用解密器", "运行 FFmpeg", "校验输出文件", "写入元数据", "生成结果"];
 

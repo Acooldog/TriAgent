@@ -1,10 +1,10 @@
-import { useAppState } from "./hooks/useAppState";
-import { Dashboard } from "./components/Dashboard";
-import { LlmChat } from "./components/LlmChat";
-import { TaskPage } from "./components/TaskPage";
-import { Library, History } from "./components/Library";
+import { useAppState } from "./hooks/useAppState/useAppState";
+import { Dashboard } from "./components/dashboard/Dashboard";
+import { LlmChat } from "./components/chat/LlmChat";
+import { TaskPage } from "./components/chat/TaskPage";
+import { Library, History } from "./components/dashboard/Library";
 import { Diagnostics, Recovery } from "./components/Diagnostics";
-import { Settings } from "./components/Settings";
+import { Settings } from "./components/settings/Settings";
 import { ApprovalModal, Toast, NavPlaceholder } from "./components/Common";
 import "./styles.css";
 

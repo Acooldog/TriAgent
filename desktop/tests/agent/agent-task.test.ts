@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { AgentTaskService, MVP_CAPABILITY_ID, MVP_PROVIDER_ID } from "../application/agentTaskService";
-import { FakeMvpProviderGateway } from "../infrastructure/fakeMvpProviderGateway";
+import { AgentTaskService, MVP_CAPABILITY_ID, MVP_PROVIDER_ID } from "../../application/agent/agentTaskService";
+import { FakeMvpProviderGateway } from "../../infrastructure/providers/fakeMvpProviderGateway";
 
 test("creates a structured Chinese decrypt plan from a natural language request", () => {
   const service = new AgentTaskService(undefined as never, undefined as never, undefined as never);

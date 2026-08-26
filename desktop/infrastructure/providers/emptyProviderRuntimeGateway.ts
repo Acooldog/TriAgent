@@ -1,5 +1,5 @@
-import { ProviderRuntimeError, type ProviderRuntimeDescriptor, type ProviderRuntimeExit, type ProviderRuntimeGateway, type ProviderRuntimeInstance } from "../application/provider/providerRuntimeProtocol";
-import type { ProviderHealth, ProviderManifest } from "../application/provider/providerProtocol";
+import { ProviderRuntimeError, type ProviderRuntimeDescriptor, type ProviderRuntimeExit, type ProviderRuntimeGateway, type ProviderRuntimeInstance } from "../../application/provider/providerRuntimeProtocol";
+import type { ProviderHealth, ProviderManifest } from "../../application/provider/providerProtocol";
 
 export class EmptyProviderRuntimeGateway implements ProviderRuntimeGateway {
   public async discover(_signal: AbortSignal): Promise<ProviderRuntimeDescriptor[]> { return []; }

@@ -1,7 +1,7 @@
-import { parseStrictToolFallback, type ChatMessage, type ModelClient, type ModelConfig, type ModelEvent, type ModelResult } from "../modelProtocol";
-import type { ExecutionBudget } from "../executionBudget";
-import { PermissionPolicyError, type PermissionPolicy } from "../permissionPolicy";
-import { ToolProtocolError, type PermissionMode, type ToolRegistry } from "../toolProtocol";
+import { parseStrictToolFallback, type ChatMessage, type ModelClient, type ModelConfig, type ModelEvent, type ModelResult } from "./modelProtocol";
+import type { ExecutionBudget } from "../settings/executionBudget";
+import { PermissionPolicyError, type PermissionPolicy } from "../settings/permissionPolicy";
+import { ToolProtocolError, type PermissionMode, type ToolRegistry } from "../tools/toolProtocol";
 
 export interface ModelServiceRequest {
   config: ModelConfig;

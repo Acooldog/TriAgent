@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { debugError, debugInfo } from "../application/debugLogger";
+import { debugError, debugInfo } from "../../application/debugLogger";
 
 test("调试日志记录行为但脱敏凭据", () => {
   const originalInfo = console.info;

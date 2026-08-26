@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { selectKugouProvider } from "../application/decryptionProviderPolicy";
+import { selectKugouProvider } from "../../application/provider/decryptionProviderPolicy";
 
 test("酷狗优先选择主解密逻辑", () => {
   assert.equal(selectKugouProvider([{ kind: "primary", available: true }, { kind: "fallback", available: true }]).kind, "primary");

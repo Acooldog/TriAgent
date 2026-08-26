@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { WorkerEvent } from "../application/worker/workerProtocol";
-import { createWorkerSessionLog } from "../presentation/workerSessionLog";
+import type { WorkerEvent } from "../../application/worker/workerProtocol";
+import { createWorkerSessionLog } from "../../presentation/workerSessionLog";
 
 function event(eventType: string, payload: Record<string, unknown>): WorkerEvent {
   return { protocol_version: "1", request_id: "request-1", task_id: "task-1", event_type: eventType, status: "running", payload, error: null, emitted_at: "2026-08-26T01:00:00.000Z" };

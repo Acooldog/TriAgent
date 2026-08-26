@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DiagnosticsService, ErrorSearchService, redactDiagnosticText, type DiagnosticGateway } from "../application/diagnostics";
-import { DEFAULT_EXECUTION_LIMITS, ExecutionBudget, ExecutionBudgetError } from "../application/settings/executionBudget";
-import { PermissionPolicy, PermissionPolicyError } from "../application/settings/permissionPolicy";
+import { DiagnosticsService, ErrorSearchService, redactDiagnosticText, type DiagnosticGateway } from "../../application/diagnostics";
+import { DEFAULT_EXECUTION_LIMITS, ExecutionBudget, ExecutionBudgetError } from "../../application/settings/executionBudget";
+import { PermissionPolicy, PermissionPolicyError } from "../../application/settings/permissionPolicy";
 
 test("enforces restricted, standard approval and full access modes", async () => {
   let approvals = 0;

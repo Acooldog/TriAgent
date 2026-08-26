@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { WORKER_PROTOCOL_VERSION, type WorkerEvent, type WorkerOperation, type WorkerStartRequest } from "../workerProtocol";
+import { WORKER_PROTOCOL_VERSION, type WorkerEvent, type WorkerOperation, type WorkerStartRequest } from "./workerProtocol";
 
 export interface WorkerCompletion {
   status: "completed" | "failed" | "cancelled";

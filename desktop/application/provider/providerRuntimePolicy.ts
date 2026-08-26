@@ -1,4 +1,4 @@
-import { ProviderRuntimeError, type ProviderRuntimeApproval, type ProviderRuntimeApprovalRequest, type ProviderRuntimeStartRequest } from "../providerRuntimeProtocol";
+import { ProviderRuntimeError, type ProviderRuntimeApproval, type ProviderRuntimeApprovalRequest, type ProviderRuntimeStartRequest } from "./providerRuntimeProtocol";
 
 export class ProviderRuntimeStartPolicy {
   public constructor(private readonly approval: ProviderRuntimeApproval) {}

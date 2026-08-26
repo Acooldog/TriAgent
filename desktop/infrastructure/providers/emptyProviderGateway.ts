@@ -1,4 +1,4 @@
-import { ProviderContractError, type ProviderEvent, type ProviderGateway, type ProviderGatewayResult, type ProviderHealth, type ProviderInvocationRequest, type ProviderManifest } from "../application/provider/providerProtocol";
+import { ProviderContractError, type ProviderEvent, type ProviderGateway, type ProviderGatewayResult, type ProviderHealth, type ProviderInvocationRequest, type ProviderManifest } from "../../application/provider/providerProtocol";
 
 export class EmptyProviderGateway implements ProviderGateway {
   public async discover(): Promise<ProviderManifest[]> { return []; }

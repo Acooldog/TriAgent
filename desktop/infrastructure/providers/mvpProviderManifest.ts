@@ -1,5 +1,5 @@
-import type { ProviderManifest } from "../application/provider/providerProtocol";
-import { MVP_CAPABILITY_ID, MVP_PROVIDER_ID } from "../application/agentTaskService";
+import type { ProviderManifest } from "../../application/provider/providerProtocol";
+import { MVP_CAPABILITY_ID, MVP_PROVIDER_ID } from "../../application/agent/agentTaskService";
 
 export const MVP_PROVIDER_MANIFEST: ProviderManifest = {
   protocol_version: "1",

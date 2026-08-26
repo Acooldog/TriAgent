@@ -1,4 +1,4 @@
-import type { ProviderEvent, ProviderGateway, ProviderGatewayResult, ProviderHealth, ProviderInvocationRequest, ProviderManifest } from "../application/provider/providerProtocol";
+import type { ProviderEvent, ProviderGateway, ProviderGatewayResult, ProviderHealth, ProviderInvocationRequest, ProviderManifest } from "../../application/provider/providerProtocol";
 import { MVP_PROVIDER_MANIFEST } from "./mvpProviderManifest";
 
 export class FakeMvpProviderGateway implements ProviderGateway {

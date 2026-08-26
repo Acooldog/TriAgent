@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import type { ArtifactReference, SessionEventRecord, SessionPersistenceService, SessionTaskState } from "../sessionPersistence";
-import type { SessionInfo } from "../workspaceService";
-import { ProviderContractError, normalizeProviderError, sanitizeProviderData, validateArtifacts, validateProviderEvent, validateProviderOutput, type ProviderCall, type ProviderCapabilityManifest, type ProviderEvent, type ProviderGateway, type ProviderHealth, type ProviderInvocationRequest, type ProviderRegistration } from "../providerProtocol";
+import type { ArtifactReference, SessionEventRecord, SessionPersistenceService, SessionTaskState } from "../agent/sessionPersistence";
+import type { SessionInfo } from "../workspace/workspaceService";
+import { ProviderContractError, normalizeProviderError, sanitizeProviderData, validateArtifacts, validateProviderEvent, validateProviderOutput, type ProviderCall, type ProviderCapabilityManifest, type ProviderEvent, type ProviderGateway, type ProviderHealth, type ProviderInvocationRequest, type ProviderRegistration } from "./providerProtocol";
 import type { ProviderRegistry } from "./providerRegistry";
 import { debugError, debugInfo } from "../debugLogger";
 

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { access, mkdir, readdir, readFile, realpath, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { SessionInfo, WorkspaceRepository } from "../application/workspace/workspaceService";
+import type { SessionInfo, WorkspaceRepository } from "../../application/workspace/workspaceService";
 import { initializeSessionFiles } from "./sessionRepository";
 
 const WINDOWS_ABSOLUTE_PATH = /^[a-zA-Z]:[\\/]/;

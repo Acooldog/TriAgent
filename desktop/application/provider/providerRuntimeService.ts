@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import type { SessionPersistenceService, SessionTaskState } from "../sessionPersistence";
+import type { SessionPersistenceService, SessionTaskState } from "../agent/sessionPersistence";
 import { ProviderRuntimeStartPolicy } from "./providerRuntimePolicy";
-import { normalizeProviderRuntimeError, ProviderRuntimeError, sanitizeRuntimePayload, validateRuntimeDescriptor, DEFAULT_PROVIDER_RUNTIME_TIMEOUTS, type ProviderRuntimeDescriptor, type ProviderRuntimeEvent, type ProviderRuntimeExit, type ProviderRuntimeGateway, type ProviderRuntimeInstance, type ProviderRuntimeStartRequest, type ProviderRuntimeState, type ProviderRuntimeStatus, type ProviderRuntimeTimeouts } from "../providerRuntimeProtocol";
-import { validateProviderManifest } from "../providerProtocol";
+import { normalizeProviderRuntimeError, ProviderRuntimeError, sanitizeRuntimePayload, validateRuntimeDescriptor, DEFAULT_PROVIDER_RUNTIME_TIMEOUTS, type ProviderRuntimeDescriptor, type ProviderRuntimeEvent, type ProviderRuntimeExit, type ProviderRuntimeGateway, type ProviderRuntimeInstance, type ProviderRuntimeStartRequest, type ProviderRuntimeState, type ProviderRuntimeStatus, type ProviderRuntimeTimeouts } from "./providerRuntimeProtocol";
+import { validateProviderManifest } from "./providerProtocol";
 import type { ProviderRegistry } from "./providerRegistry";
 import type { ProviderSessionContext } from "./providerService";
 import { debugError, debugInfo } from "../debugLogger";

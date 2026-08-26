@@ -1,4 +1,4 @@
-import type { UseAppStateResult } from "../hooks/useAppState";
+import type { UseAppStateResult } from "../hooks/useAppState/useAppState";
 
 const DIAGNOSTICS: [string, string, string, string][] = [
   ["QQ 音乐注册表路径", "正常", "已检测", "2026-08-22 14:30"],

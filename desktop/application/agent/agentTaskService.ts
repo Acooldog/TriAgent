@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
-import type { PermissionMode } from "../toolProtocol";
-import type { ProviderEvent } from "../providerProtocol";
-import type { ProviderRuntimeService } from "./providerRuntimeService";
-import type { ProviderService, ProviderSessionContext } from "./providerService";
-import type { SessionPersistenceService } from "../sessionPersistence";
-import type { PermissionPolicy } from "../permissionPolicy";
+import type { PermissionMode } from "../tools/toolProtocol";
+import type { ProviderEvent } from "../provider/providerProtocol";
+import type { ProviderRuntimeService } from "../provider/providerRuntimeService";
+import type { ProviderService, ProviderSessionContext } from "../provider/providerService";
+import type { SessionPersistenceService } from "./sessionPersistence";
+import type { PermissionPolicy } from "../settings/permissionPolicy";
 import { debugError, debugInfo } from "../debugLogger";
 
 export interface AgentPlanStep {

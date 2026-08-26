@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { test } from "node:test";
-import { WorkspaceService } from "../application/workspace/workspaceService";
-import { FileSystemWorkspaceRepository, WorkspacePathError, validateWorkspaceCandidate } from "../infrastructure/workspaceRepository";
-import { JsonSettingsRepository } from "../infrastructure/settingsRepository";
+import { WorkspaceService } from "../../application/workspace/workspaceService";
+import { FileSystemWorkspaceRepository, WorkspacePathError, validateWorkspaceCandidate } from "../../infrastructure/repositories/workspaceRepository";
+import { JsonSettingsRepository } from "../../infrastructure/repositories/settingsRepository";
 
 const testTempRoot = path.join(process.cwd(), ".tmp");
 

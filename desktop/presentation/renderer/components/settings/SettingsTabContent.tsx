@@ -1,4 +1,4 @@
-import type { UseAppStateResult } from "../hooks/useAppState";
+import type { UseAppStateResult } from "../../hooks/useAppState/useAppState";
 
 export function SettingsTabContent({
   state,

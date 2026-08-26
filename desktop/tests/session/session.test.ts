@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { test } from "node:test";
-import { StructuredContextCompressor, estimateMessageTokens } from "../application/settings/contextCompression";
-import { SessionPersistenceService, taskStatusForModelError } from "../application/agent/sessionPersistence";
-import { FileSessionRepository } from "../infrastructure/sessionRepository";
-import { JsonSettingsRepository } from "../infrastructure/settingsRepository";
-import { FileSystemWorkspaceRepository } from "../infrastructure/workspaceRepository";
-import { WorkspaceService } from "../application/workspace/workspaceService";
+import { StructuredContextCompressor, estimateMessageTokens } from "../../application/settings/contextCompression";
+import { SessionPersistenceService, taskStatusForModelError } from "../../application/agent/sessionPersistence";
+import { FileSessionRepository } from "../../infrastructure/repositories/sessionRepository";
+import { JsonSettingsRepository } from "../../infrastructure/repositories/settingsRepository";
+import { FileSystemWorkspaceRepository } from "../../infrastructure/repositories/workspaceRepository";
+import { WorkspaceService } from "../../application/workspace/workspaceService";
 
 const tempRoot = path.join(process.cwd(), ".tmp");
 

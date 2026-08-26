@@ -1,4 +1,4 @@
-import type { UseAppStateResult, HistoryItem } from "../hooks/useAppState";
+import type { UseAppStateResult, HistoryItem } from "../../hooks/useAppState/useAppState";
 
 export function Library(state: UseAppStateResult) {
   const { queue, libraryQuery, setLibraryQuery, libraryPlatform, setLibraryPlatform, libraryFormat, setLibraryFormat, showToast, routeBack } = state;

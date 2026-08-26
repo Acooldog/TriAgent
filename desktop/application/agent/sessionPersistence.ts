@@ -23,7 +23,7 @@ export interface SessionTaskState {
   requestId?: string;
   error?: { code: string; message: string };
   result?: Record<string, unknown>;
-  runtimeStatus?: import("./providerRuntimeProtocol").ProviderRuntimeStatus;
+  runtimeStatus?: import("../provider/providerRuntimeProtocol").ProviderRuntimeStatus;
   recoverySuggestion?: string;
 }
 
@@ -91,7 +91,7 @@ export interface SessionStore {
 }
 
 export class SessionPersistenceService {
-  public constructor(private readonly store: SessionStore) {}
+  public constructor(private readonly store: SessionStore) { }
 
   public load(root: string, session: SessionInfo): Promise<SessionSnapshot> {
     return this.store.load(root, session);

@@ -1,6 +1,6 @@
 import { useEffect, useRef, type CSSProperties } from "react";
-import type { UseAppStateResult } from "../hooks/useAppState";
-import { renderMarkdown } from "../markdown";
+import type { UseAppStateResult } from "../../hooks/useAppState/useAppState";
+import { renderMarkdown } from "../../markdown";
 import { ExecutionPanel } from "./ExecutionPanel";
 
 export function LlmChat(state: UseAppStateResult) {

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { test } from "node:test";
-import { PythonWorkerClient } from "../infrastructure/pythonWorker";
+import { PythonWorkerClient } from "../../infrastructure/workers/pythonWorker";
 
 const python = process.env.TRIMUSIC_PYTHON ?? path.join(process.cwd(), ".venv", "Scripts", "python.exe");
 const pythonEnv = { ...process.env, PYTHONUTF8: "1", PYTHONIOENCODING: "utf-8" };

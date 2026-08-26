@@ -2,15 +2,15 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import path from "node:path";
 import { test } from "node:test";
-import { ProviderContractError, type ProviderEvent, type ProviderGateway, type ProviderGatewayResult, type ProviderHealth, type ProviderInvocationRequest, type ProviderManifest } from "../application/provider/providerProtocol";
-import { ProviderRegistry } from "../application/providerRegistry";
-import { ProviderService } from "../application/providerService";
-import { ProviderRuntimeStartPolicy } from "../application/providerRuntimePolicy";
-import { ProviderRuntimeError, type ProviderRuntimeDescriptor, type ProviderRuntimeExit, type ProviderRuntimeGateway, type ProviderRuntimeInstance } from "../application/provider/providerRuntimeProtocol";
-import { ProviderRuntimeService } from "../application/providerRuntimeService";
-import { SessionPersistenceService } from "../application/agent/sessionPersistence";
-import { FileSessionRepository } from "../infrastructure/sessionRepository";
-import { FileSystemWorkspaceRepository } from "../infrastructure/workspaceRepository";
+import { ProviderContractError, type ProviderEvent, type ProviderGateway, type ProviderGatewayResult, type ProviderHealth, type ProviderInvocationRequest, type ProviderManifest } from "../../application/provider/providerProtocol";
+import { ProviderRegistry } from "../../application/provider/providerRegistry";
+import { ProviderService } from "../../application/provider/providerService";
+import { ProviderRuntimeStartPolicy } from "../../application/provider/providerRuntimePolicy";
+import { ProviderRuntimeError, type ProviderRuntimeDescriptor, type ProviderRuntimeExit, type ProviderRuntimeGateway, type ProviderRuntimeInstance } from "../../application/provider/providerRuntimeProtocol";
+import { ProviderRuntimeService } from "../../application/provider/providerRuntimeService";
+import { SessionPersistenceService } from "../../application/agent/sessionPersistence";
+import { FileSessionRepository } from "../../infrastructure/repositories/sessionRepository";
+import { FileSystemWorkspaceRepository } from "../../infrastructure/repositories/workspaceRepository";
 import { providerManifestFixture } from "./providerFixture";
 
 class FakeRuntimeGateway implements ProviderRuntimeGateway {

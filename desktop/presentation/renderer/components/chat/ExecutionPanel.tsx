@@ -1,4 +1,4 @@
-import type { ToolEvent } from "../hooks/useAppState";
+import type { ToolEvent } from "../../hooks/useAppState/useAppState";
 
 const TOOL_ICON_MAP: Record<string, string> = {
   decrypt_kugou: "🔓",

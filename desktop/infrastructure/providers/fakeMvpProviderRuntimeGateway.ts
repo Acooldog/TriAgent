@@ -1,6 +1,6 @@
-import type { ProviderHealth, ProviderManifest } from "../application/provider/providerProtocol";
-import type { ProviderRuntimeDescriptor, ProviderRuntimeExit, ProviderRuntimeGateway, ProviderRuntimeInstance } from "../application/provider/providerRuntimeProtocol";
-import { MVP_PROVIDER_ID } from "../application/agentTaskService";
+import type { ProviderHealth, ProviderManifest } from "../../application/provider/providerProtocol";
+import type { ProviderRuntimeDescriptor, ProviderRuntimeExit, ProviderRuntimeGateway, ProviderRuntimeInstance } from "../../application/provider/providerRuntimeProtocol";
+import { MVP_PROVIDER_ID } from "../../application/agent/agentTaskService";
 import { MVP_PROVIDER_MANIFEST } from "./mvpProviderManifest";
 
 export class FakeMvpProviderRuntimeGateway implements ProviderRuntimeGateway {

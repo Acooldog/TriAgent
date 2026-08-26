@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ModelService } from "../application/modelService";
-import { ModelClientError, type ModelClient, type ModelRequest, type ModelResult } from "../application/model/modelProtocol";
-import { ToolProtocolError, ToolRegistry, type ToolManifest } from "../application/tools/toolProtocol";
-import { OpenAiCompatibleClient } from "../infrastructure/openAiCompatibleClient";
+import { ModelService } from "../../application/model/modelService";
+import { ModelClientError, type ModelClient, type ModelRequest, type ModelResult } from "../../application/model/modelProtocol";
+import { ToolProtocolError, ToolRegistry, type ToolManifest } from "../../application/tools/toolProtocol";
+import { OpenAiCompatibleClient } from "../../infrastructure/openAiCompatibleClient";
 
 function manifest(): ToolManifest {
   return {

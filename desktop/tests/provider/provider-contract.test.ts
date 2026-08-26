@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ProviderContractError, normalizeProviderError, sanitizeProviderData, validateProviderManifest, validateProviderOutput, type ProviderManifest } from "../application/provider/providerProtocol";
-import { ProviderRegistry } from "../application/providerRegistry";
+import { ProviderContractError, normalizeProviderError, sanitizeProviderData, validateProviderManifest, validateProviderOutput, type ProviderManifest } from "../../application/provider/providerProtocol";
+import { ProviderRegistry } from "../../application/provider/providerRegistry";
 import { providerManifestFixture as manifest } from "./providerFixture";
-import { validateJsonValue } from "../application/tools/jsonSchema";
+import { validateJsonValue } from "../../application/tools/jsonSchema";
 
 test("registers a valid provider manifest", () => {
   const registry = new ProviderRegistry();

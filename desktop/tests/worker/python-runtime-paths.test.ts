@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import path from "node:path";
 import { test } from "node:test";
-import { resolveProjectRoot, resolvePythonExecutable, resolveWorkerScript } from "../infrastructure/pythonRuntimePaths";
+import { resolveProjectRoot, resolvePythonExecutable, resolveWorkerScript } from "../../infrastructure/workers/pythonRuntimePaths";
 
 test("resolves the repository root from the bundled Electron main directory", () => {
   const root = path.resolve("O:/workspace/Qm-private-repo");

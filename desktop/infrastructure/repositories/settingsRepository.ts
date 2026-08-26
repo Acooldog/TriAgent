@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { AppSettings, DEFAULT_APP_SETTINGS, type AppSettingsRepository } from "../application/settings/appSettings";
-import type { WorkspaceSettings } from "../application/workspace/workspaceService";
+import { AppSettings, DEFAULT_APP_SETTINGS, type AppSettingsRepository } from "../../application/settings/appSettings";
+import type { WorkspaceSettings } from "../../application/workspace/workspaceService";
 
 export class JsonSettingsRepository implements AppSettingsRepository, WorkspaceSettings {
   public constructor(private readonly settingsFile: string) { }
