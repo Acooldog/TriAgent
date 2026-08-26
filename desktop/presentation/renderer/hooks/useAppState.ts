@@ -53,7 +53,19 @@ export interface ToolEvent {
 
 // 初始为空数组，等待实际数据加载
 const INITIAL_FILES: FileItem[] = [];
-const INITIAL_HISTORY: HistoryItem[] = [];
+const HISTORY_STORAGE_KEY = "trimusic_history";
+
+function loadHistoryFromStorage(): HistoryItem[] {
+  try {
+    const raw = typeof localStorage !== "undefined" ? localStorage.getItem(HISTORY_STORAGE_KEY) : null;
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed as HistoryItem[];
+    return [];
+  } catch {
+    return [];
+  }
+}
 
 const PERMISSION_MODE_MAP: Record<PermissionMode, string> = { restricted: "受限", standard: "标准", full: "完全访问" };
 const REVERSE_MODE_MAP: Record<string, PermissionMode> = { "受限": "restricted", "标准": "standard", "完全访问": "full" };
@@ -75,7 +87,16 @@ export function useAppState() {
   const [routeHistory, setRouteHistory] = useState<Page[]>(["dashboard"]);
   const [settingsTab, setSettingsTab] = useState("model");
   const [queue, setQueue] = useState<FileItem[]>(INITIAL_FILES);
-  const [history, setHistory] = useState<HistoryItem[]>(INITIAL_HISTORY);
+  const [history, setHistory] = useState<HistoryItem[]>(() => loadHistoryFromStorage());
+
+  // 历史记录变化时自动持久化到 localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history));
+    } catch (err) {
+      console.warn("[useAppState] 保存历史到 localStorage 失败:", err);
+    }
+  }, [history]);
   const [libraryQuery, setLibraryQuery] = useState("");
   const [libraryPlatform, setLibraryPlatform] = useState("全部");
   const [libraryFormat, setLibraryFormat] = useState("全部");
