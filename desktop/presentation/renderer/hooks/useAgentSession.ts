@@ -10,7 +10,6 @@ export interface UseAgentSessionInput {
   setTaskStatus: (v: string) => void;
   setAgentQuestion: Dispatch<SetStateAction<any | null>>;
   agentTaskIdRef: MutableRefObject<string | null>;
-  setAgentTaskIdRef: (ref: MutableRefObject<string | null>) => void;
   modelConfig: any;
   permMode: string;
   showToast: (msg: string) => void;
@@ -32,7 +31,6 @@ export function useAgentSession(input: UseAgentSessionInput) {
     setTaskStatus,
     setAgentQuestion,
     agentTaskIdRef,
-    setAgentTaskIdRef,
     modelConfig,
     permMode,
     showToast,

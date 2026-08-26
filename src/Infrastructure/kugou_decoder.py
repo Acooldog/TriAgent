@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import base64
@@ -918,6 +918,8 @@ def decode_file(
     attempt: str = "initial",
     force_python_v3: bool = False,
     force_python_v5: bool = False,
+    attempt_count: int = 0,
+    max_attempts: int = 3,
 ) -> dict:
     started_perf = time.perf_counter()
     native_backend = get_native_backend()
@@ -993,6 +995,7 @@ def decode_file(
             and header.crypto_version != 5
             and not force_python_v3
             and native_backend.available
+            and attempt_count < max_attempts
         ):
             return decode_file(
                 input_path,
@@ -1004,12 +1007,15 @@ def decode_file(
                 attempt="python_retry",
                 force_python_v3=True,
                 force_python_v5=force_python_v5,
+                attempt_count=attempt_count + 1,
+                max_attempts=max_attempts,
             )
         if (
             final_ext == "bin"
             and header.crypto_version == 5
             and not force_python_v5
             and native_backend.available
+            and attempt_count < max_attempts
         ):
             return decode_file(
                 input_path,
@@ -1021,6 +1027,8 @@ def decode_file(
                 attempt="python_retry",
                 force_python_v3=force_python_v3,
                 force_python_v5=True,
+                attempt_count=attempt_count + 1,
+                max_attempts=max_attempts,
             )
         if final_ext == "bin" and not publish_unrecognized_to_output:
             failed_raw_path = None

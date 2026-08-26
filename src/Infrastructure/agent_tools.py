@@ -486,7 +486,7 @@ def transcode_audio(input_path: str, target_format: str, output_dir: str = "") -
                 skipped += 1
                 print(f"[transcode_audio] 跳过: {file_path.name} - 同扩展名")
                 continue
-            if out_path.exists() and out_path.suffix.lower() == file_path.suffix.lower():
+            if out_path.exists():
                 out_path = out_path.with_name(f"{file_path.stem}_converted.{fmt}")
                 print(f"[transcode_audio] 重命名以避免覆盖: {out_path.name}")
             print(f"[transcode_audio] 开始: {file_path.name} -> {fmt}")
@@ -772,15 +772,29 @@ def run_cli_safely(command: str, cli_args: _CliArgs = None, cwd: str = "") -> st
         work_dir = str(pathlib.Path(cwd).resolve()) if cwd.strip() else None
         print(f"[run_cli_safely] cmd={cmd_list} cwd={work_dir} mode={permission_mode}")
 
-        completed = subprocess.run(
-            cmd_list,
-            shell=False,
-            cwd=work_dir,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
+        # 加 -nostdin 防止命令等待 stdin 挂起（ffmpeg 常见陷阱）
+        if "-nostdin" not in cmd_list and cmd_list[0].lower().endswith(("ffmpeg", "ffmpeg.exe", "ffprobe", "ffprobe.exe")):
+            cmd_list = [cmd_list[0], "-nostdin", *cmd_list[1:]]
+
+        timeout = 300  # 与 transcoder._run_ffmpeg_safely 保持一致
+        try:
+            completed = subprocess.run(
+                cmd_list,
+                shell=False,
+                cwd=work_dir,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired as exc:
+            # 超时强制清理整个进程树（Windows taskkill /F /T）
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/F", "/T", "/PID", str(exc.pid)], capture_output=True, errors="replace")
+            print(f"[run_cli_safely] 超时 ({timeout}s) 强制终止: {cmd_list}")
+            return f"命令执行超时 ({timeout}s)，已强制终止"
+
         stdout = (completed.stdout or "")
         stderr = (completed.stderr or "")
         print(f"[run_cli_safely] returncode={completed.returncode}")

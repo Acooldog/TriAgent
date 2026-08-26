@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import base64
 import json
-import os
 import pathlib
 import subprocess
 import tempfile
@@ -293,132 +292,126 @@ def probe_media_summary(input_path: pathlib.Path) -> dict[str, Any]:
     # 优先使用 ffprobe（支持 JSON 输出流信息）
     probe_exe = ffprobe_path or ffmpeg_path
     is_ffprobe = ffprobe_path is not None
-    fd, temp_name = tempfile.mkstemp(suffix=".json")
-    os.close(fd)
-    pathlib.Path(temp_name).unlink(missing_ok=True)
-    try:
-        if is_ffprobe:
-            # ffprobe 命令：输出 JSON 格式的流和容器信息
-            command = [
-                str(ffprobe_path),
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-print_format",
-                "json",
-                "-show_format",
-                "-show_streams",
-                "-i",
-                str(input_path),
-            ]
-            # ffprobe 输出到 stdout，不需要输出文件
-            try:
-                completed = _run_ffmpeg_safely(command, timeout=60, desc="音频元数据探测")
-            except RuntimeError as exc:
-                print(f"[probe_audio_metadata] ffprobe 超时: {input_path.name} - {exc}")
-                if mutagen_summary is not None:
-                    return mutagen_summary
-                return {
-                    "path": str(input_path),
-                    "probe_source": "ffprobe_timeout",
-                    "container": fast_container,
-                    "audio_streams": 0,
-                    "video_streams": 0,
-                    "cover": False,
-                    "cover_codec": "",
-                    "metadata": {},
-                    "stderr": str(exc),
-                }
-            if completed.returncode != 0:
-                if mutagen_summary is not None:
-                    return mutagen_summary
-                return {
-                    "path": str(input_path),
-                    "probe_source": "ffprobe_failed",
-                    "container": fast_container,
-                    "audio_streams": 0,
-                    "video_streams": 0,
-                    "cover": False,
-                    "cover_codec": "",
-                    "metadata": {},
-                    "stderr": (completed.stderr or "").strip(),
-                }
-            # ffprobe 输出到 stdout
-            try:
-                data = json.loads(completed.stdout)
-            except (json.JSONDecodeError, ValueError):
-                if mutagen_summary is not None:
-                    return mutagen_summary
-                return {
-                    "path": str(input_path),
-                    "probe_source": "ffprobe_parse_failed",
-                    "container": fast_container,
-                    "audio_streams": 0,
-                    "video_streams": 0,
-                    "cover": False,
-                    "cover_codec": "",
-                    "metadata": {},
-                }
-        else:
-            # 回退到 ffmpeg（使用 null 输出探测容器类型）
-            command = [
-                str(ffmpeg_path),
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-i",
-                str(input_path),
-                "-f",
-                "null",
-                "NUL",
-            ]
-            try:
-                completed = _run_ffmpeg_safely(command, timeout=60, desc="容器类型回退探测")
-            except RuntimeError as exc:
-                print(f"[probe_audio_metadata] ffmpeg fallback 超时: {input_path.name} - {exc}")
-                format_name = ""
-            else:
-                format_name = _extract_format_from_stderr(completed.stderr or "")
-            streams = []
-            fmt = {"format_name": format_name}
-            # ffmpeg 回退：只能获取容器类型，无法获取详细流信息
+    if is_ffprobe:
+        # ffprobe 命令：输出 JSON 格式的流和容器信息
+        command = [
+            str(ffprobe_path),
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-print_format",
+            "json",
+            "-show_format",
+            "-show_streams",
+            "-i",
+            str(input_path),
+        ]
+        # ffprobe 输出到 stdout，不需要输出文件
+        try:
+            completed = _run_ffmpeg_safely(command, timeout=60, desc="音频元数据探测")
+        except RuntimeError as exc:
+            print(f"[probe_audio_metadata] ffprobe 超时: {input_path.name} - {exc}")
+            if mutagen_summary is not None:
+                return mutagen_summary
             return {
                 "path": str(input_path),
-                "probe_source": "ffmpeg_fallback",
-                "container": _normalize_container(format_name or fast_container),
-                "audio_streams": 1,
+                "probe_source": "ffprobe_timeout",
+                "container": fast_container,
+                "audio_streams": 0,
                 "video_streams": 0,
-                "cover": bool((mutagen_summary or {}).get("cover")),
-                "cover_codec": str((mutagen_summary or {}).get("cover_codec") or ""),
-                "metadata": dict((mutagen_summary or {}).get("metadata") or {}),
+                "cover": False,
+                "cover_codec": "",
+                "metadata": {},
+                "stderr": str(exc),
             }
-
-        streams = list(data.get("streams") or [])
-        fmt = data.get("format") or {}
-        audio_streams = [stream for stream in streams if str(stream.get("codec_type")) == "audio"]
-        video_streams = [stream for stream in streams if str(stream.get("codec_type")) == "video"]
-        cover_stream = next(
-            (
-                stream
-                for stream in video_streams
-                if bool((stream.get("disposition") or {}).get("attached_pic"))
-            ),
-            None,
-        )
-        container = str(fmt.get("format_name") or fast_detect_container(input_path)).split(",", 1)[0].strip().lower()
-        container = _normalize_container(container)
+        if completed.returncode != 0:
+            if mutagen_summary is not None:
+                return mutagen_summary
+            return {
+                "path": str(input_path),
+                "probe_source": "ffprobe_failed",
+                "container": fast_container,
+                "audio_streams": 0,
+                "video_streams": 0,
+                "cover": False,
+                "cover_codec": "",
+                "metadata": {},
+                "stderr": (completed.stderr or "").strip(),
+            }
+        # ffprobe 输出到 stdout
+        try:
+            data = json.loads(completed.stdout)
+        except (json.JSONDecodeError, ValueError):
+            if mutagen_summary is not None:
+                return mutagen_summary
+            return {
+                "path": str(input_path),
+                "probe_source": "ffprobe_parse_failed",
+                "container": fast_container,
+                "audio_streams": 0,
+                "video_streams": 0,
+                "cover": False,
+                "cover_codec": "",
+                "metadata": {},
+            }
+    else:
+        # 回退到 ffmpeg（使用 null 输出探测容器类型）
+        command = [
+            str(ffmpeg_path),
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            str(input_path),
+            "-f",
+            "null",
+            "NUL",
+        ]
+        try:
+            completed = _run_ffmpeg_safely(command, timeout=60, desc="容器类型回退探测")
+        except RuntimeError as exc:
+            print(f"[probe_audio_metadata] ffmpeg fallback 超时: {input_path.name} - {exc}")
+            format_name = ""
+        else:
+            format_name = _extract_format_from_stderr(completed.stderr or "")
+        streams = []
+        fmt = {"format_name": format_name}
+        # ffmpeg 回退：只能获取容器类型，无法获取详细流信息
         return {
             "path": str(input_path),
-            "probe_source": "ffprobe_json",
-            "container": container,
-            "audio_streams": len(audio_streams),
-            "video_streams": len(video_streams),
-            "cover": bool((mutagen_summary or {}).get("cover")) or cover_stream is not None,
-            "cover_codec": str((mutagen_summary or {}).get("cover_codec") or (cover_stream or {}).get("codec_name") or ""),
-            "metadata": dict((mutagen_summary or {}).get("metadata") or fmt.get("tags") or {}),
+            "probe_source": "ffmpeg_fallback",
+            "container": _normalize_container(format_name or fast_container),
+            "audio_streams": 1,
+            "video_streams": 0,
+            "cover": bool((mutagen_summary or {}).get("cover")),
+            "cover_codec": str((mutagen_summary or {}).get("cover_codec") or ""),
+            "metadata": dict((mutagen_summary or {}).get("metadata") or {}),
         }
-    finally:
-        pathlib.Path(temp_name).unlink(missing_ok=True)
+
+    streams = list(data.get("streams") or [])
+    fmt = data.get("format") or {}
+    audio_streams = [stream for stream in streams if str(stream.get("codec_type")) == "audio"]
+    video_streams = [stream for stream in streams if str(stream.get("codec_type")) == "video"]
+    cover_stream = next(
+        (
+            stream
+            for stream in video_streams
+            if bool((stream.get("disposition") or {}).get("attached_pic"))
+        ),
+        None,
+    )
+    container = str(fmt.get("format_name") or fast_detect_container(input_path)).split(",", 1)[0].strip().lower()
+    container = _normalize_container(container)
+    return {
+        "path": str(input_path),
+        "probe_source": "ffprobe_json",
+        "container": container,
+        "audio_streams": len(audio_streams),
+        "video_streams": len(video_streams),
+        "cover": bool((mutagen_summary or {}).get("cover")) or cover_stream is not None,
+        "cover_codec": str((mutagen_summary or {}).get("cover_codec") or (cover_stream or {}).get("codec_name") or ""),
+        "metadata": dict((mutagen_summary or {}).get("metadata") or fmt.get("tags") or {}),
+    }
 
 
 def _extract_format_from_stderr(stderr: str) -> str:
