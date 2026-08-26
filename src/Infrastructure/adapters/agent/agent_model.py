@@ -36,6 +36,13 @@ def create_chat_model(model_config: dict[str, Any], initializer: Callable[..., A
     base_url = _clean_field(str(model_config.get("base_url", "https://open.bigmodel.cn/api/paas/v4")))
     api_key = _clean_field(str(model_config.get("api_key", "")))
     temperature = float(model_config.get("temperature", 0.7))
+
+    # === 本地端点: Ollama/LM Studio 等不需要 api_key ===
+    _base_lower = base_url.lower()
+    _is_local = ("localhost" in _base_lower or "127.0.0.1" in _base_lower or "0.0.0.0" in _base_lower)
+    if not api_key and _is_local:
+        api_key = "ollama"  # OpenAI SDK 要求 api_key 非空，本地模型随便填
+        print(f"[agent_model] 本地端点，api_key 空 → 自动填 '{api_key}'", flush=True)
     if not api_key:
         raise RuntimeError("未配置 API Key")
 
@@ -50,8 +57,7 @@ def create_chat_model(model_config: dict[str, Any], initializer: Callable[..., A
     # === 本地端点绕过系统代理 ===
     # OpenAI SDK 内部用 httpx(trust_env=True) → 会读 Windows 系统代理
     # 代理不处理 localhost → 返回 502 Bad Gateway（Hermes Agent / QwenPaw 等都踩过）
-    _base_lower = base_url.lower()
-    if "localhost" in _base_lower or "127.0.0.1" in _base_lower or "0.0.0.0" in _base_lower:
+    if _is_local:
         try:
             import httpx
             kwargs["http_client"] = httpx.Client(trust_env=False)

@@ -87,7 +87,9 @@ def run_agent(
         emitter._log("正在检查模型配置...")
         _bu = str(model_config.get("base_url", ""))
         _ak = str(model_config.get("api_key", ""))
-        if not _ak:
+        _bl = _bu.lower()
+        _is_local = "localhost" in _bl or "127.0.0.1" in _bl or "0.0.0.0" in _bl
+        if not _ak and not _is_local:
             emitter._log("LLM 配置错误：api_key 为空", "error")
             emitter.emit("agent_step_failed", {"step": 1, "error": "未配置 API Key"})
             emitter.emit("agent_finished", {"status": "error", "error": "missing_api_key"})
@@ -196,13 +198,14 @@ def run_agent(
                         cancelled = True
                         break
                     event_count += 1
+                    msg, metadata = item
+                    _handle_stream_message(msg, metadata, emitter, tool_call_registry, pending_text)
 
                     # === 深度思考进度提示 ===
                     _content_now = str(getattr(msg, "content", "")) if hasattr(msg, "content") else ""
                     _tc_now = bool(getattr(msg, "tool_calls", None)) and len(getattr(msg, "tool_calls", None) or []) > 0
                     if isinstance(msg, (AIMessage, AIMessageChunk)) or type(msg).__name__ in ("AIMessage", "AIMessageChunk"):
                         if not _content_now and not _tc_now:
-                            # 累计思考事件
                             _thinking_count += 1
                             if _thinking_count > 0 and _thinking_count % 30 == 0:
                                 emitter._log(
@@ -218,10 +221,8 @@ def run_agent(
                                 _thinking_count = 0
 
                     if event_count % 20 == 0:
-                        # 定期 flush pending_text —— 防止纯文本回复堆积导致用户看不到输出
                         _flush_pending_text(emitter, pending_text)
                     if event_count % 50 == 0:
-                        # 详细 debug —— 看看 LLM 到底在发什么
                         _mt = type(msg).__name__
                         _mc = str(getattr(msg, "content", ""))[:30] if hasattr(msg, "content") else ""
                         _has_tc = bool(getattr(msg, "tool_calls", None)) and len(getattr(msg, "tool_calls", None) or []) > 0
@@ -230,8 +231,6 @@ def run_agent(
                             f"已处理 {event_count} 事件 | 最新={_mt}(content={_mc!r}, tool_calls={_has_tc}) | pending_text={_pt_len}字符",
                             "debug",
                         )
-                    msg, metadata = item
-                    _handle_stream_message(msg, metadata, emitter, tool_call_registry, pending_text)
 
                     # === 关键：ToolMessage content 截断，防止每轮重发长结果烧 token ===
                     if isinstance(msg, ToolMessage) or type(msg).__name__ == "ToolMessage":
