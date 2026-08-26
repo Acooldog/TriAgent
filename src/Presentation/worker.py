@@ -235,11 +235,16 @@ def run_agent(payload: dict[str, Any], runtime: WorkerRuntime) -> int:
     check_langchain_available = _agent_executor_mod.check_langchain_available
     runtime.log("agent_executor 导入完成")
     try:
-        from src.Infrastructure.agent_tools import set_ask_user_callback
+        from src.Infrastructure.agent_tools import set_ask_user_callback, set_permission_mode
         set_ask_user_callback(runtime.ask_user)
-        runtime.log("已注入 ask_user 回调")
+        # 注入权限模式：从 payload 获取，默认 standard
+        perm_mode = str(payload.get("permission_mode", "standard") or "standard").lower()
+        if perm_mode not in ("restricted", "standard", "full"):
+            perm_mode = "standard"
+        set_permission_mode(perm_mode)
+        runtime.log(f"已注入 ask_user 回调和权限模式: {perm_mode}")
     except Exception as exc:
-        runtime.log(f"ask_user 回调注入失败：{exc}", "warning")
+        runtime.log(f"回调注入失败：{exc}", "warning")
     threading.Thread(target=read_control, args=(runtime,), daemon=True).start()
 
     langchain_ok = check_langchain_available()

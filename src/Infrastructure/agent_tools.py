@@ -23,6 +23,7 @@ from src.Infrastructure.processed_index import (
     save_index,
 )
 from src.Infrastructure.runtime_paths import RuntimePaths
+from src.Infrastructure.soft_sandbox import get_sandbox
 
 try:
     from langchain_core.tools import tool
@@ -63,10 +64,11 @@ TOOL_DESCRIPTIONS = {
     "detect_format": "检测音频文件的容器格式（flac/mp3/m4a/wav/ogg 等），通过读取文件头特征判断。",
     "list_directory": "列出指定目录下的所有文件和子目录，返回文件名称列表。",
     "ask_user": "遇到不确定的操作时询问用户。给出清晰的问题和 2~4 个互斥选项，用户选择后返回所选内容。常用于：处理记录与实际输出不一致、目标文件已存在等无法判断用户意图的场景。",
+    "sandbox_manage": "管理文件操作沙箱：授权/取消授权目录、查看当前授权目录。所有文件操作必须在授权目录范围内。",
 }
 
 
-# 线程本地存储 ask_user 回调，避免多 Agent 并发冲突
+# 线程本地存储 ask_user 回调和权限模式，避免多 Agent 并发冲突
 _ask_user_local = threading.local()
 
 
@@ -79,6 +81,18 @@ def set_ask_user_callback(callback: Any) -> None:
 def _get_ask_user_callback() -> Any | None:
     """获取当前线程的 ask_user 回调。"""
     return getattr(_ask_user_local, "callback", None)
+
+
+def set_permission_mode(mode: str) -> None:
+    """注入权限模式（worker 启动 agent 前调用）。
+    可选值：restricted / standard / full。
+    使用线程本地存储，支持多 Agent 并发。"""
+    _permission_mode_local.mode = mode
+
+
+def _get_permission_mode() -> str:
+    """获取当前线程的权限模式。默认 standard。"""
+    return getattr(_permission_mode_local, "mode", "standard")
 
 def _find_kugou_key() -> pathlib.Path | None:
     key = auto_find_kugou_key(_get_paths())
@@ -632,20 +646,14 @@ def _coerce_cli_args(value: Any) -> Any:
 _CliArgs = Annotated[list[str] | None, BeforeValidator(_coerce_cli_args)]
 
 
-# 允许直接执行的命令白名单（小写匹配）
-_ALLOWED_CLI_COMMANDS: set[str] = {
+# 安全命令白名单：低风险，可在所有模式下直接执行
+_SAFE_CLI_COMMANDS: set[str] = {
     "ffmpeg",
     "ffprobe",
     "python",
     "python3",
-    "cmd",
     "dir",
     "ls",
-    "copy",
-    "move",
-    "mkdir",
-    "rmdir",
-    "del",
     "type",
     "echo",
     "file",
@@ -653,12 +661,31 @@ _ALLOWED_CLI_COMMANDS: set[str] = {
     "convert",
 }
 
+# 危险命令白名单：高风险，在标准模式下需要用户确认，完全访问模式下直接执行
+_DANGEROUS_CLI_COMMANDS: set[str] = {
+    "cmd",
+    "copy",
+    "move",
+    "mkdir",
+    "rmdir",
+    "del",
+}
+
+# 完整白名单（安全 + 危险）
+_ALLOWED_CLI_COMMANDS = _SAFE_CLI_COMMANDS | _DANGEROUS_CLI_COMMANDS
+
+# 全局权限模式存储（线程本地，支持多 Agent 并发）
+_permission_mode_local = threading.local()
+
 
 @tool
 def run_cli_safely(command: str, cli_args: _CliArgs = None, cwd: str = "") -> str:
     """安全执行命令行程序，统一处理中文路径与编码问题。需要调用外部命令（如 ffmpeg、脚本）时必须使用本工具。
 
-    非白名单命令会自动询问用户确认后才会执行。
+    权限模式说明：
+    - 完全访问模式（full）：所有白名单命令直接执行，无需确认
+    - 标准模式（standard）：危险命令（cmd/copy/del/rmdir 等）需要用户确认
+    - 受限模式（restricted）：危险命令被拒绝
 
     Args:
         command: 可执行程序名或路径（如 "ffmpeg" 或 "python"）
@@ -679,6 +706,9 @@ def run_cli_safely(command: str, cli_args: _CliArgs = None, cwd: str = "") -> st
 
         # 提取基本命令名（去掉路径），转小写用于白名单匹配
         cmd_basename = pathlib.Path(cmd_list[0]).name.lower()
+        permission_mode = _get_permission_mode()
+
+        # 检查命令是否在白名单中
         if cmd_basename not in _ALLOWED_CLI_COMMANDS:
             # 非白名单命令，询问用户确认
             callback = _get_ask_user_callback()
@@ -695,9 +725,35 @@ def run_cli_safely(command: str, cli_args: _CliArgs = None, cwd: str = "") -> st
             else:
                 print(f"[run_cli_safely] 非白名单命令但无回调，默认拒绝: {cmd_list[0]}")
                 return f"拒绝执行：命令 '{cmd_list[0]}' 不在白名单中，且无法询问用户确认"
+        elif cmd_basename in _DANGEROUS_CLI_COMMANDS:
+            # 危险命令：根据权限模式决定是否需要确认
+            if permission_mode == "restricted":
+                print(f"[run_cli_safely] 受限模式，拒绝执行危险命令: {cmd_basename}")
+                return f"受限模式下不允许执行危险命令：{cmd_basename}，请切换到标准或完全访问模式。"
+            elif permission_mode == "standard":
+                # 标准模式，询问用户确认
+                callback = _get_ask_user_callback()
+                if callback is not None:
+                    question = (
+                        f"即将执行危险命令：{cmd_basename} {' '.join(cmd_list[1:3])}{'...' if len(cmd_list) > 3 else ''}\n"
+                        f"此操作可能影响文件系统。是否允许执行？"
+                    )
+                    try:
+                        answer = callback(question, ["允许执行", "拒绝执行"])
+                        print(f"[run_cli_safely] 用户对危险命令的选择: {answer}")
+                        if answer not in ("允许执行", "允许", "同意", "yes", "y", "确定", "ok"):
+                            return f"用户拒绝执行危险命令：{cmd_basename}"
+                    except Exception as exc:
+                        print(f"[run_cli_safely] 询问用户异常: {exc}")
+                        return f"询问用户失败，已取消执行：{exc}"
+                else:
+                    print(f"[run_cli_safely] 危险命令但无回调，默认拒绝: {cmd_basename}")
+                    return f"拒绝执行：命令 '{cmd_basename}' 是危险命令，且无法询问用户确认"
+            # full 模式：直接执行，无需确认
+            print(f"[run_cli_safely] 完全访问模式，直接执行危险命令: {cmd_basename}")
 
         work_dir = str(pathlib.Path(cwd).resolve()) if cwd.strip() else None
-        print(f"[run_cli_safely] cmd={cmd_list} cwd={work_dir}")
+        print(f"[run_cli_safely] cmd={cmd_list} cwd={work_dir} mode={permission_mode}")
 
         completed = subprocess.run(
             cmd_list,
@@ -878,6 +934,73 @@ def _safe_tool_name(tool: object) -> str:
     return getattr(tool, "__name__", "unknown")
 
 
+@tool
+def sandbox_manage(action: str, path: str = "") -> str:
+    """管理文件操作沙箱：授权/取消授权目录、查看当前授权目录。
+
+    沙箱限制所有文件操作必须在授权目录范围内。支持的操作：
+    - "status": 查看当前沙箱状态和授权目录
+    - "add": 授权一个目录（path 参数必填）
+    - "remove": 取消授权一个目录（path 参数必填）
+    - "clear": 清空所有授权目录
+    - "enable": 启用沙箱
+    - "disable": 禁用沙箱（临时放行所有路径）
+
+    Args:
+        action: 操作类型：status / add / remove / clear / enable / disable
+        path: 目录路径（add/remove 操作必填）
+    """
+    try:
+        sandbox = get_sandbox()
+        action_lower = action.strip().lower()
+
+        if action_lower == "status":
+            status = sandbox.get_status()
+            paths = status["authorized_paths"]
+            paths_str = "\n".join(f"  - {p}" for p in paths) if paths else "  （无）"
+            return (
+                f"沙箱状态:\n"
+                f"  启用: {'是' if status['enabled'] else '否'}\n"
+                f"  授权目录数: {status['paths_count']}\n"
+                f"  授权目录:\n{paths_str}"
+            )
+
+        elif action_lower == "add":
+            if not path.strip():
+                return "错误: add 操作需要指定 path 参数"
+            sandbox.add_path(path)
+            return f"已授权目录: {path}"
+
+        elif action_lower == "remove":
+            if not path.strip():
+                return "错误: remove 操作需要指定 path 参数"
+            if sandbox.remove_path(path):
+                return f"已取消授权: {path}"
+            return f"目录不在授权列表中: {path}"
+
+        elif action_lower == "clear":
+            sandbox.clear()
+            return "已清空所有授权目录"
+
+        elif action_lower == "enable":
+            sandbox.enabled = True
+            return "沙箱已启用"
+
+        elif action_lower == "disable":
+            sandbox.enabled = False
+            return "沙箱已禁用（所有路径均可操作）"
+
+        else:
+            return f"未知操作: {action}，支持的操作: status, add, remove, clear, enable, disable"
+
+    except PermissionError as exc:
+        return f"权限错误: {exc}"
+    except ValueError as exc:
+        return f"参数错误: {exc}"
+    except Exception as exc:
+        return f"沙箱操作失败: {exc}"
+
+
 ALL_TOOLS = [
     scan_files,
     decrypt_kugou,
@@ -894,5 +1017,6 @@ ALL_TOOLS = [
     rag_ingest,
     list_directory,
     ask_user,
+    sandbox_manage,
 ]
 TOOL_NAMES = [_safe_tool_name(t) for t in ALL_TOOLS]

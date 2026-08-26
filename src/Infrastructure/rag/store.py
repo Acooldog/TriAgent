@@ -40,9 +40,8 @@ def _embedding_function():
 
 
 def _ensure_client() -> Any:
+    """获取或初始化 ChromaDB 客户端和集合（线程安全，加锁模式）。"""
     global _client, _collection, _persist_dir
-    if _collection is not None:
-        return _collection
     with _client_lock:
         if _collection is None:
             import chromadb
