@@ -80,13 +80,24 @@ def run_agent(
             return {"status": "error", "error": "missing_api_key"}
         try:
             import urllib.request as _ur
-            _req = _ur.Request(_bu, method="HEAD", headers={"User-Agent": "TriMusicAgent/1.0"})
+            import urllib.error as _ue
+            # 优先用 base_url + /chat/completions 检测（这是真正的 API 端点）
+            _probe = _bu.rstrip("/").removesuffix("/chat/completions") + "/chat/completions"
+            _req = _ur.Request(_probe, method="HEAD", headers={"User-Agent": "TriMusicAgent/1.0"})
             _resp = _ur.urlopen(_req, timeout=8)
-            emitter._log(f"模型服务可达 (HTTP {_resp.status})")
+            emitter._log(f"模型服务可达 (HTTP {_resp.status}, 端点 {_probe})")
         except Exception as _url_exc:
-            # HEAD 可能返回 405 (Method Not Allowed) — 那也是可达，忽略
-            if hasattr(_url_exc, "code") and _url_exc.code in (405, 401, 403):
-                emitter._log(f"模型服务可达 (HTTP {_url_exc.code})")
+            _code = getattr(_url_exc, "code", None)
+            # 405 = Method Not Allowed（POST-only API） → 端点存在，可达
+            # 401/403 = 需要鉴权 → 端点存在，可达
+            # 404 on /chat/completions → 端点真的不存在
+            if _code in (405, 401, 403):
+                emitter._log(f"模型服务可达 (HTTP {_code}, 端点存在但拒绝 HEAD)")
+            elif _code == 404:
+                emitter._log(f"模型端点不存在: {_probe} → HTTP 404", "error")
+                emitter.emit("agent_step_failed", {"step": 1, "error": f"模型端点不存在: {_probe}"})
+                emitter.emit("agent_finished", {"status": "error", "error": "endpoint_not_found"})
+                return {"status": "error", "error": f"endpoint_not_found: {_probe}"}
             else:
                 emitter._log(f"模型服务不可达: {_url_exc}", "error")
                 emitter.emit("agent_step_failed", {"step": 1, "error": f"模型服务不可达: {_url_exc}"})
