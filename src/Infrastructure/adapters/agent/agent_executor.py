@@ -68,6 +68,21 @@ def run_agent(
         llm = _create_chat_model(model_config)
         emitter._log(f"聊天模型已创建: {model_config.get('model')}")
 
+        # 预测试 LLM 连通性 —— 如果鉴权失败直接报错，而不是让 stream 返回空
+        emitter._log("正在测试 LLM 连通性...")
+        try:
+            _test_result = llm.invoke("ping")
+            emitter._log(f"LLM 连通性测试通过: {str(_test_result)[:80]}")
+        except Exception as _test_exc:
+            import traceback as _tb
+            emitter._log(f"LLM 连通性测试失败: {_test_exc}\n{_tb.format_exc()}", "error")
+            emitter.emit("agent_step_failed", {
+                "step": 1,
+                "error": f"LLM 连接失败: {_test_exc}",
+            })
+            emitter.emit("agent_finished", {"status": "error", "error": "llm_connect_failed"})
+            return {"status": "error", "error": str(_test_exc)}
+
         emitter._log("正在构建工具列表...")
         tools = _build_tools_for_llm()
         emitter._log(f"已加载 {len(tools)} 个工具: {TOOL_NAMES}")
