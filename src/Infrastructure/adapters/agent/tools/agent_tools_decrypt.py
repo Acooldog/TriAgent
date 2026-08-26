@@ -175,8 +175,8 @@ def scan_files(directory: str, recursive: bool = True, file_types: str = "kugou"
 
 @tool
 def decrypt_kugou(input_path: str, output_dir: str, target_format: str = "auto") -> str:
-    """解密酷狗音乐加密文件（kgma/kgm/kgg/vpr），输出为可播放的音频文件。
-    Args: input_path: 加密文件或包含加密文件的目录路径, output_dir: 解密后音频文件的输出目录, target_format: 输出格式，可选 "auto"、"flac"、"m4a"、"mp3"、"wav"
+    """【推荐】解密酷狗音乐加密文件（kgma/kgm/kgg/vpr）。input_path 可直接传**目录路径**，工具会自动批量处理目录下所有加密文件，一次搞定全部！也可传单个文件路径。
+    Args: input_path: 加密文件路径 **或整个目录路径**（推荐传目录！）, output_dir: 解密后音频文件的输出目录, target_format: 输出格式，可选 "auto"、"flac"、"m4a"、"mp3"、"wav"
     """
     try:
         src = _to_path(input_path)
@@ -206,8 +206,8 @@ def decrypt_kugou(input_path: str, output_dir: str, target_format: str = "auto")
 
 @tool
 def decrypt_qq(input_path: str, output_dir: str) -> str:
-    """解密 QQ 音乐加密文件（mflac/mgg/mmp4），输出为可播放的音频文件。需要 QQ 音乐客户端已运行。
-    Args: input_path: 加密文件或包含加密文件的目录路径, output_dir: 解密后音频文件的输出目录
+    """【推荐】解密 QQ 音乐加密文件（mflac/mgg/mmp4）。input_path 可直接传**目录路径**，工具会自动批量处理目录下所有加密文件，一次搞定全部！也可传单个文件路径。需要 QQ 音乐客户端已运行。
+    Args: input_path: 加密文件路径 **或整个目录路径**（推荐传目录！）, output_dir: 解密后音频文件的输出目录
     """
     try:
         src = _to_path(input_path)
@@ -243,8 +243,8 @@ def decrypt_qq(input_path: str, output_dir: str) -> str:
 
 @tool
 def decrypt_netease(input_path: str, output_dir: str) -> str:
-    """解密网易云音乐加密文件（ncm 格式），输出为可播放的音频文件。无需运行网易云音乐客户端。
-    Args: input_path: 加密文件或包含加密文件的目录路径, output_dir: 解密后音频文件的输出目录
+    """【推荐】解密网易云音乐加密文件（ncm 格式）。input_path 可直接传**目录路径**，工具会自动批量处理目录下所有加密文件，一次搞定全部！也可传单个文件路径。无需运行网易云音乐客户端。
+    Args: input_path: 加密文件路径 **或整个目录路径**（推荐传目录！）, output_dir: 解密后音频文件的输出目录
     """
     try:
         src = _to_path(input_path)
@@ -280,8 +280,8 @@ def decrypt_netease(input_path: str, output_dir: str) -> str:
 
 @tool
 def decrypt_kuwo(input_path: str, output_dir: str) -> str:
-    """解密酷我音乐加密文件（kwm 格式），输出为可播放的音频文件。无需运行酷我音乐客户端。
-    Args: input_path: 加密文件或包含加密文件的目录路径, output_dir: 解密后音频文件的输出目录
+    """【推荐】解密酷我音乐加密文件（kwm 格式）。input_path 可直接传**目录路径**，工具会自动批量处理目录下所有加密文件，一次搞定全部！也可传单个文件路径。无需运行酷我音乐客户端。
+    Args: input_path: 加密文件路径 **或整个目录路径**（推荐传目录！）, output_dir: 解密后音频文件的输出目录
     """
     try:
         from src.Infrastructure.adapters.platforms.kuwo.unlockmusic_decoder import decrypt_kwm_file

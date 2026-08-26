@@ -234,12 +234,16 @@ def run_agent(
 
                     # === 关键：ToolMessage content 截断，防止每轮重发长结果烧 token ===
                     if isinstance(msg, ToolMessage) or type(msg).__name__ == "ToolMessage":
-                        _trunc_saved = _truncate_tool_message(msg, max_chars=300, keep_head=200)
+                        _tool_name = getattr(msg, "name", "tool")
+                        # scan/list 类结果需要保留完整 summary（含数量），让小模型知道还有多少文件要处理
+                        if _tool_name in ("scan_files", "list_directory", "rag_retrieve"):
+                            _trunc_saved = _truncate_tool_message(msg, max_chars=1200, keep_head=1000)
+                        else:
+                            _trunc_saved = _truncate_tool_message(msg, max_chars=300, keep_head=200)
                         if _trunc_saved > 0:
                             _total_truncate_saved += _trunc_saved
-                            _name = getattr(msg, "name", "tool")
                             emitter._log(
-                                f"[token] 截断 ToolMessage({_name}) 节省 {_trunc_saved} 字符 ≈ {int(_trunc_saved/3.5)} tokens",
+                                f"[token] 截断 ToolMessage({_tool_name}) 节省 {_trunc_saved} 字符 ≈ {int(_trunc_saved/3.5)} tokens",
                                 "info",
                             )
 
