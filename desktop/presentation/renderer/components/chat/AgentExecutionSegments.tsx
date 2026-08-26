@@ -50,16 +50,13 @@ export function AgentExecutionSegments({ segments }: Props) {
           border-radius: 8px;
           margin-bottom: 4px;
           overflow: hidden;
-          border-left: 2px solid var(--km-label-tertiary, #6b6b6b);
           background: var(--km-bg-tertiary, #292929);
           transition: all 0.3s ease;
         }
         .agent-segment.status-running {
-          border-left-color: var(--km-label-secondary, #8f8f8f);
           background: var(--km-bg-secondary, #1f1f1f);
         }
         .agent-segment.status-done {
-          border-left-color: #22c55e;
           background: var(--km-bg-tertiary, #292929);
           opacity: 0.85;
         }
@@ -68,7 +65,6 @@ export function AgentExecutionSegments({ segments }: Props) {
           font-weight: 500;
         }
         .agent-segment.status-error {
-          border-left-color: #ef4444;
           background: var(--km-bg-tertiary, #292929);
         }
         .agent-segment-header {
