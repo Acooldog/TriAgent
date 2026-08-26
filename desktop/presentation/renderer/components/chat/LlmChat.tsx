@@ -165,7 +165,6 @@ export function LlmChat(state: UseAppStateResult) {
       <header className="llm-chat-header">
         <button className="llm-back" onClick={routeBack}>‹</button>
         <span>{isTaskMode ? "当前任务" : "模型对话"}</span>
-        {isTaskMode ? <button className="kimi-action-button" onClick={stopProcessing}>停止任务</button> : null}
       </header>
       <div className="llm-chat-scroll" ref={scrollRef}>
         <div className="llm-chat-content">

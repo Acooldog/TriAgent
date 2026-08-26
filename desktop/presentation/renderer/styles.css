@@ -4365,16 +4365,17 @@ select:focus {
 
 .llm-chat-message.user {
     display: grid !important;
-    grid-template-columns: 32px 1fr;
+    grid-template-columns: 1fr 32px;
     gap: 12px;
-    justify-content: start !important;
+    justify-content: end !important;
     align-items: start !important;
     padding: 10px 0;
+    justify-items: end;
 }
 
 .llm-chat-message.user .llm-avatar {
     align-self: start !important;
-    order: 0;
+    order: 2;
 }
 
 .llm-chat-message.user p {
@@ -4383,7 +4384,7 @@ select:focus {
     padding: 9px 13px;
     border-radius: 8px;
     background: var(--km-bg-tertiary);
-    order: 0;
+    order: 1;
 }
 
 .llm-chat-message p {

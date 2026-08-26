@@ -87,12 +87,11 @@ def _handle_stream_message(
                     "tool_call_id": tool_call_id,
                 }
         else:
-            # LangGraph stream_mode='messages' gives FULL accumulated content per yield.
-            # REPLACE pending_text instead of appending to avoid duplication.
+            # LangGraph stream_mode='messages' — 验证是累积还是 delta
             text_content = str(msg.content) if hasattr(msg, "content") and msg.content else ""
             if text_content:
-                # Replace, don't append. Each yield is the complete accumulated
-                # response so far from the LLM.
+                print(f"[STREAM-AIMSG] content={text_content[:120]!r}", file=__import__("sys").stderr)
+                # REPLACE 假设是累积内容；如果是 delta 再改回 append
                 pending_text.clear()
                 pending_text.append(text_content)
 
