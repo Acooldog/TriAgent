@@ -467,8 +467,37 @@ def _codec_args(target_format: str) -> list[str]:
 
 
 def _stream_selection_args(target_format: str) -> list[str]:
-    if target_format in {"mp3", "m4a", "wav", "flac"}:
+    """选择音频流和封面（如果支持）。
+
+    mp3/m4a/flac 支持封面内嵌，保留视频流（封面以 attached_pic 形式存储）；
+    wav 不支持封面，使用 -vn 丢弃视频流。
+    """
+    if target_format in {"mp3", "m4a", "flac"}:
+        # 使用 -map 0:v? 可选映射视频流（封面），不强制要求输入存在视频流
+        return ["-map", "0:a:0", "-map", "0:v?", "-sn", "-dn"]
+    if target_format == "wav":
         return ["-map", "0:a:0", "-vn", "-sn", "-dn"]
+    return []
+
+
+def _cover_metadata_args(target_format: str) -> list[str]:
+    """为支持封面的输出格式添加格式特定的封面保留参数。
+
+    mp3: 强制 attached_pic 封面 + ID3v2 版本 + ID3v1 兼容
+    m4a: MP4 容器自带 cover atom，设置 attached_pic 即可
+    flac: 原生支持嵌入式图片，设置 attached_pic 即可
+    wav: 不支持封面
+    """
+    if target_format == "mp3":
+        return [
+            "-disposition:v", "attached_pic",
+            "-id3v2_version", "3",
+            "-write_id3v1", "1",
+        ]
+    if target_format == "m4a":
+        return ["-disposition:v", "attached_pic"]
+    if target_format == "flac":
+        return ["-disposition:v", "attached_pic"]
     return []
 
 
@@ -510,6 +539,7 @@ def transcode_file(
         str(input_path),
         *_stream_selection_args(target_format),
         *_codec_args(target_format),
+        *_cover_metadata_args(target_format),
         *_audio_option_args(
             target_format,
             sample_rate_hz=sample_rate_hz,

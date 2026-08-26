@@ -37,6 +37,25 @@ SEED_DOCUMENTS: list[tuple[str, str]] = [
         "用户重新发起任务会自动跳过已完成部分继续。\n"
         "运行中收到用户的补充消息会被加入计划列表并继续，无需重启任务。",
     ),
+    (
+        "音频格式转换的封面保留策略",
+        "转换格式时封面丢失是最常见的问题。各格式对封面的支持情况：\n"
+        "1) MP3 (.mp3) — ID3v2 标签内嵌封面，完全支持。转换时必须指定 -id3v2_version 3 和 -write_id3v1 1。\n"
+        "2) M4A (.m4a) — MP4 容器的 covr atom，完全支持。\n"
+        "3) FLAC (.flac) — 原生支持嵌入式图片（PICTURE metadata block）。\n"
+        "4) AAC 裸流 (.aac) — 纯音频流，无容器，不支持封面（但 .m4a 容器支持）。\n"
+        "5) OGG Vorbis (.ogg) — 格式支持封面（METADATA_BLOCK_PICTURE），但多数转换工具默认不拷贝。\n"
+        "6) Opus (.opus) — 同 OGG，支持但不保证工具会带。\n"
+        "7) WAV (.wav) — 不支持封面。\n"
+        "8) AC3 / DTS — 环绕声格式，纯音频流，无封面。\n"
+        "\n"
+        "FFmpeg 封面保留核心规则：\n"
+        "- 永远不要使用 -vn 参数，它会丢弃所有视频流（包括封面）。\n"
+        "- 使用 -map 0:a:0 -map 0:v? 可选映射音频和视频流（? 表示无视频流时不报错）。\n"
+        "- 封面流必须设置 -disposition:v attached_pic，否则播放器可能无法识别。\n"
+        "- MP3 输出必须添加 -id3v2_version 3 确保兼容性。\n"
+        "- 本项目 transcoder.py 已内置 _cover_metadata_args() 自动处理，转换时无需手动指定。",
+    ),
 ]
 
 
