@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import time
 from typing import Any, Callable
 
@@ -132,6 +133,7 @@ def run_agent(
     max_iterations: int = 15,
     stop_requested: Callable[[], bool] | None = None,
     announce_start: bool = True,
+    consume_supplements: Callable[[], list[str]] | None = None,
 ) -> dict[str, Any]:
     emitter = AgentEventEmitter(event_sink)
     emitter.emit("agent_started", {"message": user_message, "model": model_config.get("model", "")})
@@ -146,6 +148,15 @@ def run_agent(
         emitter.emit("agent_error", {"error": "langchain 未安装"})
         emitter.emit("agent_finished", {"status": "failed", "reason": "langchain_not_installed"})
         return {"status": "failed", "reason": "langchain_not_installed"}
+
+    tool_call_registry: dict[str, dict[str, Any]] = {}
+    pending_text: list[str] = []
+    last_ai_message = ""
+    stream_error = None
+    event_count = 0
+    actual_iterations = 0
+    cancelled = False
+    timed_out = False
 
     try:
         emitter._log("正在创建聊天模型...")
@@ -168,28 +179,29 @@ def run_agent(
         emitter.emit("agent_step_started", {"step": 1})
         step_started = time.perf_counter()
 
-        graph_config = {"recursion_limit": max_iterations * 2}
-        emitter._log(f"设置递归限制: {max_iterations * 2} (max_iterations={max_iterations})", "debug")
-
-        tool_call_registry: dict[str, dict[str, Any]] = {}
-        pending_text: list[str] = []
-        last_ai_message = ""
-        stream_error = None
-        event_count = 0
-        actual_iterations = 0
-        cancelled = False
+        graph_config = {"recursion_limit": max(max_iterations * 4, 80)}
+        emitter._log(f"设置递归限制: {graph_config['recursion_limit']} (max_iterations={max_iterations})", "debug")
 
         import concurrent.futures
-        executor_timeout = 300
+        executor_timeout = 1800
 
-        def _stream_with_timeout():
+        conversation_messages: list = [HumanMessage(content=user_message)]
+        cancel_event = threading.Event()
+
+        def _stream_once(messages: list) -> None:
             nonlocal last_ai_message, stream_error, event_count, actual_iterations, cancelled
             try:
                 for item in agent.stream(
-                    {"messages": [HumanMessage(content=user_message)]},
+                    {"messages": messages},
                     config=graph_config,
                     stream_mode="messages",
                 ):
+                    # 检查取消信号
+                    if cancel_event.is_set():
+                        emitter._log("收到超时取消信号，终止流式处理...", "info")
+                        cancelled = True
+                        break
+
                     if stop_requested and stop_requested():
                         emitter._log("收到取消请求，停止流式处理...", "info")
                         cancelled = True
@@ -201,6 +213,7 @@ def run_agent(
 
                     msg, metadata = item
                     _handle_stream_message(msg, metadata, emitter, tool_call_registry, pending_text)
+                    conversation_messages.append(msg)
 
                     if isinstance(msg, AIMessage) or type(msg).__name__ == "AIMessage":
                         if hasattr(msg, "tool_calls") and msg.tool_calls:
@@ -210,30 +223,55 @@ def run_agent(
                     flushed = _flush_pending_text(emitter, pending_text)
                     if flushed:
                         last_ai_message = flushed
-                return None
             except Exception as e:
                 stream_error = e
                 _flush_pending_text(emitter, pending_text)
-                return None
+
+        def _run_stream_with_timeout(messages: list) -> None:
+            nonlocal cancelled, timed_out
+            # 清除取消信号（新一轮开始）
+            cancel_event.clear()
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as thread_pool:
+                future = thread_pool.submit(_stream_once, messages)
+                try:
+                    future.result(timeout=executor_timeout)
+                except concurrent.futures.TimeoutError:
+                    # 设置取消信号，让 _stream_once 线程尽快退出
+                    cancel_event.set()
+                    emitter._log(f"agent.stream() 超时 ({executor_timeout}s)，已发送取消信号", "error")
+                    emitter.emit("agent_step_failed", {
+                        "step": 1,
+                        "error": f"执行超时 ({executor_timeout}s)，LLM 可能无响应",
+                        "elapsed_sec": round(time.perf_counter() - step_started, 3),
+                    })
+                    emitter.emit("agent_finished", {"status": "timeout", "error": "llm_timeout"})
+                    timed_out = True
+                    cancelled = True
+                    return
+                if stream_error is not None:
+                    raise stream_error
 
         emitter._log("提交 agent.stream() 到线程池...", "debug")
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as thread_pool:
-            future = thread_pool.submit(_stream_with_timeout)
-            try:
-                future.result(timeout=executor_timeout)
-            except concurrent.futures.TimeoutError:
-                elapsed = round(time.perf_counter() - step_started, 3)
-                emitter._log(f"agent.stream() 超时 ({executor_timeout}s)", "error")
-                emitter.emit("agent_step_failed", {
-                    "step": 1,
-                    "error": f"执行超时 ({executor_timeout}s)，LLM 可能无响应",
-                    "elapsed_sec": elapsed,
-                })
-                emitter.emit("agent_finished", {"status": "timeout", "error": "llm_timeout"})
-                return {"status": "timeout", "error": "llm_timeout"}
+        _run_stream_with_timeout(conversation_messages)
 
-            if stream_error is not None:
-                raise stream_error
+        supplement_round = 0
+        while not cancelled and stream_error is None and consume_supplements is not None:
+            new_supplements = consume_supplements()
+            if not new_supplements:
+                break
+            supplement_round += 1
+            emitter._log(f"处理第 {supplement_round} 轮用户补充：{len(new_supplements)} 条", "info")
+            for s in new_supplements:
+                conversation_messages.append(HumanMessage(content=s))
+            emitter.emit("agent_step_started", {"step": supplement_round + 1, "message": "用户补充"})
+            emitter.emit("agent_message", {
+                "content": f"已收到用户补充（第 {supplement_round} 轮），正在据此继续完成任务。",
+                "kind": "progress",
+            })
+            _run_stream_with_timeout(conversation_messages)
+
+        if timed_out:
+            return {"status": "timeout", "error": "llm_timeout"}
 
         if cancelled:
             elapsed = round(time.perf_counter() - step_started, 3)
@@ -279,9 +317,32 @@ def run_agent(
         import traceback
         tb = traceback.format_exc()
         emitter._log(f"Agent 执行异常: {exc}\n{tb}", "error")
-        emitter.emit("agent_error", {"error": str(exc)})
-        emitter.emit("agent_finished", {"status": "failed", "error": str(exc)})
-        return {"status": "failed", "error": str(exc)}
+        completed_count = len(tool_call_registry)
+        tool_summary = [info.get("tool_name", "unknown") for info in tool_call_registry.values()]
+        emitter.emit("agent_error", {
+            "error": str(exc),
+            "completed_tool_calls": completed_count,
+            "tool_calls_summary": tool_summary,
+        })
+        emitter.emit("agent_message", {
+            "content": (
+                f"执行中断：已完成 {completed_count} 个工具调用"
+                f"（{', '.join(tool_summary) if tool_summary else '无'}）后因异常中止：{exc}。"
+                "已处理的文件已记录在 _processed_index.json，重新发起任务时会自动跳过，继续未完成的部分。"
+            ),
+            "kind": "error",
+        })
+        emitter.emit("agent_finished", {
+            "status": "failed",
+            "error": str(exc),
+            "completed_tool_calls": completed_count,
+        })
+        return {
+            "status": "failed",
+            "error": str(exc),
+            "completed_tool_calls": completed_count,
+            "tool_calls": list(tool_call_registry.values()),
+        }
 
 
 def check_langchain_available() -> bool:
