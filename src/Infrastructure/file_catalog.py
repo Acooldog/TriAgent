@@ -3,7 +3,7 @@ from __future__ import annotations
 import pathlib
 
 
-SUPPORTED_SUFFIXES = {".kgm", ".kgma", ".kgg", ".vpr", ".kgm.flac", ".vpr.flac"}
+SUPPORTED_SUFFIXES = {".kgm", ".kgma", ".kgg", ".vpr", ".kgm.flac", ".vpr.flac", ".mflac", ".mgg", ".mmp4", ".ncm", ".kwm"}
 OUTPUT_AUDIO_EXTENSIONS = {".flac", ".wav", ".mp3", ".m4a", ".bin"}
 DEDUPE_OUTPUT_EXTENSIONS = OUTPUT_AUDIO_EXTENSIONS - {".bin"}
 
