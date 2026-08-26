@@ -2,6 +2,7 @@ import { useEffect, useRef, type CSSProperties } from "react";
 import type { UseAppStateResult } from "../../hooks/useAppState/useAppState";
 import { renderMarkdown } from "../../markdown";
 import { ExecutionPanel } from "./ExecutionPanel";
+import { BatchProgressCard } from "./BatchProgressCard";
 
 export function LlmChat(state: UseAppStateResult) {
   const {
@@ -11,7 +12,7 @@ export function LlmChat(state: UseAppStateResult) {
     progress, toolEvents, contextUsage, toggleNetwork, selectMode,
     sendPrompt, attachedPaths, setAttachedPaths, llmRetry,
     stopProcessing, stopLlmStreaming, dashboardPromptRef, startProcessing, sendSupplement, answerAgentQuestion, processing,
-    agentQuestion,
+    agentQuestion, batchProgress,
   } = state;
 
   const editorRef = useRef<HTMLDivElement>(null);
@@ -131,6 +132,9 @@ export function LlmChat(state: UseAppStateResult) {
               className="llm-chat-messages"
               dangerouslySetInnerHTML={{ __html: `${messages}${thinkingHtml}${retryHtml}${streamingHtml}` }}
             />
+            {batchProgress.active || batchProgress.finished ? (
+              <BatchProgressCard progress={batchProgress} />
+            ) : null}
           </div>
         ) : (
           <div

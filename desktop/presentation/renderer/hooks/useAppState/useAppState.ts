@@ -12,10 +12,10 @@ import type { ModelConfig } from "../../../../application/model/modelProtocol";
 import { useAppSettings } from "../../useAppSettings";
 
 // --- Re-exports for consumers ---
-export type { Page, FileItem, HistoryItem, LlmMessage, AgentQuestion, ToolEvent } from "./useAppState.types";
+export type { Page, FileItem, HistoryItem, LlmMessage, AgentQuestion, ToolEvent, BatchProgressState } from "./useAppState.types";
 export { INITIAL_FILES, HISTORY_STORAGE_KEY, loadHistoryFromStorage, PERMISSION_MODE_MAP, REVERSE_MODE_MAP, AGENT_TRIGGER_KEYWORDS, TOOL_ACTION_PATTERN } from "./useAppState.helpers";
 import { INITIAL_FILES, HISTORY_STORAGE_KEY, loadHistoryFromStorage, PERMISSION_MODE_MAP, TOOL_ACTION_PATTERN } from "./useAppState.helpers";
-import type { Page, FileItem, HistoryItem } from "./useAppState.types";
+import type { Page, FileItem, HistoryItem, BatchProgressState } from "./useAppState.types";
 import { useAgentState } from "./useAppState.agent";
 import { useModelEventListener, useWorkerEventListener, useSessionWarningListener } from "./useAppState.events";
 
@@ -61,6 +61,10 @@ export function useAppState() {
   const [toast, setToast] = useState("");
   const [promptText, setPromptText] = useState("");
   const [attachedPaths, setAttachedPaths] = useState<string[]>([]);
+  const [batchProgress, setBatchProgress] = useState<BatchProgressState>({
+    active: false, kind: "generic", totalCount: 0, currentIndex: 0, currentProgress: 0,
+    successCount: 0, skippedCount: 0, failedCount: 0, finished: false,
+  });
   const [compressionDone, setCompressionDone] = useState(false);
   const dashboardPromptRef = useRef<string | null>(null);
 
@@ -131,6 +135,7 @@ export function useAppState() {
     setStepIndex: agent.setStepIndex,
     setTaskStatus: agent.setTaskStatus,
     toolActionPattern: TOOL_ACTION_PATTERN,
+    setBatchProgress,
   });
 
   useSessionWarningListener(showToast);
@@ -255,6 +260,7 @@ export function useAppState() {
     toast, showToast,
     promptText, setPromptText,
     attachedPaths, setAttachedPaths,
+    batchProgress,
     compressionDone, setCompressionDone,
     dashboardPromptRef,
     // spread agent state

@@ -6,7 +6,7 @@
  */
 import { useEffect, useRef } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import type { HistoryItem, LlmMessage, ToolEvent } from "./useAppState.types";
+import type { BatchProgressState, HistoryItem, LlmMessage, ToolEvent } from "./useAppState.types";
 
 interface ModelEventDeps {
   llmRequestIdRef: React.MutableRefObject<string | null>;
@@ -86,6 +86,7 @@ interface WorkerEventDeps {
   setStepIndex: Dispatch<SetStateAction<number>>;
   setTaskStatus: Dispatch<SetStateAction<string>>;
   toolActionPattern: RegExp;
+  setBatchProgress: Dispatch<SetStateAction<BatchProgressState>>;
 }
 
 export function useWorkerEventListener(deps: WorkerEventDeps) {
@@ -171,6 +172,86 @@ function handleWorkerEvent(args: { deps: WorkerEventDeps; eventType: string; pay
       deps.setToolEvents((prev) => prev.map((t) => t.status === "running" ? { ...t, status: "done" as const, detail: t.toolResult ? `完成 (${elapsedSec}s)` : t.detail } : t));
       deps.setStepIndex((prev) => Math.max(step, prev));
       deps.setProgress((prev) => Math.min(95, prev + 15));
+      break;
+    }
+    case "batch_started": {
+      const platformId = String(payload.platform_id ?? "");
+      deps.setBatchProgress({
+        active: true, kind: "decrypt",
+        platformId: platformId || undefined,
+        inputPath: String(payload.input_path ?? ""),
+        outputDir: String(payload.output_dir ?? ""),
+        totalCount: Number(payload.candidate_count ?? 0),
+        currentIndex: 0,
+        currentProgress: 0,
+        currentStage: "scanning",
+        successCount: 0, skippedCount: 0, failedCount: 0,
+        finished: false,
+      });
+      break;
+    }
+    case "file_started": {
+      const idx = Number(payload.index ?? 0);
+      const total = Number(payload.total ?? 1);
+      deps.setBatchProgress((prev) => ({
+        ...prev,
+        active: true,
+        currentIndex: idx,
+        currentProgress: 0,
+        currentFile: String(payload.input_path ?? "").split(/[\\/]/).pop() || "",
+        currentStage: "decrypting",
+        totalCount: total || prev.totalCount,
+      }));
+      break;
+    }
+    case "batch_transcode_progress": {
+      const idx = Number(payload.index ?? 0);
+      const total = Number(payload.total ?? 1);
+      deps.setBatchProgress((prev) => ({
+        ...prev,
+        active: true,
+        currentIndex: idx,
+        currentProgress: 60, // transcode mid-point heuristic
+        currentFile: String(payload.input_path ?? "").split(/[\\/]/).pop() || prev.currentFile,
+        currentStage: "transcoding",
+        totalCount: total || prev.totalCount,
+      }));
+      break;
+    }
+    case "file_finished": {
+      const result = String(payload.result ?? "ok");
+      deps.setBatchProgress((prev) => {
+        const success = prev.successCount + (result === "ok" ? 1 : 0);
+        const skipped = prev.skippedCount + (result === "already_decrypted" || result === "skipped" ? 1 : 0);
+        const failed = prev.failedCount + (result === "failed" ? 1 : 0);
+        return {
+          ...prev,
+          active: true,
+          currentProgress: 100,
+          currentStage: "verifying",
+          successCount: success, skippedCount: skipped, failedCount: failed,
+        };
+      });
+      break;
+    }
+    case "batch_finished": {
+      const resultCode = String(payload.result_code ?? "");
+      const successCount = Number(payload.success_count ?? 0);
+      const failedCount = Number(payload.failed_count ?? 0);
+      const skippedCount = Number(payload.skipped_count ?? 0);
+      deps.setBatchProgress({
+        active: true, kind: "decrypt",
+        platformId: String(payload.platform_id ?? undefined),
+        totalCount: Number(payload.candidate_count ?? 0),
+        currentIndex: Number(payload.candidate_count ?? 0),
+        currentProgress: 100,
+        currentStage: "done",
+        currentFile: undefined,
+        successCount, skippedCount, failedCount,
+        finished: true,
+        finalStatus: resultCode === "ok" || (failedCount === 0 && successCount > 0) ? "completed" : "failed",
+        finalMessage: `解密完成：成功 ${successCount}，跳过 ${skippedCount}，失败 ${failedCount}`,
+      });
       break;
     }
     case "agent_step_failed": {

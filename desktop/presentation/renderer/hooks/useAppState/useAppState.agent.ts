@@ -104,7 +104,7 @@ export function useAgentState({
           .map((m) => ({ role: m.role, content: m.text }));
         const result = await window.triMusicAgent.startWorker(
           "agent",
-          { message: userText, model_config: modelCfg, max_iterations: 15, conversation_history: history },
+          { message: userText, model_config: modelCfg, max_iterations: 40, conversation_history: history },
           permMode
         );
         agentTaskIdRef.current = result.taskId;

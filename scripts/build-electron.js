@@ -26,7 +26,7 @@ async function main() {
     fs.cpSync(themeSrc, path.join(distDir, "renderer", "theme"), { recursive: true });
   }
 
-  const stylesSrc = path.join(prototypeDir, "styles.css");
+  const stylesSrc = path.join(rendererDir, "styles.css");
   if (fs.existsSync(stylesSrc)) {
     fs.copyFileSync(stylesSrc, path.join(distDir, "renderer", "styles.css"));
   }

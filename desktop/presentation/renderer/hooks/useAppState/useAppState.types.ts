@@ -45,5 +45,24 @@ export interface ToolEvent {
   step?: number;
 }
 
+export interface BatchProgressState {
+  active: boolean;
+  kind: "decrypt" | "transcode" | "copy" | "generic";
+  platformId?: string;
+  inputPath?: string;
+  outputDir?: string;
+  totalCount: number;
+  currentIndex: number;
+  currentFile?: string;
+  currentStage?: "scanning" | "decrypting" | "transcoding" | "verifying" | "done" | "failed";
+  currentProgress: number; // 0-100 for the single-file bar
+  successCount: number;
+  skippedCount: number;
+  failedCount: number;
+  finished: boolean;
+  finalStatus?: "completed" | "failed" | "cancelled";
+  finalMessage?: string;
+}
+
 // NOTE: UseAppStateResult is defined in useAppState.ts via ReturnType,
 // re-exported from there for consumers.

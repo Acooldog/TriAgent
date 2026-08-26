@@ -139,7 +139,7 @@ def run_sub_agent(
 
     # 构建对话
     conversation_messages: list = [HumanMessage(content=task_description)]
-    graph_config = {"recursion_limit": max(min(max_iterations * 4, 32), 16)}
+    graph_config = {"recursion_limit": max(min(max_iterations * 4, 80), 24)}
     cancel_event = threading.Event()
 
     tool_call_registry: dict[str, dict[str, Any]] = {}
