@@ -46,6 +46,19 @@ def create_chat_model(model_config: dict[str, Any], initializer: Callable[..., A
         "api_key": api_key,
         "temperature": temperature,
     }
+
+    # === 本地端点绕过系统代理 ===
+    # OpenAI SDK 内部用 httpx(trust_env=True) → 会读 Windows 系统代理
+    # 代理不处理 localhost → 返回 502 Bad Gateway（Hermes Agent / QwenPaw 等都踩过）
+    _base_lower = base_url.lower()
+    if "localhost" in _base_lower or "127.0.0.1" in _base_lower or "0.0.0.0" in _base_lower:
+        try:
+            import httpx
+            kwargs["http_client"] = httpx.Client(trust_env=False)
+            print(f"[agent_model] localhost 端点，绕过系统代理 (trust_env=False)", flush=True)
+        except ImportError:
+            pass
+
     max_tokens = model_config.get("max_tokens")
     if max_tokens:
         kwargs["max_tokens"] = int(max_tokens)
