@@ -63,6 +63,24 @@ def _get_ask_user_callback() -> Any | None:
         return _ask_user_callback
 
 
+# 同样模式：注入 AgentEventEmitter.emit 回调，让解密/转码工具能发 batch_* 事件
+_event_sink_callback: Any | None = None
+
+
+def set_event_sink(callback: Any) -> None:
+    """注入事件发射回调（agent_executor 创建 emitter 后调用）。"""
+    global _event_sink_callback
+    with _callback_lock:
+        _event_sink_callback = callback
+
+
+def _get_event_sink() -> Any | None:
+    """获取事件发射回调（工具内部调用）。"""
+    global _event_sink_callback
+    with _callback_lock:
+        return _event_sink_callback
+
+
 # 全局权限模式存储（使用全局变量而非 threading.local，因为工具调用可能跨线程）
 _permission_mode: str = "standard"
 
@@ -182,6 +200,9 @@ __all__ = [
     "_callback_lock",
     "set_ask_user_callback",
     "_get_ask_user_callback",
+    "_event_sink_callback",
+    "set_event_sink",
+    "_get_event_sink",
     "_permission_mode",
     "set_permission_mode",
     "_get_permission_mode",

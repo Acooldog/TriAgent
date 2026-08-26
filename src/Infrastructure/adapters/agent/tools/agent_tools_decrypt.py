@@ -6,6 +6,7 @@ from typing import Any, Callable
 from src.Infrastructure.adapters.agent.tools.agent_tools_state import (
     _find_kgg_db,
     _find_kugou_key,
+    _get_event_sink,
     _to_path,
     tool,
 )
@@ -19,11 +20,24 @@ from src.Infrastructure.adapters.storage.processed_index import (
 )
 
 
+def _emit_batch_event(event_type: str, payload: dict) -> None:
+    sink = _get_event_sink()
+    if sink is None:
+        return
+    try:
+        sink(event_type, payload)
+    except Exception as exc:
+        print(f"[batch-event] emit {event_type} failed: {exc}")
+
+
 def _run_decrypt_batch(
     files_to_decrypt: list[pathlib.Path],
     decrypt_one: Callable[[pathlib.Path], tuple[str | None, str]],
     log_prefix: str,
     empty_msg: str,
+    platform_id: str = "",
+    input_path: str = "",
+    output_dir: str = "",
 ) -> str:
     """通用批量解密驱动：plan_files → 循环解密 → mark_processed → save_index。
 
@@ -32,6 +46,9 @@ def _run_decrypt_batch(
         decrypt_one: 对单个文件执行解密的回调，返回 (output_path, container) 或 (None, "bin")
         log_prefix: 日志前缀，如 "[decrypt_kugou]"
         empty_msg: 无可处理文件时的返回消息
+        platform_id: 平台标识（batch 事件上报用）
+        input_path: 输入路径（batch 事件上报用）
+        output_dir: 输出目录（batch 事件上报用）
     """
     if not files_to_decrypt:
         return empty_msg
@@ -43,15 +60,28 @@ def _run_decrypt_batch(
     if not pending:
         return f"所有 {len(skipped)} 个文件均已处理过（见 {INDEX_FILENAME}），本次跳过。"
 
+    total = len(pending)
+    _emit_batch_event("batch_started", {
+        "platform_id": platform_id,
+        "input_path": input_path,
+        "output_dir": output_dir,
+        "candidate_count": total,
+    })
+
     results: list[str] = []
     success = 0
     failed = 0
-    for item in pending:
+    for i, item in enumerate(pending, 1):
         file_path: pathlib.Path = item["file"]
         index: dict = item["index"]
         index_dir: pathlib.Path = item["index_dir"]
         index_path: pathlib.Path = item["index_path"]
         print(f"{log_prefix} 开始处理: {file_path.name}")
+        _emit_batch_event("file_started", {
+            "index": i,
+            "total": total,
+            "input_path": str(file_path),
+        })
         try:
             out_path, container = decrypt_one(file_path)
             if out_path:
@@ -60,16 +90,41 @@ def _run_decrypt_batch(
                 print(f"{log_prefix} 成功: {file_path.name} -> {container}")
                 mark_processed(index, file_path, index_dir, str(out_path), container)
                 save_index(index_path, index)
+                _emit_batch_event("file_finished", {
+                    "index": i, "total": total,
+                    "input_path": str(file_path),
+                    "result": "ok",
+                })
             else:
                 results.append(f"  失败: {file_path.name} - 未识别的音频容器")
                 failed += 1
+                _emit_batch_event("file_finished", {
+                    "index": i, "total": total,
+                    "input_path": str(file_path),
+                    "result": "failed",
+                })
         except Exception as exc:
             results.append(f"  失败: {file_path.name} - {exc}")
             failed += 1
             print(f"{log_prefix} 失败: {file_path.name} - {exc}")
+            _emit_batch_event("file_finished", {
+                "index": i, "total": total,
+                "input_path": str(file_path),
+                "result": "failed",
+            })
 
     header = f"解密完成：共 {len(pending)} 个待处理，成功 {success}，失败 {failed}，跳过 {len(skipped)}"
     print(f"{log_prefix} {header}")
+
+    _emit_batch_event("batch_finished", {
+        "platform_id": platform_id,
+        "candidate_count": total,
+        "success_count": success,
+        "failed_count": failed,
+        "skipped_count": len(skipped),
+        "result_code": "ok" if failed == 0 else "partial",
+    })
+
     return header + "\n" + "\n".join(results)
 
 
@@ -129,6 +184,7 @@ def decrypt_kugou(input_path: str, output_dir: str, target_format: str = "auto")
             files_to_decrypt, _decrypt_one,
             log_prefix="[decrypt_kugou]",
             empty_msg=f"在 {input_path} 中未找到酷狗加密文件",
+            platform_id="kugou", input_path=input_path, output_dir=str(dst),
         )
     except Exception as exc:
         return f"解密失败：{exc}"
@@ -165,6 +221,7 @@ def decrypt_qq(input_path: str, output_dir: str) -> str:
             files_to_decrypt, _decrypt_one,
             log_prefix="[decrypt_qq]",
             empty_msg=f"在 {input_path} 中未找到 QQ 音乐加密文件（mflac/mgg/mmp4）",
+            platform_id="qq", input_path=input_path, output_dir=str(dst),
         )
     except Exception as exc:
         return f"解密失败：{exc}"
@@ -201,6 +258,7 @@ def decrypt_netease(input_path: str, output_dir: str) -> str:
             files_to_decrypt, _decrypt_one,
             log_prefix="[decrypt_netease]",
             empty_msg=f"在 {input_path} 中未找到网易云音乐加密文件（ncm）",
+            platform_id="netease", input_path=input_path, output_dir=str(dst),
         )
     except Exception as exc:
         return f"解密失败：{exc}"
@@ -234,6 +292,7 @@ def decrypt_kuwo(input_path: str, output_dir: str) -> str:
             files, _decrypt_one,
             log_prefix="[decrypt_kuwo]",
             empty_msg=f"在 {input_path} 中未找到酷我音乐加密文件（kwm）",
+            platform_id="kuwo", input_path=input_path, output_dir=str(dst),
         )
     except Exception as exc:
         return f"解密失败：{exc}"

@@ -29,6 +29,7 @@ from src.Infrastructure.adapters.media.transcode.stream_handler import (
     _handle_stream_message,
     _is_recursion_error,
 )
+from src.Infrastructure.adapters.agent.tools.agent_tools_state import set_event_sink
 
 
 def run_agent(
@@ -43,11 +44,9 @@ def run_agent(
 ) -> dict[str, Any]:
     emitter = AgentEventEmitter(event_sink)
     emitter.emit("agent_started", {"message": user_message, "model": model_config.get("model", "")})
-    if announce_start:
-        emitter.emit("agent_message", {
-            "content": build_initial_action_message(user_message),
-            "kind": "progress",
-        })
+
+    # 注入事件发射回调，让解密/转码工具能发 batch_* 进度事件
+    set_event_sink(event_sink)
 
     if not _LANGCHAIN_AVAILABLE:
         emitter._log("langchain 不可用，返回失败", "error")

@@ -1,6 +1,16 @@
 from __future__ import annotations
 
-from src.Infrastructure.adapters.agent.tools.agent_tools_state import _to_path, tool
+from src.Infrastructure.adapters.agent.tools.agent_tools_state import _get_event_sink, _to_path, tool
+
+
+def _emit_batch_event(event_type: str, payload: dict) -> None:
+    sink = _get_event_sink()
+    if sink is None:
+        return
+    try:
+        sink(event_type, payload)
+    except Exception as exc:
+        print(f"[batch-event] emit {event_type} failed: {exc}")
 
 
 @tool
@@ -36,15 +46,23 @@ def transcode_audio(input_path: str, target_format: str, output_dir: str = "") -
         targets = [p for p in files if p.suffix.lower() in audio_exts]
         if not targets:
             return f"未找到可转换的音频文件（支持 flac/mp3/m4a/wav/ogg/aac）"
-        print(f"[transcode_audio] 待转换文件 {len(targets)} 个")
+        total = len(targets)
+        print(f"[transcode_audio] 待转换文件 {total} 个")
+
+        _emit_batch_event("batch_started", {
+            "platform_id": f"transcode_{fmt}",
+            "input_path": str(src),
+            "output_dir": str(dst_root),
+            "candidate_count": total,
+            "kind": "transcode",
+        })
 
         results: list[str] = []
         success = 0
         failed = 0
         skipped = 0
-        for file_path in targets:
+        for i, file_path in enumerate(targets, 1):
             out_name = f"{file_path.stem}.{fmt}"
-            # 目录输入时若指定了 output_dir 则统一写到 dst_root，否则写回源文件所在目录
             out_dir = dst_root if (output_dir.strip() or src.is_file()) else file_path.parent
             out_path = out_dir / out_name
             if out_path == file_path:
@@ -56,17 +74,39 @@ def transcode_audio(input_path: str, target_format: str, output_dir: str = "") -
                 out_path = out_path.with_name(f"{file_path.stem}_converted.{fmt}")
                 print(f"[transcode_audio] 重命名以避免覆盖: {out_path.name}")
             print(f"[transcode_audio] 开始: {file_path.name} -> {fmt}")
+            _emit_batch_event("file_started", {
+                "index": i, "total": total,
+                "input_path": str(file_path),
+            })
             try:
                 info = transcode_file(file_path, out_path, fmt)
                 results.append(f"  成功: {file_path.name} -> {info.get('output_path', out_path)}")
                 success += 1
+                _emit_batch_event("file_finished", {
+                    "index": i, "total": total,
+                    "input_path": str(file_path), "result": "ok",
+                })
             except Exception as exc:
                 results.append(f"  失败: {file_path.name} - {exc}")
                 failed += 1
                 print(f"[transcode_audio] 失败: {file_path.name} - {exc}")
+                _emit_batch_event("file_finished", {
+                    "index": i, "total": total,
+                    "input_path": str(file_path), "result": "failed",
+                })
 
-        header = f"转换完成：共 {len(targets)} 个文件，成功 {success}，失败 {failed}，跳过 {skipped}"
+        header = f"转换完成：共 {total} 个文件，成功 {success}，失败 {failed}，跳过 {skipped}"
         print(f"[transcode_audio] {header}")
+
+        _emit_batch_event("batch_finished", {
+            "platform_id": f"transcode_{fmt}",
+            "candidate_count": total,
+            "success_count": success,
+            "failed_count": failed,
+            "skipped_count": skipped,
+            "result_code": "ok" if failed == 0 else "partial",
+        })
+
         return header + "\n" + "\n".join(results)
     except ValueError as exc:
         return f"错误：{exc}"

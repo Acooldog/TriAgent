@@ -23,6 +23,11 @@ def _flush_pending_text(
     emitter: AgentEventEmitter,
     pending_text: list[str],
 ) -> str:
+    """
+    LangGraph stream_mode='messages' yields the SAME AIMessage with ACCUMULATED content
+    on every chunk — not a delta. So pending_text must be REPLACED each time, not APPENDED.
+    Otherwise 'Hello' becomes 'Hello Hello world Hello world!' (exponential duplication).
+    """
     text = "".join(pending_text).strip()
     if text:
         emitter._log(f"Agent 回复: {text[:150]}", "info")
@@ -47,7 +52,16 @@ def _handle_stream_message(
         has_tool_calls = hasattr(msg, "tool_calls") and msg.tool_calls
 
         if has_tool_calls:
+            # LLM often sends AIMessage with BOTH natural-language content AND tool_calls.
+            # We must emit the real content (if any) instead of discarding it for a canned message.
             narrated = bool(_flush_pending_text(emitter, pending_text))
+            msg_content = str(msg.content) if hasattr(msg, "content") and msg.content else ""
+            if msg_content.strip() and not narrated:
+                # Emit LLM's real natural-language reply first
+                emitter.emit("agent_message", {
+                    "content": msg_content.strip(),
+                })
+                narrated = True
             for tc in msg.tool_calls:
                 tool_name = tc.get("name", "unknown")
                 tool_args = str(tc.get("args", ""))[:500]
@@ -73,8 +87,11 @@ def _handle_stream_message(
                     "tool_call_id": tool_call_id,
                 }
         else:
+            # LangGraph stream_mode='messages' gives FULL accumulated content per yield.
+            # REPLACE pending_text instead of appending to avoid duplication.
             text_content = str(msg.content) if hasattr(msg, "content") and msg.content else ""
             if text_content:
+                pending_text.clear()
                 pending_text.append(text_content)
 
     elif isinstance(msg, ToolMessage) or msg_type == "ToolMessage":

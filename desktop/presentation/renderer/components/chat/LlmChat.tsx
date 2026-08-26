@@ -93,21 +93,25 @@ export function LlmChat(state: UseAppStateResult) {
     const segsAbove = isTaskMode ? segmentsByMessage.get(idx) : undefined;
     const role = message.role;
 
+    // Build the message element — avatar must be INSIDE .llm-chat-message
+    // because the CSS uses grid-template-columns: 32px 1fr on it
     const msgEl = (() => {
       if (role === "user") {
         return (
-          <div
-            key={idx}
-            className="llm-chat-message user"
-            dangerouslySetInnerHTML={{ __html: renderMarkdown(message.text) }}
-          />
+          <div key={idx} className="llm-chat-message user">
+            <span className="llm-avatar">我</span>
+            <div dangerouslySetInnerHTML={{ __html: renderMarkdown(message.text) }} />
+          </div>
         );
       }
       if (role === "error") {
         return (
           <div key={idx} className="llm-chat-message assistant">
-            <strong style={{ color: "var(--系统错误色,#ff3b30)" }}>错误</strong>
-            <p style={{ color: "var(--系统错误色,#ff3b30)" }}>{esc(message.text)}</p>
+            <span className="llm-avatar">T</span>
+            <div>
+              <strong style={{ color: "var(--系统错误色,#ff3b30)" }}>错误</strong>
+              <p style={{ color: "var(--系统错误色,#ff3b30)" }}>{esc(message.text)}</p>
+            </div>
           </div>
         );
       }
@@ -120,29 +124,17 @@ export function LlmChat(state: UseAppStateResult) {
       }
       // assistant
       return (
-        <div
-          key={idx}
-          className="llm-chat-message assistant"
-          dangerouslySetInnerHTML={{ __html: renderMarkdown(message.text) }}
-        />
+        <div key={idx} className="llm-chat-message assistant">
+          <span className="llm-avatar">T</span>
+          <div dangerouslySetInnerHTML={{ __html: renderMarkdown(message.text) }} />
+        </div>
       );
     })();
 
-    if (segsAbove && segsAbove.length > 0 && role === "assistant") {
+    if (segsAbove && segsAbove.length > 0) {
       return (
         <div key={`segs+msg-${idx}`}>
           <AgentExecutionSegments segments={segsAbove} />
-          <div className="llm-chat-avatar-slot">
-            <span className="llm-avatar">T</span>
-            {msgEl}
-          </div>
-        </div>
-      );
-    }
-    if (role === "user") {
-      return (
-        <div key={`segs+msg-${idx}`}>
-          {segsAbove && segsAbove.length > 0 && <AgentExecutionSegments segments={segsAbove} />}
           {msgEl}
         </div>
       );
