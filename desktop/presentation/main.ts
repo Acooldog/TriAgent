@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog } from "electron";
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
 import path from "node:path";
 import { BUILT_IN_TOOL_MANIFESTS } from "../application/builtInTools";
 import { AgentTaskService } from "../application/agentTaskService";
@@ -113,13 +114,49 @@ async function checkWorkerHealth(): Promise<boolean> {
   return (await handle.completion).status === "completed";
 }
 
+function resolveWorkerScript(configuredPath: string | undefined, appPath: string, projectRoot: string): string {
+  if (configuredPath && fs.existsSync(configuredPath)) {
+    debugInfo("python-worker", "using configured worker script", { path: configuredPath });
+    return configuredPath;
+  }
+  const candidates = [
+    path.join(projectRoot, "desktop", "infrastructure", "publicWorker.py"),
+    path.join(appPath, "desktop", "infrastructure", "publicWorker.py"),
+    path.resolve(appPath, "publicWorker.py"),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) {
+      debugInfo("python-worker", "found worker script", { path: candidate });
+      return candidate;
+    }
+  }
+  const fallback = path.join(projectRoot, "desktop", "infrastructure", "publicWorker.py");
+  debugInfo("python-worker", "worker script not found, using fallback", { path: fallback });
+  return fallback;
+}
+
 async function bootstrap(): Promise<void> {
   settingsRepo = settingsRepository();
   appSettings = await settingsRepo.load();
   debugInfo("settings", "loaded", { workspaceRoot: appSettings.workspace.workspaceRoot, hasModelConfig: Boolean(appSettings.model.defaultConfig.baseUrl) });
 
-  const workerScript = appSettings.worker.scriptPath || path.join(app.getAppPath(), "desktop", "infrastructure", "publicWorker.py");
-  workerService = new WorkerService(new PythonWorkerClient({ workerScript }));
+  const appPath = app.getAppPath();
+  const projectRoot = path.resolve(appPath, "..", "..");
+  const workerScript = resolveWorkerScript(appSettings.worker.scriptPath, appPath, projectRoot);
+
+  let pythonExe = process.env.TRIMUSIC_PYTHON;
+  if (!pythonExe) {
+    const venvPython = path.join(projectRoot, ".venv", process.platform === "win32" ? "Scripts" : "bin", process.platform === "win32" ? "python.exe" : "python");
+    if (fs.existsSync(venvPython)) {
+      pythonExe = venvPython;
+      debugInfo("python-worker", "auto-detected venv python", { path: venvPython });
+    } else {
+      pythonExe = "python";
+    }
+  }
+  debugInfo("python-worker", "using python", { python: pythonExe, appPath, projectRoot, workerScript });
+
+  workerService = new WorkerService(new PythonWorkerClient({ workerScript, pythonExecutable: pythonExe, cwd: projectRoot }));
   permissions = new PermissionPolicy({ requestApproval: requestSensitiveOperationApproval });
   toolRegistry = new ToolRegistry(); toolRegistry.refresh(BUILT_IN_TOOL_MANIFESTS);
   modelService = new ModelService(new OpenAiCompatibleClient(), toolRegistry, permissions);
@@ -127,7 +164,7 @@ async function bootstrap(): Promise<void> {
   compressor = new StructuredContextCompressor();
   workspaceService = new WorkspaceService(new FileSystemWorkspaceRepository(), settingsRepo, installationDirectory(), () => new Date(), randomUUID, sessionPersistence);
   const providerRegistry = new ProviderRegistry();
-  providerService = new ProviderService(providerRegistry, new AuthorizedMvpProviderGateway(workerScript, app.getAppPath()), sessionPersistence, refreshContext);
+  providerService = new ProviderService(providerRegistry, new AuthorizedMvpProviderGateway(workerScript, projectRoot), sessionPersistence, refreshContext);
   const approval = new ProviderRuntimeStartPolicy({ requestStartApproval: requestProviderRuntimeApproval });
   providerRuntimeService = new ProviderRuntimeService(new FakeMvpProviderRuntimeGateway(), providerRegistry, approval, sessionPersistence, refreshContext, (providerId, error) => { providerService.stopProvider(providerId, new ProviderContractError(error.code, error.message)); }, (event) => mainWindow?.webContents.send("provider:runtime-event", event));
   agentTaskService = new AgentTaskService(providerRuntimeService, providerService, permissions, sessionPersistence, refreshContext);

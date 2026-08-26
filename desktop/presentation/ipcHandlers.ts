@@ -162,10 +162,12 @@ export function registerIpc(ctx: IpcContext): void {
 
   ipcMain.handle("worker:start", async (_event, operation: unknown, payload: unknown, permissionMode: unknown) => {
     debugInfo("worker-ipc", "start-request", { operation, permissionMode });
-    if (operation !== "ping" && operation !== "capability") throw new Error("不支持此 worker 操作。");
+    if (operation !== "ping" && operation !== "capability" && operation !== "agent") throw new Error("不支持此 worker 操作。");
     if (typeof payload !== "object" || payload === null || Array.isArray(payload)) throw new Error("worker 参数必须是对象。");
     if (permissionMode !== "restricted" && permissionMode !== "standard" && permissionMode !== "full") throw new Error("权限模式无效。");
-    await permissions.authorize({ mode: permissionMode, operation: operation === "ping" ? "built-in" : "process", title: "Python worker 审批", detail: operation === "ping" ? "运行只读健康检查。" : "启动 Python worker 执行本地处理。" });
+    const opLabel = operation === "ping" ? "built-in" : operation === "agent" ? "agent" : "process";
+    const opDetail = operation === "ping" ? "运行只读健康检查。" : operation === "agent" ? "启动 Agent 执行音乐处理任务。" : "启动 Python worker 执行本地处理。";
+    await permissions.authorize({ mode: permissionMode, operation: opLabel, title: "Python worker 审批", detail: opDetail });
     let handle;
     try { handle = workerService.start(operation as WorkerOperation, payload as Record<string, unknown>, publishWorkerEvent); } catch (error) { throw new Error(error instanceof Error ? error.message : "worker 启动失败。"); }
     const context = selectedContext();

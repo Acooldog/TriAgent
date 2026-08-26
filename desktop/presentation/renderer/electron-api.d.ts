@@ -25,7 +25,7 @@ export interface TriMusicAgentApi {
   onInitializationState(listener: (state: WorkspaceState) => void): () => void;
   onPersistenceError(listener: (error: { label: string; message: string }) => void): () => void;
   onSessionPersistenceWarning(listener: (warning: { requestId: string; message: string }) => void): () => void;
-  startWorker(operation: "ping" | "capability", payload: Record<string, unknown>, permissionMode: "restricted" | "standard" | "full"): Promise<{ requestId: string; taskId: string }>;
+  startWorker(operation: "ping" | "capability" | "agent", payload: Record<string, unknown>, permissionMode: "restricted" | "standard" | "full"): Promise<{ requestId: string; taskId: string }>;
   cancelWorker(taskId: string): Promise<boolean>;
   onWorkerEvent(listener: (event: WorkerEvent) => void): () => void;
   startModel(config: ModelConfig, messages: ChatMessage[], permissionMode: "restricted" | "standard" | "full", networkEnabled: boolean): Promise<{ requestId: string }>;

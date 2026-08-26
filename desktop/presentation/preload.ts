@@ -30,7 +30,7 @@ contextBridge.exposeInMainWorld("triMusicAgent", {
     ipcRenderer.on("agent:event", handler);
     return () => ipcRenderer.removeListener("agent:event", handler);
   },
-  startWorker: (operation: "ping" | "capability", payload: Record<string, unknown>, permissionMode: "restricted" | "standard" | "full"): Promise<{ requestId: string; taskId: string }> => ipcRenderer.invoke("worker:start", operation, payload, permissionMode),
+  startWorker: (operation: "ping" | "capability" | "agent", payload: Record<string, unknown>, permissionMode: "restricted" | "standard" | "full"): Promise<{ requestId: string; taskId: string }> => ipcRenderer.invoke("worker:start", operation, payload, permissionMode),
   cancelWorker: (taskId: string): Promise<boolean> => ipcRenderer.invoke("worker:cancel", taskId),
   onWorkerEvent: (listener: (event: WorkerEvent) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, workerEvent: WorkerEvent) => listener(workerEvent);

@@ -1,15 +1,133 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { UseAppStateResult } from "../hooks/useAppState";
+import type { ToolEvent, AgentLogEntry } from "../hooks/useAppState";
+
+const TOOL_ICON_MAP: Record<string, string> = {
+  decrypt_kugou: "🔓",
+  scan_files: "🔍",
+  move_files: "📦",
+  detect_format: "🎵",
+  list_directory: "📁",
+};
+
+const LOG_LEVEL_COLORS: Record<string, string> = {
+  info: "#007aff",
+  warn: "#ff9500",
+  error: "#ff3b30",
+  debug: "#8e8e93",
+};
+
+function AgentLogPanel({
+  logs,
+  visible,
+  onToggle,
+}: {
+  logs: AgentLogEntry[];
+  visible: boolean;
+  onToggle: () => void;
+}) {
+  if (!visible) {
+    return (
+      <div className="llm-agent-log-toggle" onClick={onToggle}>
+        📋 Agent 日志 ({logs.length})
+      </div>
+    );
+  }
+
+  return (
+    <div className="llm-agent-log-panel">
+      <div className="llm-agent-log-head">
+        <span>📋 Agent 日志 ({logs.length})</span>
+        <button onClick={onToggle}>隐藏</button>
+      </div>
+      <div className="llm-agent-log-body">
+        {logs.length === 0 ? (
+          <div className="llm-agent-log-empty">等待日志输出...</div>
+        ) : (
+          logs.map((log, i) => (
+            <div key={i} className={`llm-agent-log-line level-${log.level}`}>
+              <span className="llm-agent-log-level" style={{ color: LOG_LEVEL_COLORS[log.level] }}>
+                [{log.level.toUpperCase()}]
+              </span>
+              <span className="llm-agent-log-msg">{log.message}</span>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ExecutionPanel({
+  collapsed,
+  onToggle,
+  progress,
+  toolEvents,
+  logs,
+  showLogs,
+  onToggleLogs,
+}: {
+  collapsed: boolean;
+  onToggle: () => void;
+  progress: number;
+  toolEvents: ToolEvent[];
+  logs: AgentLogEntry[];
+  showLogs: boolean;
+  onToggleLogs: () => void;
+}) {
+  const events = toolEvents.map((event, i) => {
+    const icon = TOOL_ICON_MAP[event.name] ?? "⚙️";
+    const statusLabel =
+      event.status === "done" ? "完成" :
+        event.status === "running" ? "执行中" :
+          event.status === "error" ? "失败" : "等待";
+    const elapsed = event.elapsedSec ? ` (${event.elapsedSec.toFixed(1)}s)` : "";
+    const resultPreview = event.toolResult
+      ? event.toolResult.slice(0, 80) + (event.toolResult.length > 80 ? "..." : "")
+      : "";
+    return (
+      <div key={`${event.name}-${i}`} className="agent-tool-call">
+        <div className={`agent-tool-call-icon ${event.name}`}>{icon}</div>
+        <div className="agent-tool-call-info">
+          <span className="agent-tool-call-name">{event.name}</span>
+          {resultPreview ? (
+            <small className="agent-tool-call-detail">{resultPreview}</small>
+          ) : null}
+        </div>
+        <span className={`agent-tool-call-status ${event.status}`}>
+          {statusLabel}{elapsed}
+        </span>
+      </div>
+    );
+  });
+
+  return (
+    <div className={`llm-execution-sticky ${collapsed ? "is-collapsed" : ""}`}>
+      <div className="llm-execution-head">
+        <strong>Agent 执行过程</strong>
+        <span>{progress}%</span>
+        <button onClick={onToggle}>{collapsed ? "展开" : "收起"}</button>
+      </div>
+      <div className="execution-bar"><i style={{ width: `${progress}%` }} /></div>
+      {events.length > 0 ? (
+        <div className="llm-execution-events">{events}</div>
+      ) : null}
+      <AgentLogPanel logs={logs} visible={showLogs} onToggle={onToggleLogs} />
+    </div>
+  );
+}
 
 export function LlmChat(state: UseAppStateResult) {
   const {
     llmMessages, llmStreaming, llmThinking, promptText, setPromptText,
     mode, networkEnabled, modeMenuOpen, setModeMenuOpen,
-    conversationMode, routeBack, executionCollapsed, setExecutionCollapsed,
-    progress, toolEvents, contextUsage, toggleNetwork, selectMode,
+    conversationMode, setConversationMode, routeBack, executionCollapsed, setExecutionCollapsed,
+    progress, toolEvents, agentLogs, contextUsage, toggleNetwork, selectMode,
     sendPrompt, attachedPaths, setAttachedPaths, llmRetry,
-    stopProcessing, dashboardPromptRef,
+    stopProcessing, dashboardPromptRef, startProcessing,
   } = state;
+
+  const [showAgentLogs, setShowAgentLogs] = useState(true);
 
   const editorRef = useRef<HTMLDivElement>(null);
   const isComposingRef = useRef(false);
@@ -47,8 +165,9 @@ export function LlmChat(state: UseAppStateResult) {
       dashboardPromptRef.current = null;
       setPromptText(text);
       lastExternalValueRef.current = text;
+      setConversationMode(true);
       requestAnimationFrame(() => {
-        sendPrompt();
+        startProcessing();
       });
     }
   }, []);
@@ -59,13 +178,13 @@ export function LlmChat(state: UseAppStateResult) {
 
   const messages = isTaskMode
     ? state.agentMessages.map((message) =>
-      message.role === "user" ? (
-        <div key={`u-${message.text}`} className="llm-chat-message user"><p>{message.text}</p><span className="llm-avatar user-avatar">你</span></div>
-      ) : (
-        <div key={`a-${message.text}`} className="llm-chat-message assistant"><span className="llm-avatar">T</span><div><p>{message.text}</p></div></div>
-      )
+      message.role === "user"
+        ? `<div class="llm-chat-message user"><p>${esc(message.text)}</p><span class="llm-avatar user-avatar">你</span></div>`
+        : message.role === "error"
+          ? `<div class="llm-chat-message assistant"><span class="llm-avatar">T</span><div><p style="color:var(--系统错误色,#ff3b30)">${esc(message.text)}</p></div></div>`
+          : `<div class="llm-chat-message assistant"><span class="llm-avatar">T</span><div><p>${esc(message.text)}</p></div></div>`
     ).join("")
-    : llmMessages.map((message, index) => {
+    : llmMessages.map((message) => {
       if (message.role === "error") {
         return `<div class="llm-error-message"><div><strong>AI 连接错误</strong><p>${esc(message.text)}</p></div><button>重试</button></div>`;
       }
@@ -76,14 +195,6 @@ export function LlmChat(state: UseAppStateResult) {
         ? `<div class="llm-chat-message user"><p>${esc(message.text)}</p><span class="llm-avatar user-avatar">你</span></div>`
         : `<div class="llm-chat-message assistant"><span class="llm-avatar">T</span><div><p>${esc(message.text)}</p></div></div>`;
     }).join("");
-
-  const eventsHtml = toolEvents.map((event, index) =>
-    `<div class="tool-event ${event.status}"><span class="tool-event-index">${index + 1}</span><div><b>${esc(event.name)}</b><small>${esc(event.detail)}</small></div><span class="tool-event-status">${event.status === "done" ? "完成" : event.status === "running" ? "进行中" : "等待"}</span></div>`
-  ).join("");
-
-  const executionHtml = isTaskMode
-    ? `<div class="llm-execution-sticky ${executionCollapsed ? "is-collapsed" : ""}"><div class="llm-execution-head"><strong>Agent 执行过程</strong><span>${progress}%</span><button onClick=${() => setExecutionCollapsed(!executionCollapsed)}>${executionCollapsed ? "展开" : "收起"}</button></div><div class="execution-bar"><i style="width:${progress}%"></i></div><div class="llm-execution-events">${eventsHtml}</div></div>`
-    : "";
 
   const thinkingHtml = llmThinking && !llmStreaming
     ? `<div class="llm-chat-message assistant thinking"><span class="llm-avatar">T</span><div><p><span class="llm-thinking-dots"><b>.</b><b>.</b><b>.</b></span></p></div></div>`
@@ -110,10 +221,28 @@ export function LlmChat(state: UseAppStateResult) {
         {isTaskMode ? <button className="kimi-action-button" onClick={stopProcessing}>停止任务</button> : null}
       </header>
       <div className="llm-chat-scroll">
-        <div
-          className="llm-chat-content"
-          dangerouslySetInnerHTML={{ __html: `${executionHtml}${messages}${thinkingHtml}${retryHtml}${streamingHtml}` }}
-        />
+        {isTaskMode ? (
+          <div className="llm-chat-content">
+            <ExecutionPanel
+              collapsed={executionCollapsed}
+              onToggle={() => setExecutionCollapsed(!executionCollapsed)}
+              progress={progress}
+              toolEvents={toolEvents}
+              logs={agentLogs}
+              showLogs={showAgentLogs}
+              onToggleLogs={() => setShowAgentLogs(!showAgentLogs)}
+            />
+            <div
+              className="llm-chat-messages"
+              dangerouslySetInnerHTML={{ __html: `${messages}${thinkingHtml}${retryHtml}${streamingHtml}` }}
+            />
+          </div>
+        ) : (
+          <div
+            className="llm-chat-content"
+            dangerouslySetInnerHTML={{ __html: `${messages}${thinkingHtml}${retryHtml}${streamingHtml}` }}
+          />
+        )}
       </div>
       <button className="to-bottom-button" aria-label="回到底部" onClick={() => {
         const el = document.querySelector(".llm-chat-scroll");
@@ -144,7 +273,7 @@ export function LlmChat(state: UseAppStateResult) {
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
               if (isTaskMode) {
-                (state as any).startProcessing?.();
+                startProcessing();
               } else if (llmStreaming) {
                 // interrupt
               } else {
@@ -181,7 +310,7 @@ export function LlmChat(state: UseAppStateResult) {
             aria-label={llmStreaming ? "打断" : "发送"}
             onClick={() => {
               if (isTaskMode) {
-                state.startProcessing?.();
+                startProcessing();
               } else if (llmStreaming) {
                 // interrupt - not implemented in prototype either
               } else {

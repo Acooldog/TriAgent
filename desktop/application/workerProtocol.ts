@@ -1,6 +1,6 @@
 export const WORKER_PROTOCOL_VERSION = "1" as const;
 
-export type WorkerOperation = "ping" | "decrypt";
+export type WorkerOperation = "ping" | "decrypt" | "agent";
 export type WorkerEventStatus = "running" | "completed" | "failed" | "cancelled";
 
 export interface WorkerErrorPayload {

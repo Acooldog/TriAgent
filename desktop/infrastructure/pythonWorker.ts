@@ -74,7 +74,24 @@ export class PythonWorkerClient implements WorkerRunner {
     active.timeout = setTimeout(() => this.fail(active, "worker-timeout", "Python worker 超时，任务已停止。", true), timeoutMs);
     this.active.set(request.task_id, active);
     processHandle.stdout.on("data", (chunk: Buffer | string) => this.consumeOutput(active, chunk, onEvent));
-    processHandle.stderr.on("data", () => undefined);
+    processHandle.stderr.on("data", (chunk: Buffer | string) => {
+      const text = chunk.toString().trim();
+      if (text) {
+        debugInfo("worker", "stderr", { requestId: request.request_id, taskId: request.task_id, output: text.slice(0, 500) });
+        try {
+          onEvent({
+            protocol_version: "1",
+            request_id: request.request_id,
+            task_id: request.task_id,
+            event_type: "agent_log",
+            status: "running",
+            payload: { level: "error", message: `[stderr] ${text.slice(0, 300)}`, timestamp: new Date().toISOString() },
+            error: null,
+            emitted_at: new Date().toISOString(),
+          });
+        } catch { /* ignore forwarding errors */ }
+      }
+    });
     processHandle.on("error", (error: Error) => { debugError("worker", "process-error", error, { requestId: request.request_id, taskId: request.task_id }); this.fail(active, "worker-start-failed", error.message, true); });
     processHandle.on("close", (code: number | null) => {
       if (!active.settled) this.fail(active, active.cancellationRequested ? "worker-cancelled" : "worker-exited", active.cancellationRequested ? "Python worker 已取消。" : `Python worker 已退出（${code ?? "未知"}）。`, false);

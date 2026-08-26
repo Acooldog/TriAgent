@@ -5,7 +5,7 @@ export type { JsonSchema } from "./jsonSchema";
 export const TOOL_PROTOCOL_VERSION = "1" as const;
 
 export type PermissionMode = "restricted" | "standard" | "full";
-export type SensitiveOperation = "built-in" | "process" | "command" | "file-write" | "file-delete" | "network" | "log-read" | "task-resume" | "provider";
+export type SensitiveOperation = "built-in" | "process" | "command" | "file-write" | "file-delete" | "network" | "log-read" | "task-resume" | "provider" | "agent";
 
 export interface ToolManifest {
   protocol_version: typeof TOOL_PROTOCOL_VERSION;

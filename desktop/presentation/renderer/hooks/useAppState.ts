@@ -37,7 +37,16 @@ export interface LlmMessage {
 export interface ToolEvent {
   name: string;
   detail: string;
-  status: "done" | "running" | "pending";
+  status: "done" | "running" | "pending" | "error";
+  toolResult?: string;
+  elapsedSec?: number;
+  step?: number;
+}
+
+export interface AgentLogEntry {
+  level: "info" | "warn" | "error" | "debug";
+  message: string;
+  timestamp: string;
 }
 
 const INITIAL_FILES: FileItem[] = [
@@ -97,12 +106,14 @@ export function useAppState() {
   const [contextUsage, setContextUsage] = useState(24);
   const [modeMenuOpen, setModeMenuOpen] = useState(false);
   const [toolEvents, setToolEvents] = useState<ToolEvent[]>([]);
+  const [agentLogs, setAgentLogs] = useState<AgentLogEntry[]>([]);
   const [agentMessages, setAgentMessages] = useState<LlmMessage[]>([]);
   const [conversationMode, setConversationMode] = useState(false);
   const [autoCompression, setAutoCompression] = useState(false);
   const [compressionThreshold, setCompressionThreshold] = useState(80);
   const [llmTested, setLlmTested] = useState(false);
   const llmRequestIdRef = useRef<string | null>(null);
+  const agentTaskIdRef = useRef<string | null>(null);
   const [llmThinking, setLlmThinking] = useState(false);
   const [mode, setMode] = useState("标准");
   const [networkEnabled, setNetworkEnabledState] = useState(true);
@@ -175,6 +186,107 @@ export function useAppState() {
         setLlmMessages((prev) => [...prev.filter((m) => m.role !== "notice"), { role: "error", text: event.message || "连接失败" }]);
         llmRequestIdRef.current = null;
         showToast(`连接失败：${event.message || "未知错误"}`);
+      }
+    });
+    return () => { active = false; cleanup(); };
+  }, [showToast]);
+
+  useEffect(() => {
+    let active = true;
+    const cleanup = window.triMusicAgent.onWorkerEvent((event: { request_id: string; task_id: string; event_type: string; status: string; payload: Record<string, unknown>; error: { code: string; message: string } | null }) => {
+      if (!active) return;
+      if (event.task_id !== agentTaskIdRef.current) return;
+      const { event_type: eventType, payload, status } = event;
+      if (eventType === "agent_log") {
+        const level = String(payload.level ?? "info") as AgentLogEntry["level"];
+        const message = String(payload.message ?? "");
+        const timestamp = String(payload.timestamp ?? new Date().toISOString());
+        if (message) {
+          console.info(`[Agent.${level}]`, message);
+          setAgentLogs((prev) => {
+            const next = [...prev, { level, message, timestamp }];
+            return next.slice(-200);
+          });
+        }
+      } else if (eventType === "agent_started") {
+        setToolEvents([]);
+        setAgentLogs([]);
+        setAgentMessages((prev) => [...prev, { role: "notice", text: "Agent 已启动，正在连接模型和加载工具..." }]);
+      } else if (eventType === "agent_ready") {
+        const tools = Array.isArray(payload.tools) ? (payload.tools as string[]) : [];
+        setAgentMessages((prev) => [...prev, { role: "notice", text: `已加载 ${tools.length} 个工具: ${tools.join(", ")}` }]);
+      } else if (eventType === "agent_tool_call") {
+        const toolName = String(payload.tool_name ?? "unknown");
+        const toolInput = String(payload.tool_input ?? "");
+        const toolResult = String(payload.tool_result ?? "");
+        const elapsedSec = Number(payload.elapsed_sec ?? 0);
+        const step = Number(payload.step ?? 0);
+        const hasResult = toolResult && toolResult !== "执行中...";
+        setToolEvents((prev) => {
+          const existingIdx = prev.findIndex((t) => t.step === step && t.name === toolName);
+          if (existingIdx >= 0) {
+            const updated = [...prev];
+            updated[existingIdx] = {
+              ...updated[existingIdx],
+              toolResult: toolResult.slice(0, 200),
+              detail: hasResult
+                ? (toolInput ? `输入: ${toolInput.slice(0, 60)} — 完成` : "执行完成")
+                : updated[existingIdx].detail,
+              status: hasResult ? "done" as const : "running" as const,
+              elapsedSec,
+            };
+            return updated;
+          }
+          return [...prev, {
+            name: toolName,
+            detail: toolInput ? `输入: ${toolInput.slice(0, 60)}` : "执行中",
+            status: "running" as const,
+            toolResult: toolResult.slice(0, 200),
+            elapsedSec,
+            step,
+          } as ToolEvent];
+        });
+        setProgress((prev) => Math.min(90, prev + 8));
+      } else if (eventType === "agent_step_finished") {
+        const step = Number(payload.step ?? 0);
+        const elapsedSec = Number(payload.elapsed_sec ?? 0);
+        setToolEvents((prev) => prev.map((t) => {
+          if (t.status === "running") {
+            return { ...t, status: "done" as const, detail: t.toolResult ? `完成 (${elapsedSec}s)` : t.detail };
+          }
+          return t;
+        }));
+        setStepIndex((prev) => Math.max(step, prev));
+        setProgress((prev) => Math.min(95, prev + 15));
+      } else if (eventType === "agent_step_failed") {
+        const errorMsg = String(payload.error ?? "未知错误");
+        setToolEvents((prev) => prev.map((t) => t.status === "running" ? { ...t, status: "error" as const, detail: `失败: ${errorMsg}` } : t));
+        setAgentMessages((prev) => [...prev, { role: "error", text: `工具执行失败: ${errorMsg}` }]);
+      } else if (eventType === "agent_message") {
+        const content = String(payload.content ?? "");
+        if (content) {
+          setAgentMessages((prev) => [...prev, { role: "assistant", text: content }]);
+        }
+      } else if (eventType === "agent_finished") {
+        const finalStatus = String(payload.status ?? status);
+        setProcessing(false);
+        setProgress(100);
+        setTaskStatus(finalStatus === "completed" ? "成功" : "失败");
+        setToolEvents((prev) => prev.map((t) => t.status === "running" ? { ...t, status: "done" } : t));
+        agentTaskIdRef.current = null;
+        if (finalStatus !== "completed") {
+          const errMsg = String(event.error?.message ?? "Agent 执行失败");
+          setAgentMessages((prev) => [...prev, { role: "error", text: errMsg }]);
+        }
+        showToast(finalStatus === "completed" ? "Agent 任务已完成" : `任务失败: ${finalStatus}`);
+      } else if (eventType === "agent_error") {
+        const errMsg = String(payload.error ?? "未知错误");
+        setAgentMessages((prev) => [...prev, { role: "error", text: `Agent 错误: ${errMsg}` }]);
+      } else if (eventType === "agent_warning") {
+        const warnMsg = String(payload.message ?? "");
+        if (warnMsg) showToast(warnMsg);
+      } else if (eventType === "worker_finished") {
+        agentTaskIdRef.current = null;
       }
     });
     return () => { active = false; cleanup(); };
@@ -279,10 +391,52 @@ export function useAppState() {
     }
   }, [modelConfig, permMode, netEnabled, showToast]);
 
+  const AGENT_TRIGGER_KEYWORDS = /解密|转换|转码|转成|批量|处理|压缩|kgma|kgg|mflac|qmc|kugou|酷狗|无损|flac|mp3|m4a|wav|ogg|音频|音乐文件|文件夹|目录|输出|输出到|提取|提取音频|下载|下载哔哩|bilibili|视频|视频文件/;
+
   const sendPrompt = useCallback(async () => {
     if (!promptText.trim()) { showToast("先告诉 TriMusicAgent 你的想法"); return; }
-    console.info("[useAppState] send-prompt:", promptText.slice(0, 50));
     const userText = promptText.trim();
+
+    if (AGENT_TRIGGER_KEYWORDS.test(userText)) {
+      setPromptText("");
+      setConversationMode(true);
+      setAgentMessages([{ role: "user", text: userText }]);
+      setAgentLogs([]);
+      setToolEvents([]);
+      setStepIndex(0);
+      setProgress(0);
+      setProcessing(true);
+      setTaskStatus("连接中");
+      showToast("检测到音乐处理请求，正在启动 Agent...");
+
+      const modelCfg = {
+        model: modelConfig.model,
+        base_url: modelConfig.baseUrl,
+        api_key: modelConfig.apiKey ?? "",
+        temperature: modelConfig.temperature ?? 0.7,
+        max_tokens: modelConfig.maxTokens ?? 4096,
+      };
+
+      try {
+        const result = await window.triMusicAgent.startWorker(
+          "agent",
+          { message: userText, model_config: modelCfg, max_iterations: 15 },
+          permMode
+        );
+        agentTaskIdRef.current = result.taskId;
+        console.info("[useAppState] agent worker started from sendPrompt:", result.requestId);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Agent 启动失败";
+        console.error("[useAppState] agent worker failed:", message);
+        setProcessing(false);
+        setTaskStatus("失败");
+        setAgentMessages((prev) => [...prev, { role: "error", text: message }]);
+        showToast(message);
+      }
+      return;
+    }
+
+    console.info("[useAppState] send-prompt:", userText.slice(0, 50));
     setLastLlmPrompt(userText);
     setPromptText("");
     setLlmMessages((prev) => [...prev, { role: "user", text: userText }]);
@@ -315,8 +469,10 @@ export function useAppState() {
 
   const submitFromDashboard = useCallback((text: string) => {
     if (!text.trim()) { showToast("先告诉 TriMusicAgent 你的想法"); return; }
-    dashboardPromptRef.current = text.trim();
-    setPromptText(text.trim());
+    const cleaned = text.trim();
+    dashboardPromptRef.current = cleaned;
+    setPromptText(cleaned);
+    setConversationMode(true);
     navigateTo("llm");
   }, [navigateTo, showToast]);
 
@@ -343,67 +499,58 @@ export function useAppState() {
     }
   }, [showToast]);
 
-  const startProcessing = useCallback(() => {
+  const startProcessing = useCallback(async () => {
     if (processing) { showToast("任务已经在处理中"); return; }
     if (!promptText.trim()) { showToast("先告诉 Agent 你想处理什么"); return; }
+    const userText = promptText.trim();
     setConversationMode(true);
     setPromptText("");
-    setAgentMessages([
-      { role: "user", text: promptText.trim() },
-      { role: "assistant", text: "我先读取你的任务描述，再检查文件格式和可用工具。" },
-    ]);
-    setToolEvents([
-      { name: "读取任务描述", status: "done", detail: "已解析处理目标" },
-      { name: "扫描音乐文件", status: "running", detail: "等待扫描结果" },
-      { name: "选择解密器", status: "pending", detail: "等待前一步完成" },
-      { name: "运行 FFmpeg", status: "pending", detail: "等待前一步完成" },
-      { name: "校验输出文件", status: "pending", detail: "等待前一步完成" },
-    ]);
-    setStepIndex(1);
-    setProgress(42);
+    setAgentMessages([{ role: "user", text: userText }]);
+    setAgentLogs([]);
+    setToolEvents([]);
+    setStepIndex(0);
+    setProgress(0);
     setProcessing(true);
-    setTaskStatus("处理中");
-    showToast("已开始模拟处理任务");
+    setTaskStatus("连接中");
+    showToast("正在启动 Agent...");
 
-    let count = 0;
-    const timer = setInterval(() => {
-      count++;
-      setProgress((p) => {
-        const next = Math.min(100, p + 14);
-        return next;
-      });
-      setToolEvents((events) => events.map((event, i) => {
-        const pct = Math.min(100, 42 + count * 14);
-        const idx = Math.min(4, Math.floor(pct / 22));
-        return {
-          ...event,
-          status: i < idx ? "done" : i === idx ? "running" : "pending",
-          detail: i < idx ? "已完成模拟调用" : i === idx ? "Agent 正在处理" : "等待前一步完成",
-        };
-      }));
-      setStepIndex((s) => Math.min(5, Math.floor((42 + count * 14) / 18)));
-      if (count === 2) {
-        setAgentMessages((prev) => [...prev, { role: "assistant", text: "已识别输入文件，正在按平台匹配解密器和转码工具。" }]);
-      }
-      if (count === 4) {
-        setAgentMessages((prev) => [...prev, { role: "assistant", text: "工具链已准备完成，接下来校验输出文件。" }]);
-      }
-      if (count >= 5) {
-        clearInterval(timer);
-        setProcessing(false);
-        setTaskStatus("成功");
-        setToolEvents((events) => events.map((e) => ({ ...e, status: "done" as const, detail: "已完成模拟调用" })));
-        setAgentMessages((prev) => [...prev, { role: "assistant", text: "任务已完成。所有操作均为模拟数据，没有执行真实解密或命令。" }]);
-        setHistory((prev) => [{ id: `h-${Date.now()}`, title: "周杰伦音乐批量处理", date: "刚刚", total: queue.length, success: queue.length, failed: 0, status: "成功", time: "00:02:35" }, ...prev]);
-        showToast("模拟任务已完成");
-      }
-    }, 900);
-  }, [processing, promptText, queue.length, showToast]);
+    const modelCfg = {
+      model: modelConfig.model,
+      base_url: modelConfig.baseUrl,
+      api_key: modelConfig.apiKey ?? "",
+      temperature: modelConfig.temperature ?? 0.7,
+      max_tokens: modelConfig.maxTokens ?? 4096,
+    };
 
-  const stopProcessing = useCallback(() => {
+    try {
+      const result = await window.triMusicAgent.startWorker(
+        "agent",
+        { message: userText, model_config: modelCfg, max_iterations: 15 },
+        permMode
+      );
+      agentTaskIdRef.current = result.taskId;
+      console.info("[useAppState] agent worker started:", result.requestId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Agent 启动失败";
+      console.error("[useAppState] agent worker failed:", message);
+      setProcessing(false);
+      setTaskStatus("失败");
+      setAgentMessages((prev) => [...prev, { role: "error", text: message }]);
+      showToast(message);
+    }
+  }, [processing, promptText, showToast, modelConfig, permMode]);
+
+  const stopProcessing = useCallback(async () => {
+    const taskId = agentTaskIdRef.current;
+    if (taskId) {
+      try {
+        await window.triMusicAgent.cancelWorker(taskId);
+      } catch { /* ignore cancel errors */ }
+      agentTaskIdRef.current = null;
+    }
     setProcessing(false);
     setTaskStatus("已停止");
-    showToast("任务已停止，未执行真实操作");
+    showToast("任务已停止");
   }, [showToast]);
 
   const addFile = useCallback((folder = false) => {
@@ -463,6 +610,7 @@ export function useAppState() {
     contextUsage, setContextUsage,
     modeMenuOpen, setModeMenuOpen,
     toolEvents, setToolEvents,
+    agentLogs, setAgentLogs,
     agentMessages, setAgentMessages,
     conversationMode, setConversationMode,
     autoCompression, setAutoCompression,
