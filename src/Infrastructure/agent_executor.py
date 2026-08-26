@@ -180,7 +180,7 @@ def run_agent(
         emitter.emit("agent_step_started", {"step": 1})
         step_started = time.perf_counter()
 
-        graph_config = {"recursion_limit": max(max_iterations * 4, 80)}
+        graph_config = {"recursion_limit": max(min(max_iterations * 4, 40), 20)}
         emitter._log(f"设置递归限制: {graph_config['recursion_limit']} (max_iterations={max_iterations})", "debug")
 
         import concurrent.futures

@@ -57,6 +57,7 @@ TOOL_DESCRIPTIONS = {
     "transcode_audio": "调用 ffmpeg 将音频文件转换为目标格式（mp3/m4a/flac/wav）。支持单文件或目录批量处理。",
     "verify_audio_integrity": "校验音频文件是否完整可播放，通过容器探测和流信息分析判断文件是否损坏。解密或格式转换后必须调用本工具确认结果。",
     "copy_files": "将文件从源路径复制到目标目录（保留源文件），保持文件名不变。支持批量操作。",
+    "move_files": "将文件从源目录移动到目标目录（不保留源文件），支持按扩展名过滤。适用于整理文件结构，如把flac/ogg移到子目录。",
     "rename_file": "重命名单个文件，保持在原目录不变。目标名已存在时报错以防止覆盖。",
     "run_cli_safely": "安全执行命令行程序，统一处理中文路径与编码（subprocess 列表传参 + UTF-8）。凡需调用外部命令必须用本工具，禁止 os.system 或 shell=True。",
     "rag_retrieve": "在本地知识库中检索与问题相关的已沉淀解决方案/经验（如中文路径处理、失败续传约定）。遇到不确定如何处理的问题时先检索知识库。",
@@ -598,6 +599,45 @@ def copy_files(source_dir: str, target_dir: str, file_extensions: str = "") -> s
 
 
 @tool
+def move_files(source_dir: str, target_dir: str, file_extensions: str = "") -> str:
+    """将文件从源目录移动到目标目录（不保留源文件），可选按扩展名过滤。
+
+    Args:
+        source_dir: 源目录路径
+        target_dir: 目标目录路径
+        file_extensions: 扩展名过滤，逗号分隔（如 ".flac,.ogg"），为空则移动所有文件
+    """
+    try:
+        src = _to_path(source_dir)
+        dst = _to_path(target_dir)
+        dst.mkdir(parents=True, exist_ok=True)
+
+        if not src.exists():
+            return f"错误：源目录不存在 - {source_dir}"
+
+        extensions = set()
+        if file_extensions.strip():
+            extensions = {ext.strip().lower() for ext in file_extensions.split(",")}
+
+        count = 0
+        for item in src.iterdir():
+            if not item.is_file():
+                continue
+            if extensions and item.suffix.lower() not in extensions:
+                continue
+            target = dst / item.name
+            if target.exists():
+                target.unlink()
+            shutil.move(str(item), str(target))
+            count += 1
+
+        ext_info = f"（扩展名过滤: {file_extensions}）" if file_extensions.strip() else "（所有文件）"
+        return f"已移动 {count} 个文件从 {source_dir} 到 {target_dir}{ext_info}"
+    except Exception as exc:
+        return f"移动文件失败：{exc}"
+
+
+@tool
 def rename_file(file_path: str, new_name: str) -> str:
     """重命名单个文件，文件保持在原目录不变。
 
@@ -945,8 +985,10 @@ def sandbox_manage(action: str, path: str = "") -> str:
         elif action_lower == "add":
             if not path.strip():
                 return "错误: add 操作需要指定 path 参数"
-            sandbox.add_path(path)
-            return f"已授权目录: {path}"
+            added = sandbox.add_path(path)
+            if added:
+                return f"已授权目录: {path}"
+            return f"目录已在授权范围内: {path}（无需重复授权）"
 
         elif action_lower == "remove":
             if not path.strip():
@@ -985,6 +1027,7 @@ ALL_TOOLS = [
     decrypt_netease,
     decrypt_kuwo,
     copy_files,
+    move_files,
     rename_file,
     run_cli_safely,
     transcode_audio,

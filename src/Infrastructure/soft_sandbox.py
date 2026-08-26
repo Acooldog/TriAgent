@@ -42,13 +42,13 @@ class SoftSandbox:
         with self._lock:
             return list(self._authorized_paths)
 
-    def add_path(self, path: str | pathlib.Path) -> None:
+    def add_path(self, path: str | pathlib.Path) -> bool:
         """添加授权目录。
 
         如果目录不存在会自动创建，确保 Agent 可以授权并使用新目录。
 
-        Args:
-            path: 目录路径（不存在时自动创建）
+        Returns:
+            True if the path was newly added, False if already authorized.
         """
         path_obj = pathlib.Path(path).expanduser().resolve()
         if not path_obj.exists():
@@ -61,11 +61,12 @@ class SoftSandbox:
             # 检查是否已存在或为已有路径的子目录
             for existing in self._authorized_paths:
                 if path_obj == existing or path_obj in existing.parents:
-                    return  # 已包含，无需重复添加
+                    return False  # 已包含，无需重复添加
                 if existing in path_obj.parents:
-                    return  # 父目录已授权，无需重复添加
+                    return False  # 父目录已授权，无需重复添加
             self._authorized_paths.append(path_obj)
             print(f"[SoftSandbox] 添加授权目录: {path_obj}")
+            return True
 
     def remove_path(self, path: str | pathlib.Path) -> bool:
         """移除授权目录。

@@ -1619,26 +1619,26 @@ tr:hover td {
     gap: 10px;
 }
 
-.llm-question-option {
-    padding: 11px 14px;
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    background: #f6fbfb;
-    color: #173f42;
-    font-size: 14px;
-    line-height: 1.4;
-    text-align: left;
-    cursor: pointer;
-    transition: background 0.15s ease, border-color 0.15s ease;
+.llm-question-overlay .llm-question-card button.llm-question-option {
+    padding: 11px 14px !important;
+    border: 1px solid var(--line) !important;
+    border-radius: 10px !important;
+    background: #f6fbfb !important;
+    color: #173f42 !important;
+    font-size: 14px !important;
+    line-height: 1.4 !important;
+    text-align: left !important;
+    cursor: pointer !important;
+    transition: background 0.15s ease, border-color 0.15s ease !important;
 }
 
-.llm-question-option:hover {
-    background: #e0f1f0;
-    border-color: #2b6a6c;
+.llm-question-overlay .llm-question-card button.llm-question-option:hover {
+    background: #e0f1f0 !important;
+    border-color: #2b6a6c !important;
 }
 
-.llm-question-option:active {
-    transform: translateY(1px);
+.llm-question-overlay .llm-question-card button.llm-question-option:active {
+    transform: translateY(1px) !important;
 }
 
 .modal-title {
