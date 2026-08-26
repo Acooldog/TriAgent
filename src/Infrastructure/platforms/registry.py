@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 def build_platform_adapter(platform_id: str):
     normalized = (platform_id or "").strip().lower()

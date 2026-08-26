@@ -1,112 +1,29 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
-import ctypes
-import json
 import pathlib
 import sys
-from typing import Any, Callable
+from typing import Any
 
-from src.Application.decrypt_service import run_batch
-from src.Application.transcode_batch_service import (
-    ALL_SOURCE_FORMAT,
-    run_transcode_batch,
-)
-from src.Application.models import BatchRunConfig
+from src.Application.transcode_batch_service import ALL_SOURCE_FORMAT, run_transcode_batch
 from src.Infrastructure.config_repository import (
-    PROJECT_ADDRESS,
-    PROJECT_NAME_EN,
-    PROJECT_NAME_ZH,
-    PROJECT_QQ,
-    auto_find_kgg_db_path,
-    auto_find_kugou_key,
-    build_banner,
-    default_kuwo_signature_path,
-    format_help_epilog,
-    load_config,
-    save_config,
-    save_default_config_if_missing,
-    supported_transcode_formats,
-    TRANSCODE_BITRATE_OPTIONS,
-    TRANSCODE_SAMPLE_RATE_OPTIONS,
+    PROJECT_ADDRESS, PROJECT_NAME_EN, PROJECT_NAME_ZH, PROJECT_QQ,
+    default_kuwo_signature_path, format_help_epilog, load_config,
+    save_config, save_default_config_if_missing, supported_transcode_formats,
     validate_target_format,
 )
 from src.Infrastructure.kugou_key_refresh import default_refreshed_kugou_key_path, refresh_kugou_key
-from src.Infrastructure.platforms.registry import build_platform_adapter
 from src.Infrastructure.runtime_paths import RuntimePaths
 
-
-PLATFORM_LABELS = {"qq": "QQ音乐", "kuwo": "酷我音乐", "kugou": "酷狗音乐", "netease": "网易云音乐"}
-
-
-def is_running_as_admin() -> bool:
-    try:
-        return bool(ctypes.windll.shell32.IsUserAnAdmin())
-    except Exception:
-        return False
-
-
-def pause_exit(code: int = 0, message: str | None = None) -> int:
-    if message:
-        print(message)
-    try:
-        input("按任意键退出...")
-    except EOFError:
-        pass
-    return code
-
-
-def prompt_with_default(prompt: str, default: str) -> str:
-    value = input(f"{prompt} [{default}]: ").strip()
-    return value or default
-
-
-def prompt_bool(prompt: str, default: bool) -> bool:
-    label = "Y/n" if default else "y/N"
-    value = input(f"{prompt} [{label}]: ").strip().lower()
-    if not value:
-        return default
-    return value in {"y", "yes", "1", "true"}
-
-
-def prompt_choice(prompt: str, default: str, choices: list[str]) -> str:
-    allowed = {choice.lower() for choice in choices}
-    value = input(f"{prompt} [{default}]: ").strip().lower()
-    if not value:
-        return default
-    if value not in allowed:
-        raise ValueError(f"unsupported option: {value}")
-    return value
-
-
-def prompt_optional_choice_int(prompt: str, default: int | None, choices: tuple[int, ...]) -> int | None:
-    default_label = str(default) if default is not None else "关闭"
-    raw = input(f"{prompt} [{default_label}，输入 off 关闭]: ").strip().lower()
-    if not raw:
-        return default
-    if raw in {"off", "none", "disable", "close", "关闭"}:
-        return None
-    try:
-        value = int(raw)
-    except ValueError as exc:
-        raise ValueError(f"unsupported numeric option: {raw}") from exc
-    if value not in choices:
-        allowed = ", ".join(str(item) for item in choices)
-        raise ValueError(f"unsupported numeric option: {value}; allowed: {allowed}")
-    return value
-
-
-def configure_platform_transcode_profile(settings: dict[str, Any]) -> None:
-    settings["transcode_sample_rate_hz"] = prompt_optional_choice_int(
-        "指定采样率（仅在转码时生效）",
-        settings.get("transcode_sample_rate_hz"),
-        TRANSCODE_SAMPLE_RATE_OPTIONS,
-    )
-    settings["transcode_bitrate_kbps"] = prompt_optional_choice_int(
-        "指定比特率（仅在转码到有损格式时生效）",
-        settings.get("transcode_bitrate_kbps"),
-        TRANSCODE_BITRATE_OPTIONS,
-    )
+from src.Presentation.cli_prompts import (
+    PLATFORM_LABELS, build_transcode_confirmation_resolver, choose_platform,
+    collision_prompt, is_running_as_admin, pause_exit, prompt_bool, prompt_choice,
+    prompt_with_default,
+)
+from src.Presentation.cli_run import (
+    _ensure_running_for_interactive, _require_admin, _run_platform,
+    _shared_recursive, _validate_kugou_runtime, run_interactive,
+)
 
 
 def parse_transcode_rule_spec(spec: str) -> dict[str, Any]:
@@ -120,10 +37,8 @@ def parse_transcode_rule_spec(spec: str) -> dict[str, Any]:
     sample_rate_hz = int(parts[2]) if len(parts) >= 3 and parts[2] else None
     bitrate_kbps = int(parts[3]) if len(parts) >= 4 and parts[3] else None
     return {
-        "source_format": source_format,
-        "target_format": target_format,
-        "sample_rate_hz": sample_rate_hz,
-        "bitrate_kbps": bitrate_kbps,
+        "source_format": source_format, "target_format": target_format,
+        "sample_rate_hz": sample_rate_hz, "bitrate_kbps": bitrate_kbps,
     }
 
 
@@ -136,18 +51,15 @@ def _transcode_rule_label(rule: dict[str, Any]) -> str:
     return " | ".join(parts)
 
 
-def build_transcode_batch_event_sink() -> Callable[[str, dict[str, Any]], None]:
+def build_transcode_batch_event_sink() -> Any:
     def _sink(event_name: str, payload: dict[str, Any]) -> None:
         if event_name == "plan_ready":
             print(f"已生成批量转码计划：任务 {payload.get('total_jobs', 0)} 个，并发 {payload.get('worker_count', 0)} 路")
         elif event_name == "warning":
             print(f"警告：{payload.get('message', '')}")
         elif event_name == "job_started":
-            extras: list[str] = []
-            if payload.get("sample_rate_hz"):
-                extras.append(f"{payload['sample_rate_hz']} Hz")
-            if payload.get("bitrate_kbps"):
-                extras.append(f"{payload['bitrate_kbps']} kbps")
+            extras = [f"{payload['sample_rate_hz']} Hz"] if payload.get("sample_rate_hz") else []
+            extras.append(f"{payload['bitrate_kbps']} kbps") if payload.get("bitrate_kbps") else None
             extra_text = f"（{' / '.join(extras)}）" if extras else ""
             print(f"开始转码：{payload.get('input_path', '')} -> {payload.get('output_path', '')}{extra_text}")
         elif event_name == "job_succeeded":
@@ -155,9 +67,7 @@ def build_transcode_batch_event_sink() -> Callable[[str, dict[str, Any]], None]:
         elif event_name == "job_failed":
             print(f"转码失败：{payload.get('input_path', '')}，原因：{payload.get('reason', '')}")
         elif event_name == "batch_finished":
-            print(
-                f"批量转码完成：成功 {payload.get('success_count', 0)}，失败 {payload.get('failed_count', 0)}，总耗时 {payload.get('elapsed_sec', 0)}s"
-            )
+            print(f"批量转码完成：成功 {payload.get('success_count', 0)}，失败 {payload.get('failed_count', 0)}，总耗时 {payload.get('elapsed_sec', 0)}s")
     return _sink
 
 
@@ -173,7 +83,6 @@ def _run_transcode_batch_cli(paths: RuntimePaths, config: dict[str, Any], args: 
     rules = [parse_transcode_rule_spec(item) for item in (args.rule or [])] or list(transcode_config.get("rules", []))
     if not rules:
         rules = [{"source_format": ALL_SOURCE_FORMAT, "target_format": "m4a", "sample_rate_hz": None, "bitrate_kbps": None}]
-
     config.setdefault("transcode_batch", {})["input_paths"] = [str(item) for item in input_values]
     config["transcode_batch"]["output_dir"] = str(output_dir)
     config["transcode_batch"]["recursive"] = recursive
@@ -181,17 +90,13 @@ def _run_transcode_batch_cli(paths: RuntimePaths, config: dict[str, Any], args: 
     config["transcode_batch"]["rules"] = rules
     root, _ = load_config(paths)
     save_config(paths, root, config)
-
     print("批量转码配置：")
     for index, rule in enumerate(rules, start=1):
         print(f"  规则 {index}: {_transcode_rule_label(rule)}")
     result = run_transcode_batch(
         input_paths=[pathlib.Path(item) for item in input_values],
-        output_dir=output_dir,
-        rules=rules,
-        recursive=recursive,
-        max_workers=max_workers,
-        event_sink=build_transcode_batch_event_sink(),
+        output_dir=output_dir, rules=rules, recursive=recursive,
+        max_workers=max_workers, event_sink=build_transcode_batch_event_sink(),
     )
     return 0 if result.failed_count == 0 else 1
 
@@ -220,258 +125,9 @@ def _run_kugou_refresh_key_cli(paths: RuntimePaths, config: dict[str, Any], args
     print(f"SHA256：{result.sha256}")
     return 0
 
-def choose_platform() -> str:
-    print("请选择平台:")
-    print("1. QQ音乐")
-    print("2. 酷我音乐")
-    print("3. 酷狗音乐")
-    print("4. 网易云音乐")
-    mapping = {
-        "1": "qq",
-        "2": "kuwo",
-        "3": "kugou",
-        "4": "netease",
-        "qq": "qq",
-        "kuwo": "kuwo",
-        "kugou": "kugou",
-        "netease": "netease",
-        "wangyiyun": "netease",
-    }
-    value = input("平台 [1]: ").strip().lower() or "1"
-    return mapping.get(value, "")
-
-
-def collision_prompt(base_name: str, extension: str, existing_platform: str | None) -> str:
-    print(f"检测到共享输出冲突: {base_name}.{extension}")
-    print(f"现有来源平台: {existing_platform or '未知'}")
-    print("1. 加平台后缀")
-    print("2. 分平台子目录")
-    print("3. 覆盖")
-    value = input("选择 [1]: ").strip() or "1"
-    return {"1": "suffix", "2": "subdir", "3": "overwrite"}.get(value, "suffix")
-
-
-def build_transcode_confirmation_resolver(
-    *,
-    paths: RuntimePaths,
-    config: dict[str, Any],
-    platform_id: str,
-) -> Callable[[dict[str, Any]], tuple[bool, bool]] | None:
-    if not sys.stdin.isatty() or not sys.stdout.isatty():
-        return None
-
-    def _resolver(payload: dict[str, Any]) -> tuple[bool, bool]:
-        pending_count = int(payload.get("pending_count", 0) or 0)
-        ready_count = int(payload.get("ready_count", 0) or 0)
-        title = PLATFORM_LABELS.get(platform_id, platform_id)
-        transcode_enabled_setting = bool(payload.get("transcode_enabled_setting", True))
-        if pending_count <= 0:
-            if transcode_enabled_setting:
-                print(f"{title} 已完成解密：共 {ready_count} 个文件，当前批次无需转码，将直接输出解码结果。")
-            else:
-                print(f"{title} 已完成解密：共 {ready_count} 个文件，当前处于仅解码模式，本批不会转码。")
-            try:
-                input("按回车继续...")
-            except EOFError:
-                pass
-            return False, False
-        print(f"{title} 已完成解密：共 {ready_count} 个文件，其中 {pending_count} 个需要按当前设置转码。")
-        should_transcode = prompt_bool("是否现在统一转码", True)
-        remember_choice = False
-        if should_transcode:
-            remember_choice = prompt_bool(
-                "下次该平台解密完成后是否直接转码且不再提醒",
-                bool(config.get(platform_id, {}).get("auto_transcode_after_decode", False)),
-            )
-            if remember_choice != bool(config.get(platform_id, {}).get("auto_transcode_after_decode", False)):
-                config[platform_id]["auto_transcode_after_decode"] = remember_choice
-                root, _ = load_config(paths)
-                save_config(paths, root, config)
-        return should_transcode, remember_choice
-
-    return _resolver
-
-
-def _ensure_running_for_interactive(platform_id: str, adapter, settings: dict) -> tuple[bool, str | None]:
-    ok, reason = adapter.validate_runtime(settings)
-    if ok:
-        return True, None
-    print(f"未检测到{PLATFORM_LABELS[platform_id]}，请先开启对应软件。")
-    value = input("开启完成后输入 y 继续验证，否则按任意键退出: ").strip().lower()
-    if value != "y":
-        return False, reason or "user_cancelled"
-    ok, reason = adapter.validate_runtime(settings)
-    if ok:
-        return True, None
-    return False, reason or "target_process_not_detected"
-
-
-def _shared_recursive(config: dict) -> bool:
-    return bool(config.get("shared", {}).get("recursive", True))
-
-
-def _require_admin(*, interactive: bool) -> int | None:
-    if is_running_as_admin():
-        return None
-    message = "请使用管理员身份启动 A_QKKd。当前不是管理员启动，已禁止继续使用。"
-    if interactive:
-        return pause_exit(2, message)
-    print(message, file=sys.stderr)
-    return 2
-
-
-def _validate_kugou_runtime(paths: RuntimePaths, config: dict, input_path: pathlib.Path, recursive: bool, interactive: bool) -> tuple[bool, str | None, dict]:
-    adapter = build_platform_adapter("kugou")
-    settings = dict(config["kugou"])
-    key_file = pathlib.Path(str(settings.get("key_file", "") or "").strip()) if str(settings.get("key_file", "")).strip() else None
-    auto_key = auto_find_kugou_key(paths)
-    if (key_file is None or not key_file.exists()) and auto_key is not None:
-        settings["key_file"] = str(auto_key)
-    ok, reason = adapter.validate_runtime(settings)
-    if not ok:
-        return False, reason, settings
-    candidate_files = adapter.collect_files(input_path, recursive)
-    has_kgg = any(path.suffix.lower() == ".kgg" for path in candidate_files)
-    db_path = pathlib.Path(str(settings.get("kgg_db_path", "") or "").strip()) if str(settings.get("kgg_db_path", "")).strip() else pathlib.Path()
-    if has_kgg and (not db_path.exists()):
-        found = auto_find_kgg_db_path()
-        if found is not None:
-            settings["kgg_db_path"] = str(found)
-        else:
-            return False, "未找到可用的 KGMusicV3.db，无法解密 kgg。", settings
-    return True, None, settings
-
-
-def _run_platform(platform_id: str, config: dict, *, input_override: str | None = None, output_override: str | None = None, recursive_override: bool | None = None, interactive: bool = False) -> int:
-    paths = RuntimePaths.discover()
-    adapter = build_platform_adapter(platform_id)
-    shared = dict(config["shared"])
-    settings = dict(config[platform_id])
-    settings["transcode_enabled"] = bool(shared.get("transcode_enabled", True))
-    settings["embed_cover_art"] = bool(shared.get("embed_cover_art", True))
-    settings["supplement_album_metadata"] = bool(shared.get("supplement_album_metadata", False))
-    input_path = pathlib.Path(input_override or settings.get("input_dir") or "")
-    output_dir = pathlib.Path(output_override or shared.get("output_dir") or paths.output_dir)
-    recursive = _shared_recursive(config) if recursive_override is None else recursive_override
-    if platform_id == "kugou":
-        ok, reason, settings = _validate_kugou_runtime(paths, config, input_path, recursive, interactive)
-        if not ok:
-            if not interactive and reason:
-                print(reason, file=sys.stderr)
-            return pause_exit(2, reason) if interactive else 2
-    elif adapter.requires_running_process():
-        if interactive:
-            ok, reason = _ensure_running_for_interactive(platform_id, adapter, settings)
-            if not ok:
-                return pause_exit(2, reason)
-        else:
-            ok, reason = adapter.validate_runtime(settings)
-            if not ok:
-                if reason:
-                    print(reason, file=sys.stderr)
-                return 2
-    config[platform_id].update(settings)
-    batch_config = BatchRunConfig(
-        platform_id=platform_id,
-        input_path=input_path,
-        output_dir=output_dir,
-        recursive=recursive,
-        collision_policy=str(shared.get("cli_collision_policy", "suffix") or "suffix").lower(),
-        settings=settings,
-        interactive=interactive,
-        collision_resolver=collision_prompt if interactive else None,
-        transcode_confirmation_resolver=build_transcode_confirmation_resolver(
-            paths=paths,
-            config=config,
-            platform_id=platform_id,
-        ),
-    )
-    config["shared"]["output_dir"] = str(output_dir)
-    config["shared"]["recursive"] = recursive
-    config[platform_id]["input_dir"] = str(input_path)
-    root, _ = load_config(paths)
-    save_config(paths, root, config)
-    return run_batch(batch_config, adapter)
-
-
-def run_interactive() -> int:
-    paths = RuntimePaths.discover()
-    config = save_default_config_if_missing(paths)
-    print(build_banner(paths))
-    use_config = prompt_bool("是否直接使用配置文件的配置", True)
-    platform_id = choose_platform()
-    if platform_id not in PLATFORM_LABELS:
-        return pause_exit(2, "平台选择无效。")
-    if use_config:
-        return pause_exit(_run_platform(platform_id, config, interactive=True))
-
-    shared = dict(config["shared"])
-    settings = dict(config[platform_id])
-    input_dir = pathlib.Path(prompt_with_default("输入文件或目录", str(settings.get("input_dir", ""))))
-    output_dir = pathlib.Path(prompt_with_default("共享输出目录", str(shared.get("output_dir", paths.output_dir))))
-    recursive = prompt_bool("递归扫描子目录", bool(shared.get("recursive", True)))
-    shared["transcode_enabled"] = prompt_bool(
-        "是否转码（关闭后直接输出解密后的原始音频格式）",
-        bool(shared.get("transcode_enabled", True)),
-    )
-    shared["embed_cover_art"] = prompt_bool(
-        "是否自动补封面（所有平台共用，可能会导致转换明显变慢）",
-        bool(shared.get("embed_cover_art", True)),
-    )
-    shared["supplement_album_metadata"] = prompt_bool(
-        "是否补充专辑信息（仅对 m4a/wav 生效，优先本地后网络）",
-        bool(shared.get("supplement_album_metadata", False)),
-    )
-
-    if not bool(shared.get("transcode_enabled", True)):
-        pass
-    elif platform_id == "qq":
-        rules = dict(settings.get("format_rules", {}))
-        rules["mflac"] = prompt_choice("mflac 输出格式 flac/m4a/mp3/wav", str(rules.get("mflac", "flac")), supported_transcode_formats())
-        rules["mgg"] = prompt_choice("mgg 输出格式 flac/m4a/mp3/wav", str(rules.get("mgg", "m4a")), supported_transcode_formats())
-        rules["mmp4"] = prompt_choice("mmp4 输出格式 flac/m4a/mp3/wav", str(rules.get("mmp4", "m4a")), supported_transcode_formats())
-        settings["format_rules"] = rules
-    elif platform_id == "kuwo":
-        settings["format_kwm"] = prompt_choice("kwm 输出格式 auto/flac/m4a/mp3/wav", str(settings.get("format_kwm", "auto")), supported_transcode_formats())
-        settings["signature_file"] = str(default_kuwo_signature_path(paths))
-    elif platform_id == "kugou":
-        settings["target_format_kgma"] = prompt_choice("kgma/kgm/vpr 输出格式 auto/flac/m4a/mp3/wav", str(settings.get("target_format_kgma", "auto")), supported_transcode_formats())
-        settings["target_format_kgg"] = prompt_choice("kgg 输出格式 auto/flac/m4a/mp3/wav", str(settings.get("target_format_kgg", "auto")), supported_transcode_formats())
-        auto_key = auto_find_kugou_key(paths)
-        if auto_key is not None:
-            settings["key_file"] = str(auto_key)
-        if prompt_bool("是否立即抓取新的 kugou_key.xz", False):
-            try:
-                configured_path = pathlib.Path(str(settings.get("key_file", "") or "")).expanduser() if str(settings.get("key_file", "") or "").strip() else None
-                target_path = configured_path if configured_path and configured_path.name.lower() != "kugou_key.xz" else default_refreshed_kugou_key_path(paths)
-                result = refresh_kugou_key(
-                    paths,
-                    destination=target_path,
-                )
-                settings["key_file"] = str(result.output_path)
-                print(f"已更新 kugou_key.xz：{result.output_path}")
-            except Exception as exc:
-                print(f"抓取 kugou_key.xz 失败：{exc}")
-    else:
-        settings["target_format_ncm"] = prompt_choice("ncm 输出格式 auto/flac/m4a/mp3/wav", str(settings.get("target_format_ncm", "auto")), supported_transcode_formats())
-
-    config[platform_id].update(settings)
-    config["shared"].update(shared)
-    config[platform_id]["input_dir"] = str(input_dir)
-    config["shared"]["output_dir"] = str(output_dir)
-    config["shared"]["recursive"] = recursive
-    root, _ = load_config(paths)
-    save_config(paths, root, config)
-    if not prompt_bool("立即开始解密", True):
-        return pause_exit(0, "配置已保存。")
-    return pause_exit(_run_platform(platform_id, config, interactive=True))
-
 
 def build_parser(paths: RuntimePaths) -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description=f"{PROJECT_NAME_EN} / {PROJECT_NAME_ZH}",
-        epilog=format_help_epilog(paths),
-    )
+    parser = argparse.ArgumentParser(description=f"{PROJECT_NAME_EN} / {PROJECT_NAME_ZH}", epilog=format_help_epilog(paths))
     sub = parser.add_subparsers(dest="platform")
     for platform_id in ("qq", "kuwo", "kugou", "netease"):
         platform_parser = sub.add_parser(platform_id, help=f"{PLATFORM_LABELS[platform_id]} 解密")
@@ -507,7 +163,6 @@ def build_parser(paths: RuntimePaths) -> argparse.ArgumentParser:
         album_group.add_argument("--supplement-album", dest="supplement_album_metadata", action="store_true", help="补充专辑信息（m4a/wav）")
         album_group.add_argument("--no-supplement-album", dest="supplement_album_metadata", action="store_false", help="不补充专辑信息")
         dec.set_defaults(embed_cover_art=None, supplement_album_metadata=None, transcode_enabled=None)
-
     transcode_parser = sub.add_parser("transcode-batch", help="执行批量转码")
     transcode_parser.add_argument("--input", action="append", help="输入文件或目录，可重复传入")
     transcode_parser.add_argument("--output", help="输出目录")
@@ -519,7 +174,6 @@ def build_parser(paths: RuntimePaths) -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     if argv is None and len(sys.argv) == 1:
-        # Keep no-arg interactive entry explicit for packaged use.
         admin_code = _require_admin(interactive=True)
         if admin_code is not None:
             return admin_code
@@ -588,5 +242,8 @@ def main(argv: list[str] | None = None) -> int:
     return _run_platform(platform_id, config, input_override=args.input, output_override=args.output, recursive_override=recursive, interactive=False)
 
 
-
-
+__all__ = [
+    "PLATFORM_LABELS", "is_running_as_admin", "pause_exit", "choose_platform",
+    "collision_prompt", "build_transcode_confirmation_resolver",
+    "run_interactive", "main", "build_parser", "parse_transcode_rule_spec", "_run_platform",
+]
