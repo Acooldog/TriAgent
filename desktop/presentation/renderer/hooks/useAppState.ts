@@ -43,12 +43,6 @@ export interface ToolEvent {
   step?: number;
 }
 
-export interface AgentLogEntry {
-  level: "info" | "warn" | "error" | "debug";
-  message: string;
-  timestamp: string;
-}
-
 const INITIAL_FILES: FileItem[] = [
   { id: "f1", title: "晴天.mgg", artist: "周杰伦", platform: "QQ 音乐", input: "mgg", output: "flac", size: "8.62 MB", status: "处理中", cover: "cover-a" },
   { id: "f2", title: "夜曲.ncm", artist: "周杰伦", platform: "网易云音乐", input: "ncm", output: "flac", size: "25.31 MB", status: "待处理", cover: "cover-b" },
@@ -106,7 +100,6 @@ export function useAppState() {
   const [contextUsage, setContextUsage] = useState(24);
   const [modeMenuOpen, setModeMenuOpen] = useState(false);
   const [toolEvents, setToolEvents] = useState<ToolEvent[]>([]);
-  const [agentLogs, setAgentLogs] = useState<AgentLogEntry[]>([]);
   const [agentMessages, setAgentMessages] = useState<LlmMessage[]>([]);
   const [conversationMode, setConversationMode] = useState(false);
   const [autoCompression, setAutoCompression] = useState(false);
@@ -198,19 +191,9 @@ export function useAppState() {
       if (event.task_id !== agentTaskIdRef.current) return;
       const { event_type: eventType, payload, status } = event;
       if (eventType === "agent_log") {
-        const level = String(payload.level ?? "info") as AgentLogEntry["level"];
-        const message = String(payload.message ?? "");
-        const timestamp = String(payload.timestamp ?? new Date().toISOString());
-        if (message) {
-          console.info(`[Agent.${level}]`, message);
-          setAgentLogs((prev) => {
-            const next = [...prev, { level, message, timestamp }];
-            return next.slice(-200);
-          });
-        }
+        return;
       } else if (eventType === "agent_started") {
         setToolEvents([]);
-        setAgentLogs([]);
         setAgentMessages((prev) => [...prev, { role: "notice", text: "Agent 已启动，正在连接模型和加载工具..." }]);
       } else if (eventType === "agent_ready") {
         const tools = Array.isArray(payload.tools) ? (payload.tools as string[]) : [];
@@ -506,7 +489,6 @@ export function useAppState() {
     setConversationMode(true);
     setPromptText("");
     setAgentMessages([{ role: "user", text: userText }]);
-    setAgentLogs([]);
     setToolEvents([]);
     setStepIndex(0);
     setProgress(0);
@@ -610,7 +592,6 @@ export function useAppState() {
     contextUsage, setContextUsage,
     modeMenuOpen, setModeMenuOpen,
     toolEvents, setToolEvents,
-    agentLogs, setAgentLogs,
     agentMessages, setAgentMessages,
     conversationMode, setConversationMode,
     autoCompression, setAutoCompression,

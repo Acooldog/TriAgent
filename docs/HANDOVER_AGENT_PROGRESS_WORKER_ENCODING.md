@@ -28,6 +28,7 @@ Agent 在执行任务前和关键工具调用前，像 Coding Agent 一样先发
 - `requirements-private.txt` 显式声明 `langchain-openai`。
 - Agent 操作在完整运行时导入后才启动 stdin 取消监听；导入期间取消仍由 Electron 的进程终止兜底。
 - `agent_log` 的实际级别和脱敏消息写入当前会话 `logs.jsonl`，非日志事件继续使用紧凑事件名。
+- Renderer 不消费或展示 `agent_log`，任务页只保留行动说明、工具进度和结果。
 
 ## 安全说明
 

@@ -178,7 +178,7 @@ npm run build:ui
 
 Agent 任务会在开始处理和调用工具前发送简短的中文行动说明，例如先核对路径、扫描文件、再执行解密；这些消息描述可见计划和当前动作，不展示模型的隐含推理。Python Worker 强制使用 UTF-8，并按完整字符和完整行转发 stdout/stderr，避免中文日志乱码或拆成多条事件。开发模式会从仓库根目录自动发现 `.venv` 和 Worker 入口。
 
-Agent 的实际日志内容会经过凭据脱敏后追加到当前会话的 `logs.jsonl`，路径位于工作数据根目录下的 `session/YYYY/MM/DD/<session-id>/logs.jsonl`。后续故障诊断优先读取该文件，无需依赖终端滚动输出。
+Agent 的实际日志内容会经过凭据脱敏后追加到当前会话的 `logs.jsonl`，路径位于工作数据根目录下的 `session/YYYY/MM/DD/<session-id>/logs.jsonl`。任务界面不显示日志入口或日志面板，只保留行动说明、工具进度和结果；后续故障诊断直接读取该文件。
 
 ## 调试日志
 

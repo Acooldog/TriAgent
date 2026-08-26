@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import type { UseAppStateResult } from "../hooks/useAppState";
-import type { ToolEvent, AgentLogEntry } from "../hooks/useAppState";
+import type { ToolEvent } from "../hooks/useAppState";
 
 const TOOL_ICON_MAP: Record<string, string> = {
   decrypt_kugou: "🔓",
@@ -10,70 +10,16 @@ const TOOL_ICON_MAP: Record<string, string> = {
   list_directory: "📁",
 };
 
-const LOG_LEVEL_COLORS: Record<string, string> = {
-  info: "#007aff",
-  warn: "#ff9500",
-  error: "#ff3b30",
-  debug: "#8e8e93",
-};
-
-function AgentLogPanel({
-  logs,
-  visible,
-  onToggle,
-}: {
-  logs: AgentLogEntry[];
-  visible: boolean;
-  onToggle: () => void;
-}) {
-  if (!visible) {
-    return (
-      <div className="llm-agent-log-toggle" onClick={onToggle}>
-        📋 Agent 日志 ({logs.length})
-      </div>
-    );
-  }
-
-  return (
-    <div className="llm-agent-log-panel">
-      <div className="llm-agent-log-head">
-        <span>📋 Agent 日志 ({logs.length})</span>
-        <button onClick={onToggle}>隐藏</button>
-      </div>
-      <div className="llm-agent-log-body">
-        {logs.length === 0 ? (
-          <div className="llm-agent-log-empty">等待日志输出...</div>
-        ) : (
-          logs.map((log, i) => (
-            <div key={i} className={`llm-agent-log-line level-${log.level}`}>
-              <span className="llm-agent-log-level" style={{ color: LOG_LEVEL_COLORS[log.level] }}>
-                [{log.level.toUpperCase()}]
-              </span>
-              <span className="llm-agent-log-msg">{log.message}</span>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  );
-}
-
 function ExecutionPanel({
   collapsed,
   onToggle,
   progress,
   toolEvents,
-  logs,
-  showLogs,
-  onToggleLogs,
 }: {
   collapsed: boolean;
   onToggle: () => void;
   progress: number;
   toolEvents: ToolEvent[];
-  logs: AgentLogEntry[];
-  showLogs: boolean;
-  onToggleLogs: () => void;
 }) {
   const events = toolEvents.map((event, i) => {
     const icon = TOOL_ICON_MAP[event.name] ?? "⚙️";
@@ -112,7 +58,6 @@ function ExecutionPanel({
       {events.length > 0 ? (
         <div className="llm-execution-events">{events}</div>
       ) : null}
-      <AgentLogPanel logs={logs} visible={showLogs} onToggle={onToggleLogs} />
     </div>
   );
 }
@@ -122,12 +67,10 @@ export function LlmChat(state: UseAppStateResult) {
     llmMessages, llmStreaming, llmThinking, promptText, setPromptText,
     mode, networkEnabled, modeMenuOpen, setModeMenuOpen,
     conversationMode, setConversationMode, routeBack, executionCollapsed, setExecutionCollapsed,
-    progress, toolEvents, agentLogs, contextUsage, toggleNetwork, selectMode,
+    progress, toolEvents, contextUsage, toggleNetwork, selectMode,
     sendPrompt, attachedPaths, setAttachedPaths, llmRetry,
     stopProcessing, dashboardPromptRef, startProcessing,
   } = state;
-
-  const [showAgentLogs, setShowAgentLogs] = useState(true);
 
   const editorRef = useRef<HTMLDivElement>(null);
   const isComposingRef = useRef(false);
@@ -228,9 +171,6 @@ export function LlmChat(state: UseAppStateResult) {
               onToggle={() => setExecutionCollapsed(!executionCollapsed)}
               progress={progress}
               toolEvents={toolEvents}
-              logs={agentLogs}
-              showLogs={showAgentLogs}
-              onToggleLogs={() => setShowAgentLogs(!showAgentLogs)}
             />
             <div
               className="llm-chat-messages"
