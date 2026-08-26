@@ -1,10 +1,10 @@
 import type { IpcMain } from "electron";
-import { isRecord } from "../application/jsonSchema";
-import { normalizeProviderError, sanitizeProviderData, type ProviderCall, type ProviderEvent } from "../application/providerProtocol";
-import type { ProviderService, ProviderSessionContext } from "../application/providerService";
-import type { ProviderRuntimeService } from "../application/providerRuntimeService";
-import type { ProviderRuntimeStartRequest } from "../application/providerRuntimeProtocol";
-import type { PermissionPolicy } from "../application/permissionPolicy";
+import { isRecord } from "../application/tools/jsonSchema";
+import { normalizeProviderError, sanitizeProviderData, type ProviderCall, type ProviderEvent } from "../application/provider/providerProtocol";
+import type { ProviderService, ProviderSessionContext } from "../application/provider/providerService";
+import type { ProviderRuntimeService } from "../application/provider/providerRuntimeService";
+import type { ProviderRuntimeStartRequest } from "../application/provider/providerRuntimeProtocol";
+import type { PermissionPolicy } from "../application/settings/permissionPolicy";
 import { debugError, debugInfo } from "../application/debugLogger";
 
 export interface ProviderIpcDependencies {

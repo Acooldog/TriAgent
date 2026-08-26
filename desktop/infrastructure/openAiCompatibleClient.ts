@@ -1,4 +1,4 @@
-import { ModelClientError, type ModelClient, type ModelEvent, type ModelRequest, type ModelResult, type ToolCall } from "../application/modelProtocol";
+import { ModelClientError, type ModelClient, type ModelEvent, type ModelRequest, type ModelResult, type ToolCall } from "../application/model/modelProtocol";
 import { debugError, debugInfo } from "../application/debugLogger";
 
 export type FetchImplementation = (input: string, init?: RequestInit) => Promise<Response>;

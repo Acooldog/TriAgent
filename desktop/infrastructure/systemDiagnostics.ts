@@ -1,8 +1,8 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { DiagnosticGateway, DiagnosticItem } from "../application/diagnostics";
-import type { ModelConfig } from "../application/modelProtocol";
-import type { ProviderRuntimeState } from "../application/providerRuntimeProtocol";
+import type { ModelConfig } from "../application/model/modelProtocol";
+import type { ProviderRuntimeState } from "../application/provider/providerRuntimeProtocol";
 
 const execFileAsync = promisify(execFile);
 type Outcome = Omit<DiagnosticItem, "category" | "label" | "checkedAt">;

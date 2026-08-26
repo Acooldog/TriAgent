@@ -1,5 +1,5 @@
-import type { SessionLogRecord } from "../application/sessionPersistence";
-import type { WorkerEvent } from "../application/workerProtocol";
+import type { SessionLogRecord } from "../application/agent/sessionPersistence";
+import type { WorkerEvent } from "../application/worker/workerProtocol";
 
 const SENSITIVE_TEXT = /(bearer\s+|authorization\s*[:=]\s*|api[-_]?key\s*[:=]\s*|token\s*[:=]\s*|secret\s*[:=]\s*|cookie\s*[:=]\s*)\S+/gi;
 const LEVELS = new Set<SessionLogRecord["level"]>(["debug", "info", "warn", "error"]);

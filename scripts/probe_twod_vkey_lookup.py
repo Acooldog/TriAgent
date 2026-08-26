@@ -8,7 +8,7 @@ import time
 
 import frida
 
-from src.Infrastructure.platforms.qq.runtime.qqmusic_decrypt import QQMusicDecryptor
+from src.Infrastructure.adapters.platforms.qq.runtime.qqmusic_decrypt import QQMusicDecryptor
 
 
 QQMUSIC_COMMON_OFFSETS = {

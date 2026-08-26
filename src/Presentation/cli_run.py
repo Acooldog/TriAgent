@@ -4,16 +4,16 @@ import pathlib
 import sys
 from typing import Any
 
-from src.Application.decrypt_service import run_batch
+from src.Application.decrypt.decrypt_service import run_batch
 from src.Application.models import BatchRunConfig
-from src.Infrastructure.config_repository import (
+from src.Infrastructure.config.config_repository import (
     PROJECT_ADDRESS, PROJECT_NAME_EN, PROJECT_NAME_ZH, PROJECT_QQ,
     auto_find_kgg_db_path, auto_find_kugou_key, default_kuwo_signature_path,
     load_config, save_config, supported_transcode_formats, validate_target_format,
 )
-from src.Infrastructure.kugou_key_refresh import default_refreshed_kugou_key_path, refresh_kugou_key
-from src.Infrastructure.platforms.registry import build_platform_adapter
-from src.Infrastructure.runtime_paths import RuntimePaths
+from src.Infrastructure.adapters.platforms.kugou.key.kugou_key_refresh import default_refreshed_kugou_key_path, refresh_kugou_key
+from src.Infrastructure.adapters.platforms.registry import build_platform_adapter
+from src.Infrastructure.adapters.runtime.runtime_paths import RuntimePaths
 
 from src.Presentation.cli_prompts import (
     PLATFORM_LABELS, build_transcode_confirmation_resolver, choose_platform,
@@ -108,7 +108,7 @@ def _run_platform(platform_id: str, config: dict, *,
 def run_interactive() -> int:
     paths = RuntimePaths.discover()
     config = __import__("src.Infrastructure.config_repository", fromlist=["save_default_config_if_missing"]).save_default_config_if_missing(paths)
-    from src.Infrastructure.config_repository import build_banner
+    from src.Infrastructure.config.config_repository import build_banner
     print(build_banner(paths))
     use_config = prompt_bool("是否直接使用配置文件的配置", True)
     platform_id = choose_platform()

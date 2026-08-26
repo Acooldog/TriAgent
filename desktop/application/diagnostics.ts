@@ -1,6 +1,6 @@
-import type { ModelConfig } from "./modelProtocol";
-import type { PermissionMode } from "./toolProtocol";
-import { PermissionPolicy } from "./permissionPolicy";
+import type { ModelConfig } from "./model/modelProtocol";
+import type { PermissionMode } from "./tools/toolProtocol";
+import { PermissionPolicy } from "./settings/permissionPolicy";
 
 export type DiagnosticStatus = "healthy" | "warning" | "error";
 export type DiagnosticCategory = "ffmpeg" | "model" | "worker" | "session" | "provider";

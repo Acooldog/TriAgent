@@ -45,9 +45,9 @@ def run_decrypt(payload: dict[str, Any], runtime: WorkerRuntime) -> int:
     for key in ("platform", "input_path", "output_dir"):
         if not isinstance(payload.get(key), str) or not payload[key].strip():
             raise WorkerRequestError(f"decrypt payload 缺少 {key}。")
-    from src.Application.decrypt_service import run_batch
+    from src.Application.decrypt.decrypt_service import run_batch
     from src.Application.models import BatchRunConfig
-    from src.Infrastructure.platforms.registry import build_platform_adapter
+    from src.Infrastructure.adapters.platforms.registry import build_platform_adapter
     platform_id = str(payload["platform"]).strip().lower()
     config = BatchRunConfig(
         platform_id=platform_id,
@@ -87,7 +87,7 @@ def run_agent(payload: dict[str, Any], runtime: WorkerRuntime) -> int:
     if conversation_history:
         runtime.log(f"收到对话历史 {len(conversation_history)} 条，将作为上下文传入")
 
-    from src.Infrastructure.agent_progress import build_initial_action_message
+    from src.Infrastructure.adapters.agent.agent_progress import build_initial_action_message
     runtime.emit("agent_message", payload={
         "content": build_initial_action_message(user_message),
         "kind": "progress",
@@ -99,7 +99,7 @@ def run_agent(payload: dict[str, Any], runtime: WorkerRuntime) -> int:
     check_langchain_available = _agent_executor_mod.check_langchain_available
     runtime.log("agent_executor 导入完成")
     try:
-        from src.Infrastructure.agent_tools import set_ask_user_callback, set_permission_mode
+        from src.Infrastructure.adapters.agent.tools.agent_tools import set_ask_user_callback, set_permission_mode
         set_ask_user_callback(runtime.ask_user)
         perm_mode = str(payload.get("permission_mode", "standard") or "standard").lower()
         if perm_mode not in ("restricted", "standard", "full"):

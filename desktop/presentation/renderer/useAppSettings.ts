@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import type { AppSettings } from "../../application/appSettings";
-import type { PermissionMode } from "../../application/toolProtocol";
-import type { ModelConfig } from "../../application/modelProtocol";
+import type { AppSettings } from "../../application/settings/appSettings";
+import type { PermissionMode } from "../../application/tools/toolProtocol";
+import type { ModelConfig } from "../../application/model/modelProtocol";
 
 export interface UseAppSettingsResult {
     settings: AppSettings | null;

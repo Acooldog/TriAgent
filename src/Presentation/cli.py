@@ -5,15 +5,15 @@ import pathlib
 import sys
 from typing import Any
 
-from src.Application.transcode_batch_service import ALL_SOURCE_FORMAT, run_transcode_batch
-from src.Infrastructure.config_repository import (
+from src.Application.transcode.transcode_batch_service import ALL_SOURCE_FORMAT, run_transcode_batch
+from src.Infrastructure.config.config_repository import (
     PROJECT_ADDRESS, PROJECT_NAME_EN, PROJECT_NAME_ZH, PROJECT_QQ,
     default_kuwo_signature_path, format_help_epilog, load_config,
     save_config, save_default_config_if_missing, supported_transcode_formats,
     validate_target_format,
 )
-from src.Infrastructure.kugou_key_refresh import default_refreshed_kugou_key_path, refresh_kugou_key
-from src.Infrastructure.runtime_paths import RuntimePaths
+from src.Infrastructure.adapters.platforms.kugou.key.kugou_key_refresh import default_refreshed_kugou_key_path, refresh_kugou_key
+from src.Infrastructure.adapters.runtime.runtime_paths import RuntimePaths
 
 from src.Presentation.cli_prompts import (
     PLATFORM_LABELS, build_transcode_confirmation_resolver, choose_platform,

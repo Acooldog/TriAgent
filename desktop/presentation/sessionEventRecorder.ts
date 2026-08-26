@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { debugError, debugInfo } from "../application/debugLogger";
-import type { SessionEventRecord, SessionLogRecord, SessionPersistenceService, SessionTaskState } from "../application/sessionPersistence";
-import type { SessionInfo } from "../application/workspaceService";
+import type { SessionEventRecord, SessionLogRecord, SessionPersistenceService, SessionTaskState } from "../application/agent/sessionPersistence";
+import type { SessionInfo } from "../application/workspace/workspaceService";
 
 type TaskContext = { root: string; session: SessionInfo };
 

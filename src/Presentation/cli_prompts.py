@@ -5,13 +5,13 @@ import pathlib
 import sys
 from typing import Any, Callable
 
-from src.Infrastructure.config_repository import (
+from src.Infrastructure.config.config_repository import (
     load_config,
     save_config,
     TRANSCODE_BITRATE_OPTIONS,
     TRANSCODE_SAMPLE_RATE_OPTIONS,
 )
-from src.Infrastructure.runtime_paths import RuntimePaths
+from src.Infrastructure.adapters.runtime.runtime_paths import RuntimePaths
 
 
 PLATFORM_LABELS = {"qq": "QQ音乐", "kuwo": "酷我音乐", "kugou": "酷狗音乐", "netease": "网易云音乐"}

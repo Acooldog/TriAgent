@@ -1,13 +1,13 @@
-import type { WorkspaceState } from "../../application/workspaceService";
-import type { AgentEvent, AgentPlan } from "../../application/agentTaskService";
-import type { WorkerEvent } from "../../application/workerProtocol";
-import type { ChatMessage, ModelConfig, ModelEvent } from "../../application/modelProtocol";
-import type { CompressionOptions, CompressionResult } from "../../application/contextCompression";
-import type { ToolManifest } from "../../application/toolProtocol";
-import type { ProviderCall, ProviderEvent, ProviderRegistration } from "../../application/providerProtocol";
-import type { ProviderRuntimeEvent, ProviderRuntimeStartRequest, ProviderRuntimeState } from "../../application/providerRuntimeProtocol";
+import type { WorkspaceState } from "../../application/workspace/workspaceService";
+import type { AgentEvent, AgentPlan } from "../../application/agent/agentTaskService";
+import type { WorkerEvent } from "../../application/worker/workerProtocol";
+import type { ChatMessage, ModelConfig, ModelEvent } from "../../application/model/modelProtocol";
+import type { CompressionOptions, CompressionResult } from "../../application/settings/contextCompression";
+import type { ToolManifest } from "../../application/tools/toolProtocol";
+import type { ProviderCall, ProviderEvent, ProviderRegistration } from "../../application/provider/providerProtocol";
+import type { ProviderRuntimeEvent, ProviderRuntimeStartRequest, ProviderRuntimeState } from "../../application/provider/providerRuntimeProtocol";
 import type { DiagnosticReport, DiagnosticsRequest, ErrorSearchIssue, ErrorSearchResult } from "../../application/diagnostics";
-import type { AppSettings } from "../../application/appSettings";
+import type { AppSettings } from "../../application/settings/appSettings";
 
 export interface ModelEventEnvelope { requestId: string; event: ModelEvent; }
 

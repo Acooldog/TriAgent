@@ -1,6 +1,6 @@
 import { useCallback } from "react";
-import type { PermissionMode } from "../../../application/toolProtocol";
-import type { ModelConfig } from "../../../application/modelProtocol";
+import type { PermissionMode } from "../../../application/tools/toolProtocol";
+import type { ModelConfig } from "../../../application/model/modelProtocol";
 
 export interface UseSettingsControlResult {
   networkEnabled: boolean;
@@ -29,7 +29,7 @@ export function useSettingsControl(
   saveModelConfig: (c: ModelConfig) => Promise<void>,
   showToast: (msg: string) => void,
   addNotice: (text: string) => void,
-  setLlmMessages: React.Dispatch<React.SetStateAction<import("./useAppState").LlmMessage[]>>,
+  setLlmMessages: React.Dispatch<React.SetStateAction<import("./useAppState/useAppState").LlmMessage[]>>,
   setLlmStreaming: React.Dispatch<React.SetStateAction<{ text: string; index: number } | null>>,
   setLlmThinking: React.Dispatch<React.SetStateAction<boolean>>,
   setLlmTested: React.Dispatch<React.SetStateAction<boolean>>,
