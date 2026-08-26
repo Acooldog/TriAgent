@@ -188,12 +188,13 @@ export function useAppState() {
   }, [mode, updatePermissionMode, page]);
 
   const saveConfig = useCallback(async () => {
+    // 设置页每次改字段时已经通过 updateModelConfig 实时保存（包括 apiKey）
+    // 这里再 push 一次确保最新值落盘
     if (settings?.model.defaultConfig) {
-      const fullConfig: ModelConfig = { ...modelConfig };
-      await saveModelConfig(fullConfig);
+      await updateModelConfig(modelConfig);
       showToast("设置已保存");
     }
-  }, [settings, modelConfig, saveModelConfig]);
+  }, [settings, modelConfig, updateModelConfig, showToast]);
 
   // --- Model / Session operations ---
   const resetModel = useCallback(async () => {

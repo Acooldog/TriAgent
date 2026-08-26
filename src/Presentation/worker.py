@@ -77,7 +77,9 @@ def run_agent(payload: dict[str, Any], runtime: WorkerRuntime) -> int:
     model_config = dict(payload.get("model_config") or {})
     if not model_config:
         raise WorkerRequestError("agent payload 缺少 model_config。")
-    runtime.log(f"模型配置: model={model_config.get('model')}, base_url={model_config.get('base_url', '')}")
+    api_key_val = str(model_config.get("api_key", ""))
+    api_key_mask = (api_key_val[:4] + "***" + api_key_val[-4:]) if len(api_key_val) > 8 else "(empty)"
+    runtime.log(f"模型配置: model={model_config.get('model')}, base_url={model_config.get('base_url', '')}, api_key={api_key_mask}, provider={model_config.get('provider', 'openai')}")
 
     model_config.setdefault("model", "glm-4.5")
     model_config.setdefault("base_url", "https://open.bigmodel.cn/api/paas/v4")

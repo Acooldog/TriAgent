@@ -99,8 +99,8 @@ export function useAppSettings(): UseAppSettingsResult {
             return { ...prev, model: { ...prev.model, defaultConfig: { ...prev.model.defaultConfig, ...config } } };
         });
         try {
-            const { apiKey: _key, ...safeConfig } = config;
-            const updated = await window.triMusicAgent.updateAppSettings({ model: { defaultConfig: safeConfig as Omit<ModelConfig, "apiKey"> } });
+            // apiKey 也通过 updateAppSettings 保存 —— 主进程 saveAppSettings 会存到全局 appSettings.json
+            const updated = await window.triMusicAgent.updateAppSettings({ model: { defaultConfig: config } } as Partial<AppSettings>);
             setSettings(updated);
             console.info("[useAppSettings] 模型配置已保存");
         } catch (err) {
