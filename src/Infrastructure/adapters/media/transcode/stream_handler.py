@@ -5,7 +5,7 @@ from typing import Any
 from src.Infrastructure.adapters.agent.agent_progress import AgentEventEmitter, build_tool_action_message
 
 try:
-    from langchain_core.messages import AIMessage, ToolMessage
+    from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
 except ImportError:
     class ToolMessage:  # type: ignore[no-redef]
         def __init__(self, content: str, tool_call_id: str = "", name: str = "") -> None:
@@ -14,6 +14,11 @@ except ImportError:
             self.name = name
 
     class AIMessage:  # type: ignore[no-redef]
+        def __init__(self, content: str = "", tool_calls: list[dict[str, Any]] | None = None) -> None:
+            self.content = content
+            self.tool_calls = tool_calls or []
+
+    class AIMessageChunk:  # type: ignore[no-redef]
         def __init__(self, content: str = "", tool_calls: list[dict[str, Any]] | None = None) -> None:
             self.content = content
             self.tool_calls = tool_calls or []
@@ -76,7 +81,8 @@ def _handle_stream_message(
 ) -> None:
     msg_type = type(msg).__name__
 
-    if isinstance(msg, AIMessage) or msg_type == "AIMessage":
+    # 同时识别 AIMessage（完整消息）和 AIMessageChunk（流式 chunk）
+    if isinstance(msg, (AIMessage, AIMessageChunk)) or msg_type in ("AIMessage", "AIMessageChunk"):
         has_tool_calls = hasattr(msg, "tool_calls") and msg.tool_calls
 
         if has_tool_calls:
@@ -120,8 +126,16 @@ def _handle_stream_message(
                     "tool_call_id": tool_call_id,
                 }
         else:
-            # LangGraph stream_mode='messages' 发 AIMessage 纯文本内容
+            # LangGraph stream_mode='messages' 发 AIMessage/AIMessageChunk 纯文本内容
+            # 部分 provider（腾讯混元 hy3 等推理模型）把思考过程放在 reasoning_content
             text_content = str(msg.content) if hasattr(msg, "content") and msg.content else ""
+            reasoning_content = ""
+            if hasattr(msg, "additional_kwargs"):
+                reasoning_content = str(msg.additional_kwargs.get("reasoning_content", ""))
+            if not text_content and reasoning_content:
+                # 思考过程：emit 成 thinking 类型事件，不累积到 pending_text
+                emitter.emit("agent_thinking_delta", {"content": reasoning_content})
+                continue
             if text_content:
                 import re as _re
                 text_content = _re.sub(r"<unused\d+>.*?</unused\d+>", "", text_content, flags=_re.DOTALL)

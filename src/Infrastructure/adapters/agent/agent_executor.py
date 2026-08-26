@@ -7,6 +7,7 @@ from typing import Any, Callable
 
 from src.Infrastructure.adapters.agent.agent_helpers import (
     AIMessage,
+    AIMessageChunk,
     HumanMessage,
     LANGCHAIN_AVAILABLE as _LANGCHAIN_AVAILABLE,
     ToolMessage,
@@ -210,7 +211,7 @@ def run_agent(
 
                     conversation_messages.append(msg)
 
-                    if isinstance(msg, AIMessage) or type(msg).__name__ == "AIMessage":
+                    if isinstance(msg, (AIMessage, AIMessageChunk)) or type(msg).__name__ in ("AIMessage", "AIMessageChunk"):
                         if hasattr(msg, "tool_calls") and msg.tool_calls:
                             actual_iterations += 1
                             # === 关键：每轮 AIMessage（触发了工具调用）后，清理旧 ToolMessage ===

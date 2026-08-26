@@ -185,7 +185,7 @@ def run_sub_agent(
                 conversation_messages.append(msg)
 
                 msg_type = type(msg).__name__
-                if isinstance(msg, AIMessage) or msg_type == "AIMessage":
+                if isinstance(msg, (AIMessage, AIMessageChunk)) or msg_type in ("AIMessage", "AIMessageChunk"):
                     if hasattr(msg, "tool_calls") and msg.tool_calls:
                         actual_iterations += 1
                         # 子 Agent 轮次少，只保留最近 1 轮
