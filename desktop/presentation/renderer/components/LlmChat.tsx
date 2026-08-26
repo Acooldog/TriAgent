@@ -1,11 +1,12 @@
 import { useEffect, useRef } from "react";
 import type { UseAppStateResult } from "../hooks/useAppState";
 import type { ToolEvent } from "../hooks/useAppState";
+import { renderMarkdown } from "../markdown";
 
 const TOOL_ICON_MAP: Record<string, string> = {
   decrypt_kugou: "🔓",
   scan_files: "🔍",
-  move_files: "📦",
+  copy_files: "📦",
   detect_format: "🎵",
   list_directory: "📁",
 };
@@ -69,10 +70,12 @@ export function LlmChat(state: UseAppStateResult) {
     conversationMode, setConversationMode, routeBack, executionCollapsed, setExecutionCollapsed,
     progress, toolEvents, contextUsage, toggleNetwork, selectMode,
     sendPrompt, attachedPaths, setAttachedPaths, llmRetry,
-    stopProcessing, dashboardPromptRef, startProcessing,
+    stopProcessing, dashboardPromptRef, startProcessing, sendSupplement, answerAgentQuestion, processing,
+    agentQuestion,
   } = state;
 
   const editorRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const isComposingRef = useRef(false);
   const lastExternalValueRef = useRef(promptText);
 
@@ -122,10 +125,10 @@ export function LlmChat(state: UseAppStateResult) {
   const messages = isTaskMode
     ? state.agentMessages.map((message) =>
       message.role === "user"
-        ? `<div class="llm-chat-message user"><p>${esc(message.text)}</p><span class="llm-avatar user-avatar">你</span></div>`
+        ? `<div class="llm-chat-message user"><div class="llm-chat-md">${renderMarkdown(message.text)}</div><span class="llm-avatar user-avatar">你</span></div>`
         : message.role === "error"
           ? `<div class="llm-chat-message assistant"><span class="llm-avatar">T</span><div><p style="color:var(--系统错误色,#ff3b30)">${esc(message.text)}</p></div></div>`
-          : `<div class="llm-chat-message assistant"><span class="llm-avatar">T</span><div><p>${esc(message.text)}</p></div></div>`
+          : `<div class="llm-chat-message assistant"><span class="llm-avatar">T</span><div class="llm-chat-md">${renderMarkdown(message.text)}</div></div>`
     ).join("")
     : llmMessages.map((message) => {
       if (message.role === "error") {
@@ -135,8 +138,8 @@ export function LlmChat(state: UseAppStateResult) {
         return `<div class="llm-system-notice"><span>${esc(message.text)}</span></div>`;
       }
       return message.role === "user"
-        ? `<div class="llm-chat-message user"><p>${esc(message.text)}</p><span class="llm-avatar user-avatar">你</span></div>`
-        : `<div class="llm-chat-message assistant"><span class="llm-avatar">T</span><div><p>${esc(message.text)}</p></div></div>`;
+        ? `<div class="llm-chat-message user"><div class="llm-chat-md">${renderMarkdown(message.text)}</div><span class="llm-avatar user-avatar">你</span></div>`
+        : `<div class="llm-chat-message assistant"><span class="llm-avatar">T</span><div class="llm-chat-md">${renderMarkdown(message.text)}</div></div>`;
     }).join("");
 
   const thinkingHtml = llmThinking && !llmStreaming
@@ -151,6 +154,14 @@ export function LlmChat(state: UseAppStateResult) {
     ? `<div class="llm-retry-status"><span class="retry-spinner"></span>正在重新连接 ${llmRetry.attempt}/${llmRetry.max}</div>`
     : "";
 
+  // Agent 发新消息或流式输出时自动滚到底部，确保用户能立即看到新内容
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    console.info("[LlmChat] auto-scroll to bottom", { scrollHeight: el.scrollHeight });
+  }, [messages, llmStreaming, llmThinking, llmRetry]);
+
   const modeMenuHtml = modeMenuOpen
     ? `<div class="llm-mode-menu">${["受限", "标准", "完全访问"].map((m) => `<button data-mode="${m}">${m}</button>`).join("")}</div>`
     : "";
@@ -163,7 +174,7 @@ export function LlmChat(state: UseAppStateResult) {
         <span>{isTaskMode ? "当前任务" : "模型对话"}</span>
         {isTaskMode ? <button className="kimi-action-button" onClick={stopProcessing}>停止任务</button> : null}
       </header>
-      <div className="llm-chat-scroll">
+      <div className="llm-chat-scroll" ref={scrollRef}>
         {isTaskMode ? (
           <div className="llm-chat-content">
             <ExecutionPanel
@@ -176,6 +187,25 @@ export function LlmChat(state: UseAppStateResult) {
               className="llm-chat-messages"
               dangerouslySetInnerHTML={{ __html: `${messages}${thinkingHtml}${retryHtml}${streamingHtml}` }}
             />
+            {agentQuestion ? (
+              <div className="llm-question-overlay">
+                <div className="llm-question-card">
+                  <div className="llm-question-title">Agent 需要你的确认</div>
+                  <p className="llm-question-text">{agentQuestion.question}</p>
+                  <div className="llm-question-options">
+                    {agentQuestion.options.map((opt) => (
+                      <button
+                        key={opt}
+                        className="llm-question-option"
+                        onClick={() => answerAgentQuestion(opt)}
+                      >
+                        {opt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : (
           <div
@@ -213,7 +243,11 @@ export function LlmChat(state: UseAppStateResult) {
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
               if (isTaskMode) {
-                startProcessing();
+                if (processing) {
+                  sendSupplement();
+                } else {
+                  startProcessing();
+                }
               } else if (llmStreaming) {
                 // interrupt
               } else {

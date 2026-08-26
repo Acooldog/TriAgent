@@ -1577,6 +1577,70 @@ tr:hover td {
     box-shadow: 0 25px 80px #0b242b45;
 }
 
+.llm-question-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: grid;
+    place-items: center;
+    background: #0b242b55;
+    backdrop-filter: blur(2px);
+}
+
+.llm-question-card {
+    width: min(520px, calc(100% - 32px));
+    padding: 22px 22px 18px;
+    border: 2px solid #2b6a6c;
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 20px 60px #0b242b50, 0 0 0 1px #00000010;
+}
+
+.llm-question-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #173f42;
+    margin-bottom: 10px;
+    letter-spacing: 0.5px;
+}
+
+.llm-question-text {
+    margin: 0 0 16px;
+    font-size: 15px;
+    line-height: 1.55;
+    color: #1c3c3a;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.llm-question-options {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.llm-question-option {
+    padding: 11px 14px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: #f6fbfb;
+    color: #173f42;
+    font-size: 14px;
+    line-height: 1.4;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.llm-question-option:hover {
+    background: #e0f1f0;
+    border-color: #2b6a6c;
+}
+
+.llm-question-option:active {
+    transform: translateY(1px);
+}
+
 .modal-title {
     justify-content: flex-start;
 }
@@ -4003,7 +4067,7 @@ select:focus {
     flex-direction: column;
     min-height: calc(100vh - 28px);
     margin: -20px -24px -30px;
-    padding: 22px clamp(48px, 16vw, 240px) 10px;
+    padding: 28px clamp(60px, 20vw, 300px) 16px;
     color: var(--km-label-primary);
     background: var(--km-bg);
     -webkit-font-smoothing: antialiased;
@@ -4048,19 +4112,121 @@ select:focus {
 
 .llm-chat-content {
     width: min(100%, 720px);
-    margin: auto auto 120px;
-    padding-top: 42px;
+    margin: auto auto 140px;
+    padding-top: 56px;
 }
 
 .llm-chat-message {
     display: grid;
     grid-template-columns: 32px 1fr;
     gap: 12px;
-    padding: 16px 0;
+    padding: 20px 0;
     color: var(--km-label-primary);
     font-size: 16px;
     line-height: 26px;
     border-bottom: 1px solid var(--km-separator);
+}
+
+.llm-chat-md {
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
+
+.llm-chat-md> :first-child {
+    margin-top: 0;
+}
+
+.llm-chat-md> :last-child {
+    margin-bottom: 0;
+}
+
+.llm-chat-md p {
+    margin: 0 0 10px;
+}
+
+.llm-chat-md h1,
+.llm-chat-md h2,
+.llm-chat-md h3,
+.llm-chat-md h4 {
+    margin: 18px 0 10px;
+    line-height: 1.4;
+    font-weight: 700;
+}
+
+.llm-chat-md h1 {
+    font-size: 20px;
+}
+
+.llm-chat-md h2 {
+    font-size: 18px;
+}
+
+.llm-chat-md h3 {
+    font-size: 16px;
+}
+
+.llm-chat-md ul,
+.llm-chat-md ol {
+    margin: 0 0 10px;
+    padding-left: 22px;
+}
+
+.llm-chat-md li {
+    margin: 4px 0;
+}
+
+.llm-chat-md code {
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: var(--km-bg-tertiary);
+    color: var(--km-label-primary);
+    font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+    font-size: 14px;
+}
+
+.llm-chat-md pre {
+    margin: 0 0 12px;
+    padding: 12px 14px;
+    border-radius: 8px;
+    background: var(--km-bg-secondary);
+    border: 1px solid var(--km-separator);
+    overflow: auto;
+}
+
+.llm-chat-md pre code {
+    padding: 0;
+    background: transparent;
+    font-size: 13px;
+    line-height: 20px;
+}
+
+.llm-chat-md blockquote {
+    margin: 0 0 10px;
+    padding: 2px 0 2px 12px;
+    border-left: 3px solid var(--km-separator);
+    color: var(--km-label-secondary);
+}
+
+.llm-chat-md a {
+    color: var(--km-label-primary);
+    text-decoration: underline;
+}
+
+.llm-chat-md img {
+    max-width: 100%;
+    border-radius: 8px;
+}
+
+.llm-chat-md table {
+    border-collapse: collapse;
+    margin: 0 0 12px;
+    font-size: 14px;
+}
+
+.llm-chat-md th,
+.llm-chat-md td {
+    border: 1px solid var(--km-separator);
+    padding: 6px 10px;
 }
 
 .llm-chat-message.thinking .llm-thinking-dots b {
@@ -4383,6 +4549,14 @@ select:focus {
     flex-direction: column;
     gap: 0;
     margin-top: 10px;
+    max-height: 320px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: 4px;
+}
+
+.llm-execution-sticky.is-collapsed .llm-execution-events {
+    display: none;
 }
 
 .agent-tool-call {
@@ -4419,7 +4593,7 @@ select:focus {
     color: #fff;
 }
 
-.agent-tool-call-icon.move_files {
+.agent-tool-call-icon.copy_files {
     background: linear-gradient(135deg, #34c759, #30d158);
     color: #fff;
 }
@@ -4530,11 +4704,11 @@ select:focus {
 @media (max-width:760px) {
     .llm-chat-page {
         margin: -14px -12px -24px;
-        padding: 18px 14px 8px;
+        padding: 22px 18px 12px;
     }
 
     .llm-chat-content {
-        margin-top: 25px;
+        margin-top: 32px;
     }
 
     .llm-composer {
