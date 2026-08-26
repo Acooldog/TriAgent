@@ -28,6 +28,7 @@ export interface HistoryItem {
 export interface LlmMessage {
   role: "user" | "assistant" | "error" | "notice";
   text: string;
+  createdAt?: number;
 }
 
 export interface AgentQuestion {

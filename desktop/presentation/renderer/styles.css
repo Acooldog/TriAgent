@@ -4120,11 +4120,10 @@ select:focus {
     display: grid;
     grid-template-columns: 32px 1fr;
     gap: 12px;
-    padding: 20px 0;
+    padding: 16px 0;
     color: var(--km-label-primary);
     font-size: 16px;
     line-height: 26px;
-    border-bottom: 1px solid var(--km-separator);
 }
 
 .llm-chat-md {

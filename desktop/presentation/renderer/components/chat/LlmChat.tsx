@@ -1,7 +1,7 @@
-import { useEffect, useRef, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, type CSSProperties } from "react";
 import type { UseAppStateResult } from "../../hooks/useAppState/useAppState";
+import type { AgentSegment, LlmMessage } from "../../hooks/useAppState/useAppState.types";
 import { renderMarkdown } from "../../markdown";
-import { ExecutionPanel } from "./ExecutionPanel";
 import { BatchProgressCard } from "./BatchProgressCard";
 import { AgentExecutionSegments } from "./AgentExecutionSegments";
 
@@ -9,11 +9,11 @@ export function LlmChat(state: UseAppStateResult) {
   const {
     llmMessages, llmStreaming, llmThinking, promptText, setPromptText,
     mode, networkEnabled, modeMenuOpen, setModeMenuOpen,
-    conversationMode, setConversationMode, routeBack, executionCollapsed, setExecutionCollapsed,
-    progress, toolEvents, contextUsage, toggleNetwork, selectMode,
+    conversationMode, setConversationMode, routeBack,
+    contextUsage, toggleNetwork, selectMode,
     sendPrompt, attachedPaths, setAttachedPaths, llmRetry,
     stopProcessing, stopLlmStreaming, dashboardPromptRef, startProcessing, sendSupplement, answerAgentQuestion, processing,
-    agentQuestion, batchProgress, agentSegments,
+    agentQuestion, batchProgress, agentSegments, agentMessages,
   } = state;
 
   const editorRef = useRef<HTMLDivElement>(null);
@@ -62,56 +62,111 @@ export function LlmChat(state: UseAppStateResult) {
 
   const isTaskMode = conversationMode;
   const hasInput = !!promptText.trim();
-
   const isInterrupt = isTaskMode ? (processing && !hasInput) : !!llmStreaming;
   const sendLabel = isInterrupt ? "■" : "↑";
 
-  const esc = (s: string): string => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt", '"': "&quot;", "'": "&#39;" }[c]!));
+  // 构建 timeline: messages + segments 按时间排序后渲染
+  // 每条 message 上方显示: 上一条 message 之后、当前 message 之前产生的 segments
+  const messageList = isTaskMode
+    ? agentMessages.filter((m) => m.role !== "notice")
+    : llmMessages;
 
-  const messages = isTaskMode
-    ? state.agentMessages
-      .filter((message) => message.role !== "notice")
-      .map((message) =>
-        message.role === "user"
-          ? `<div class="llm-chat-message user"><div class="llm-chat-md">${renderMarkdown(message.text)}</div><span class="llm-avatar user-avatar">你</span></div>`
-          : message.role === "error"
-            ? `<div class="llm-chat-message assistant"><span class="llm-avatar">T</span><div><p style="color:var(--系统错误色,#ff3b30)">${esc(message.text)}</p></div></div>`
-            : `<div class="llm-chat-message assistant"><span class="llm-avatar">T</span><div class="llm-chat-md">${renderMarkdown(message.text)}</div></div>`
-      ).join("")
-    : llmMessages.map((message) => {
-      if (message.role === "error") {
-        return `<div class="llm-error-message"><div><strong>AI 连接错误</strong><p>${esc(message.text)}</p></div><button>重试</button></div>`;
+  const segmentsByMessage = useMemo(() => {
+    if (!isTaskMode) return new Map<number, AgentSegment[]>();
+    const map = new Map<number, AgentSegment[]>();
+    for (let i = 0; i < messageList.length; i++) {
+      const msg = messageList[i];
+      const msgTime = msg.createdAt ?? 0;
+      const prevTime = i > 0 ? (messageList[i - 1].createdAt ?? 0) : 0;
+      const relevant = agentSegments.filter(
+        (seg) => seg.createdAt >= prevTime && seg.createdAt <= msgTime
+      );
+      if (relevant.length > 0) map.set(i, relevant);
+    }
+    return map;
+  }, [isTaskMode, messageList, agentSegments]);
+
+  const esc = (s: string): string =>
+    s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt", '"': "&quot;", "'": "&#39;" }[c]!));
+
+  const renderMessage = (message: LlmMessage, idx: number) => {
+    const segsAbove = isTaskMode ? segmentsByMessage.get(idx) : undefined;
+    const role = message.role;
+
+    const msgEl = (() => {
+      if (role === "user") {
+        return (
+          <div
+            key={idx}
+            className="llm-chat-message user"
+            dangerouslySetInnerHTML={{ __html: renderMarkdown(message.text) }}
+          />
+        );
       }
-      if (message.role === "notice") {
-        return `<div class="llm-system-notice"><span>${esc(message.text)}</span></div>`;
+      if (role === "error") {
+        return (
+          <div key={idx} className="llm-chat-message assistant">
+            <strong style={{ color: "var(--系统错误色,#ff3b30)" }}>错误</strong>
+            <p style={{ color: "var(--系统错误色,#ff3b30)" }}>{esc(message.text)}</p>
+          </div>
+        );
       }
-      return message.role === "user"
-        ? `<div class="llm-chat-message user"><div class="llm-chat-md">${renderMarkdown(message.text)}</div><span class="llm-avatar user-avatar">你</span></div>`
-        : `<div class="llm-chat-message assistant"><span class="llm-avatar">T</span><div class="llm-chat-md">${renderMarkdown(message.text)}</div></div>`;
-    }).join("");
+      if (role === "notice") {
+        return (
+          <div key={idx} className="llm-system-notice">
+            <span>{esc(message.text)}</span>
+          </div>
+        );
+      }
+      // assistant
+      return (
+        <div
+          key={idx}
+          className="llm-chat-message assistant"
+          dangerouslySetInnerHTML={{ __html: renderMarkdown(message.text) }}
+        />
+      );
+    })();
 
-  const thinkingHtml = llmThinking && !llmStreaming
-    ? `<div class="llm-chat-message assistant thinking"><span class="llm-avatar">T</span><div><p><span class="llm-thinking-dots"><b>.</b><b>.</b><b>.</b></span></p></div></div>`
-    : "";
-
-  const streamingHtml = llmStreaming
-    ? `<div class="llm-chat-message assistant streaming"><span class="llm-avatar">T</span><div><p>${esc(llmStreaming.text.slice(0, llmStreaming.index))}<span class="streaming-caret">▋</span></p></div></div>`
-    : "";
-
-  const retryHtml = llmRetry
-    ? `<div class="llm-retry-status"><span class="retry-spinner"></span>正在重新连接 ${llmRetry.attempt}/${llmRetry.max}</div>`
-    : "";
+    if (segsAbove && segsAbove.length > 0 && role === "assistant") {
+      return (
+        <div key={`segs+msg-${idx}`}>
+          <AgentExecutionSegments segments={segsAbove} />
+          <div className="llm-chat-avatar-slot">
+            <span className="llm-avatar">T</span>
+            {msgEl}
+          </div>
+        </div>
+      );
+    }
+    if (role === "user") {
+      return (
+        <div key={`segs+msg-${idx}`}>
+          {segsAbove && segsAbove.length > 0 && <AgentExecutionSegments segments={segsAbove} />}
+          {msgEl}
+        </div>
+      );
+    }
+    return <div key={idx}>{msgEl}</div>;
+  };
 
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
     console.info("[LlmChat] auto-scroll to bottom", { scrollHeight: el.scrollHeight });
-  }, [messages, llmStreaming, llmThinking, llmRetry]);
+  }, [messageList, llmStreaming, llmThinking, llmRetry, agentSegments]);
 
   const modeMenuHtml = modeMenuOpen
-    ? `<div class="llm-mode-menu">${["受限", "标准", "完全访问"].map((m) => `<button data-mode="${m}">${m}</button>`).join("")}</div>`
-    : "";
+    ? (
+      <div className="llm-mode-menu">
+        {(["受限", "标准", "完全访问"] as const).map((m) => {
+          const map: Record<string, "restricted" | "standard" | "full"> = { "受限": "restricted", "标准": "standard", "完全访问": "full" };
+          return <button key={m} onClick={() => { selectMode(map[m]); setModeMenuOpen(false); }}>{m}</button>;
+        })}
+      </div>
+    )
+    : null;
 
   return (
     <section className={`page llm-chat-page ${isTaskMode ? "task-chat-page" : ""}`}>
@@ -121,29 +176,44 @@ export function LlmChat(state: UseAppStateResult) {
         {isTaskMode ? <button className="kimi-action-button" onClick={stopProcessing}>停止任务</button> : null}
       </header>
       <div className="llm-chat-scroll" ref={scrollRef}>
-        {isTaskMode ? (
-          <div className="llm-chat-content">
-            <AgentExecutionSegments segments={agentSegments} />
-            <ExecutionPanel
-              collapsed={executionCollapsed}
-              onToggle={() => setExecutionCollapsed(!executionCollapsed)}
-              progress={progress}
-              toolEvents={toolEvents}
-            />
-            <div
-              className="llm-chat-messages"
-              dangerouslySetInnerHTML={{ __html: `${messages}${thinkingHtml}${retryHtml}${streamingHtml}` }}
-            />
-            {batchProgress.active || batchProgress.finished ? (
-              <BatchProgressCard progress={batchProgress} />
-            ) : null}
-          </div>
-        ) : (
-          <div
-            className="llm-chat-content"
-            dangerouslySetInnerHTML={{ __html: `${messages}${thinkingHtml}${retryHtml}${streamingHtml}` }}
-          />
-        )}
+        <div className="llm-chat-content">
+          {messageList.map((msg, idx) => renderMessage(msg, idx))}
+          {isTaskMode && (
+            <>
+              {agentSegments.length > 0 && messageList.length > 0 && (() => {
+                // 末尾 segments：最后一条消息之后产生的 segments
+                const lastMsgTime = messageList[messageList.length - 1]?.createdAt ?? 0;
+                const tailSegs = agentSegments.filter((s) => s.createdAt >= lastMsgTime);
+                return tailSegs.length > 0 ? <AgentExecutionSegments segments={tailSegs} /> : null;
+              })()}
+              {batchProgress.active || batchProgress.finished ? (
+                <BatchProgressCard progress={batchProgress} />
+              ) : null}
+            </>
+          )}
+          {/* thinking / streaming / retry (non-task mode 也需要) */}
+          {!isTaskMode && llmThinking && !llmStreaming && (
+            <div className="llm-chat-message assistant thinking">
+              <span className="llm-avatar">T</span>
+              <div>
+                <p><span className="llm-thinking-dots"><b>.</b><b>.</b><b>.</b></span></p>
+              </div>
+            </div>
+          )}
+          {llmStreaming && (
+            <div className="llm-chat-message assistant streaming">
+              <span className="llm-avatar">T</span>
+              <div>
+                <p>{esc(llmStreaming.text.slice(0, llmStreaming.index))}<span className="streaming-caret">▋</span></p>
+              </div>
+            </div>
+          )}
+          {llmRetry && (
+            <div className="llm-retry-status">
+              <span className="retry-spinner"></span>正在重新连接 {llmRetry.attempt}/{llmRetry.max}
+            </div>
+          )}
+        </div>
       </div>
       {agentQuestion ? (
         <div className="llm-question-overlay">
@@ -222,14 +292,7 @@ export function LlmChat(state: UseAppStateResult) {
           <div className="llm-context-controls">
             <div className="llm-mode-wrap">
               <button className="llm-context-mode" onClick={() => setModeMenuOpen(!modeMenuOpen)}>{mode}模式⌄</button>
-              {modeMenuOpen ? (
-                <div className="llm-mode-menu">
-                  {(["受限", "标准", "完全访问"] as const).map((m) => {
-                    const map: Record<string, "restricted" | "standard" | "full"> = { "受限": "restricted", "标准": "standard", "完全访问": "full" };
-                    return <button key={m} onClick={() => { selectMode(map[m]); setModeMenuOpen(false); }}>{m}</button>;
-                  })}
-                </div>
-              ) : null}
+              {modeMenuHtml}
             </div>
             <button className="llm-context-network" onClick={toggleNetwork}>{networkEnabled ? "联网检索模式" : "离线"}</button>
           </div>

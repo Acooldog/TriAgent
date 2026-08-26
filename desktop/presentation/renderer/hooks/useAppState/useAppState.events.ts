@@ -117,7 +117,7 @@ function handleWorkerEvent(args: { deps: WorkerEventDeps; eventType: string; pay
       const taskId = String(event.task_id ?? "");
       deps.setToolEvents([]);
       deps.setAgentSegments([]);
-      deps.setAgentMessages((prev) => [...prev, { role: "notice", text: "Agent 已启动，正在连接模型和加载工具..." }]);
+      deps.setAgentMessages((prev) => [...prev, { role: "notice", text: "Agent 已启动，正在连接模型和加载工具...", createdAt: Date.now() }]);
       if (taskId) {
         deps.setAgentMessages((prev) => {
           const userMsg = prev.find((m) => m.role === "user");
@@ -141,7 +141,7 @@ function handleWorkerEvent(args: { deps: WorkerEventDeps; eventType: string; pay
     }
     case "agent_ready": {
       const tools = Array.isArray(payload.tools) ? (payload.tools as string[]) : [];
-      deps.setAgentMessages((prev) => [...prev, { role: "notice", text: `已加载 ${tools.length} 个工具: ${tools.join(", ")}` }]);
+      deps.setAgentMessages((prev) => [...prev, { role: "notice", text: `已加载 ${tools.length} 个工具: ${tools.join(", ")}`, createdAt: Date.now() }]);
       break;
     }
     case "agent_tool_call": {
@@ -151,6 +151,15 @@ function handleWorkerEvent(args: { deps: WorkerEventDeps; eventType: string; pay
       const elapsedSec = Number(payload.elapsed_sec ?? 0);
       const step = Number(payload.step ?? 0);
       const hasResult = toolResult && toolResult !== "执行中...";
+
+      // --- Close any lingering running thinking segments (思考结束 → 开始调工具) ---
+      deps.setAgentSegments((prev) =>
+        prev.map((s) =>
+          s.type === "thinking" && s.status === "running"
+            ? { ...s, status: "done" as const, finishedAt: Date.now() }
+            : s
+        )
+      );
 
       // --- ToolEvent (for ExecutionPanel compatibility) ---
       deps.setToolEvents((prev) => {
@@ -212,14 +221,14 @@ function handleWorkerEvent(args: { deps: WorkerEventDeps; eventType: string; pay
     case "agent_step_failed": {
       const errorMsg = String(payload.error ?? "未知错误");
       deps.setToolEvents((prev) => prev.map((t) => t.status === "running" ? { ...t, status: "error" as const, detail: `失败: ${errorMsg}` } : t));
-      deps.setAgentMessages((prev) => [...prev, { role: "error", text: `工具执行失败: ${errorMsg}` }]);
+      deps.setAgentMessages((prev) => [...prev, { role: "error", text: `工具执行失败: ${errorMsg}`, createdAt: Date.now() }]);
       break;
     }
     case "agent_message": {
       const content = String(payload.content ?? "");
       if (content) {
         const isToolAction = deps.toolActionPattern.test(content);
-        deps.setAgentMessages((prev) => [...prev, { role: (isToolAction ? "notice" : "assistant") as LlmMessage["role"], text: content }]);
+        deps.setAgentMessages((prev) => [...prev, { role: (isToolAction ? "notice" : "assistant") as LlmMessage["role"], text: content, createdAt: Date.now() }]);
         // Thinking/progress messages → create thinking segment (only if it looks like planning/thinking text)
         if (String(payload.kind ?? "") === "progress" || (!isToolAction && content.length < 200)) {
           deps.setAgentSegments((prev) => {
@@ -262,7 +271,7 @@ function handleWorkerEvent(args: { deps: WorkerEventDeps; eventType: string; pay
       deps.agentTaskIdRef.current = null;
       if (finalStatus !== "completed") {
         const errMsg = String(event.error?.message ?? "Agent 执行失败");
-        deps.setAgentMessages((prev) => [...prev, { role: "error", text: errMsg }]);
+        deps.setAgentMessages((prev) => [...prev, { role: "error", text: errMsg, createdAt: Date.now() }]);
       }
       deps.showToast(finalStatus === "completed" ? "Agent 任务已完成" : `任务失败: ${finalStatus}`);
       deps.setAgentMessages((prev) => {
@@ -290,7 +299,7 @@ function handleWorkerEvent(args: { deps: WorkerEventDeps; eventType: string; pay
     }
     case "agent_error": {
       const errMsg = String(payload.error ?? "未知错误");
-      deps.setAgentMessages((prev) => [...prev, { role: "error", text: `Agent 错误: ${errMsg}` }]);
+      deps.setAgentMessages((prev) => [...prev, { role: "error", text: `Agent 错误: ${errMsg}`, createdAt: Date.now() }]);
       break;
     }
     case "agent_warning": {

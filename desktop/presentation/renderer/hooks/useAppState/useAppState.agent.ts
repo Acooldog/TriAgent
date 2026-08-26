@@ -90,7 +90,7 @@ export function useAgentState({
 
     if (AGENT_TRIGGER_KEYWORDS.test(userText)) {
       setConversationMode(true);
-      setAgentMessages((prev) => [...prev.filter((m) => m.role !== "notice"), { role: "user", text: userText }]);
+      setAgentMessages((prev) => [...prev.filter((m) => m.role !== "notice"), { role: "user", text: userText, createdAt: Date.now() }]);
       setToolEvents([]);
       setStepIndex(0);
       setProgress(0);
@@ -113,7 +113,7 @@ export function useAgentState({
         const message = err instanceof Error ? err.message : "Agent 启动失败";
         setProcessing(false);
         setTaskStatus("失败");
-        setAgentMessages((prev) => [...prev, { role: "error", text: message }]);
+        setAgentMessages((prev) => [...prev, { role: "error", text: message, createdAt: Date.now() }]);
         showToast(message);
       }
       if (page !== "llm") navigateTo("llm");
@@ -154,7 +154,7 @@ export function useAgentState({
     if (!userText) { showToast("先告诉 Agent 你想处理什么"); return; }
     setPromptText("");
     setConversationMode(true);
-    setAgentMessages((prev) => [...prev.filter((m) => m.role !== "notice"), { role: "user", text: userText }]);
+    setAgentMessages((prev) => [...prev.filter((m) => m.role !== "notice"), { role: "user", text: userText, createdAt: Date.now() }]);
     setToolEvents([]);
     setStepIndex(0);
     setProgress(0);
@@ -177,7 +177,7 @@ export function useAgentState({
       const message = err instanceof Error ? err.message : "Agent 启动失败";
       setProcessing(false);
       setTaskStatus("失败");
-      setAgentMessages((prev) => [...prev, { role: "error", text: message }]);
+      setAgentMessages((prev) => [...prev, { role: "error", text: message, createdAt: Date.now() }]);
       showToast(message);
     }
   }, [promptText, setPromptText, processing, modelConfig, permMode, agentMessages, showToast]);
@@ -213,12 +213,12 @@ export function useAgentState({
     setPromptText("");
     const taskId = agentTaskIdRef.current;
     if (!taskId) { showToast("任务未启动"); return; }
-    setAgentMessages((prev) => [...prev, { role: "user", text: userText }]);
+    setAgentMessages((prev) => [...prev, { role: "user", text: userText, createdAt: Date.now() }]);
     try {
       await window.triMusicAgent.sendWorkerSupplement(taskId, userText);
     } catch (err) {
       const message = err instanceof Error ? err.message : "补充发送失败";
-      setAgentMessages((prev) => [...prev, { role: "error", text: message }]);
+      setAgentMessages((prev) => [...prev, { role: "error", text: message, createdAt: Date.now() }]);
       showToast(message);
     }
   }, [promptText, setPromptText, processing, showToast]);
@@ -229,12 +229,12 @@ export function useAgentState({
     const taskId = agentTaskIdRef.current;
     if (!taskId) { showToast("任务未启动"); setAgentQuestion(null); return; }
     setAgentQuestion(null);
-    setAgentMessages((prev) => [...prev, { role: "user", text: answer }]);
+    setAgentMessages((prev) => [...prev, { role: "user", text: answer, createdAt: Date.now() }]);
     try {
       await window.triMusicAgent.sendWorkerAnswer(taskId, q.questionId, answer);
     } catch (err) {
       const message = err instanceof Error ? err.message : "回答发送失败";
-      setAgentMessages((prev) => [...prev, { role: "error", text: message }]);
+      setAgentMessages((prev) => [...prev, { role: "error", text: message, createdAt: Date.now() }]);
       showToast(message);
     }
   }, [agentQuestion, showToast]);

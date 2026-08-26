@@ -44,77 +44,81 @@ export function AgentExecutionSegments({ segments }: Props) {
   };
 
   return (
-    <div className="agent-execution-segments" style={{ margin: "12px 0" }}>
+    <div className="agent-execution-segments" style={{ margin: "8px 0" }}>
       <style>{`
         .agent-segment {
           border-radius: 8px;
-          margin-bottom: 6px;
+          margin-bottom: 4px;
           overflow: hidden;
-          border-left: 3px solid #6366f1;
-          background: rgba(99,102,241,0.04);
+          border-left: 2px solid #475569;
+          background: rgba(71,85,105,0.08);
           transition: all 0.3s ease;
+        }
+        .agent-segment.status-running {
+          border-left-color: #94a3b8;
+          background: rgba(148,163,184,0.08);
         }
         .agent-segment.status-done {
           border-left-color: #22c55e;
-          background: rgba(34,197,94,0.05);
+          background: rgba(34,197,94,0.06);
         }
         .agent-segment.status-done .agent-segment-title-text {
-          color: #64748b;
+          color: #94a3b8;
           font-weight: 500;
         }
         .agent-segment.status-error {
           border-left-color: #ef4444;
-          background: rgba(239,68,68,0.05);
+          background: rgba(239,68,68,0.06);
         }
         .agent-segment-header {
           display: flex;
           align-items: center;
           gap: 8px;
-          padding: 8px 12px;
+          padding: 6px 12px;
           cursor: pointer;
           user-select: none;
           transition: background 0.15s;
-          font-size: 13px;
+          font-size: 12px;
         }
         .agent-segment-header:hover {
-          background: rgba(255,255,255,0.05);
+          background: rgba(255,255,255,0.04);
         }
         .agent-segment-icon {
-          font-size: 15px;
+          font-size: 14px;
           flex-shrink: 0;
         }
         .agent-segment-title-text {
           flex: 1;
-          font-weight: 600;
-          color: #e2e8f0;
-          font-size: 13px;
+          font-weight: 500;
+          color: #cbd5e1;
+          font-size: 12px;
         }
         .agent-segment-status {
           font-size: 11px;
-          opacity: 0.6;
+          opacity: 0.55;
         }
         .agent-segment-toggle {
-          font-size: 14px;
+          font-size: 12px;
           transition: transform 0.2s;
-          opacity: 0.5;
+          opacity: 0.4;
         }
         .agent-segment-toggle.expanded {
           transform: rotate(90deg);
         }
         .agent-segment-body {
-          max-height: 260px;
+          max-height: 200px;
           overflow-y: auto;
-          padding: 0 12px 10px 12px;
+          padding: 0 12px 8px 12px;
           font-size: 12px;
-          line-height: 1.55;
-          color: #cbd5e1;
+          line-height: 1.5;
+          color: #94a3b8;
           white-space: pre-wrap;
           word-break: break-word;
-          animation: segmentOpen 0.25s ease-out;
+          animation: segmentOpen 0.2s ease-out;
         }
         @keyframes segmentOpen {
           from { opacity: 0; transform: translateY(-4px); max-height: 0; }
-          to { opacity: 1; transform: translateY(0); max-height: 260px; }
+          to { opacity: 1; transform: translateY(0); max-height: 200px; }
         }
         .agent-segment.status-running .agent-segment-icon {
           animation: segmentPulse 1.5s ease-in-out infinite;
