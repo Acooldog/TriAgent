@@ -30,6 +30,7 @@ import { SystemDiagnosticsGateway } from "../infrastructure/systemDiagnostics";
 import { FileSystemWorkspaceRepository } from "../infrastructure/workspaceRepository";
 import { registerIpc, type IpcContext } from "./ipcHandlers";
 import { debugError, debugInfo } from "../application/debugLogger";
+import { configureAppUserModelId, notifyTaskOutcome } from "../application/taskNotifier";
 
 let mainWindow: BrowserWindow | null = null;
 let workspaceService: WorkspaceService;
@@ -115,6 +116,7 @@ async function checkWorkerHealth(): Promise<boolean> {
 }
 
 async function bootstrap(): Promise<void> {
+  configureAppUserModelId();
   settingsRepo = settingsRepository();
   appSettings = await settingsRepo.load();
   debugInfo("settings", "loaded", { workspaceRoot: appSettings.workspace.workspaceRoot, hasModelConfig: Boolean(appSettings.model.defaultConfig.baseUrl) });

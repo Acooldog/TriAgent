@@ -17,6 +17,8 @@ export interface WorkerRunHandle {
 export interface WorkerRunner {
   start(request: WorkerStartRequest, onEvent: (event: WorkerEvent) => void, timeoutMs?: number): WorkerRunHandle;
   cancel(taskId: string): boolean;
+  sendSupplement(taskId: string, text: string): boolean;
+  sendAnswer(taskId: string, questionId: string, answer: string): boolean;
 }
 
 export interface WorkerTaskOptions {
@@ -26,7 +28,7 @@ export interface WorkerTaskOptions {
 }
 
 export class WorkerService {
-  public constructor(private readonly runner: WorkerRunner, private readonly createId: () => string = randomUUID) {}
+  public constructor(private readonly runner: WorkerRunner, private readonly createId: () => string = randomUUID) { }
 
   public start(operation: WorkerOperation, payload: Record<string, unknown>, onEvent: (event: WorkerEvent) => void, options: WorkerTaskOptions = {}): WorkerRunHandle {
     const taskId = options.taskId ?? this.createId();
@@ -44,5 +46,13 @@ export class WorkerService {
 
   public cancel(taskId: string): boolean {
     return this.runner.cancel(taskId);
+  }
+
+  public sendSupplement(taskId: string, text: string): boolean {
+    return this.runner.sendSupplement(taskId, text);
+  }
+
+  public sendAnswer(taskId: string, questionId: string, answer: string): boolean {
+    return this.runner.sendAnswer(taskId, questionId, answer);
   }
 }

@@ -1,7 +1,7 @@
 import { spawn, type SpawnOptions } from "node:child_process";
 import type { Readable } from "node:stream";
 import { StringDecoder } from "node:string_decoder";
-import { buildCancelRequest, isTerminalWorkerEvent, parseWorkerEvent, type WorkerEvent, type WorkerStartRequest } from "../application/workerProtocol";
+import { buildAnswerRequest, buildCancelRequest, buildSupplementRequest, isTerminalWorkerEvent, parseWorkerEvent, type WorkerEvent, type WorkerStartRequest } from "../application/workerProtocol";
 import type { WorkerCompletion, WorkerRunHandle, WorkerRunner } from "../application/workerService";
 import { debugError, debugInfo } from "../application/debugLogger";
 
@@ -95,6 +95,22 @@ export class PythonWorkerClient implements WorkerRunner {
     active.cancellationRequested = true;
     try { active.process.stdin.write(`${JSON.stringify(buildCancelRequest(active.request))}\n`); } catch { this.kill(active); }
     setTimeout(() => { if (!active.settled) this.kill(active); }, this.cancelGraceMs);
+    return true;
+  }
+
+  public sendSupplement(taskId: string, text: string): boolean {
+    debugInfo("worker", "supplement-request", { taskId, textPreview: text.slice(0, 80) });
+    const active = this.active.get(taskId);
+    if (!active || active.settled) return false;
+    try { active.process.stdin.write(`${JSON.stringify(buildSupplementRequest(active.request, text))}\n`); } catch (error) { debugError("worker", "supplement-write-failed", error instanceof Error ? error : undefined, { taskId }); return false; }
+    return true;
+  }
+
+  public sendAnswer(taskId: string, questionId: string, answer: string): boolean {
+    debugInfo("worker", "answer-request", { taskId, questionId, answerPreview: answer.slice(0, 80) });
+    const active = this.active.get(taskId);
+    if (!active || active.settled) return false;
+    try { active.process.stdin.write(`${JSON.stringify(buildAnswerRequest(active.request, questionId, answer))}\n`); } catch (error) { debugError("worker", "answer-write-failed", error instanceof Error ? error : undefined, { taskId, questionId }); return false; }
     return true;
   }
 

@@ -26,6 +26,23 @@ export interface WorkerCancelRequest {
   task_id: string;
 }
 
+export interface WorkerSupplementRequest {
+  protocol_version: typeof WORKER_PROTOCOL_VERSION;
+  command: "supplement";
+  request_id: string;
+  task_id: string;
+  text: string;
+}
+
+export interface WorkerAnswerRequest {
+  protocol_version: typeof WORKER_PROTOCOL_VERSION;
+  command: "user_answer";
+  request_id: string;
+  task_id: string;
+  question_id: string;
+  answer: string;
+}
+
 export interface WorkerEvent {
   protocol_version: typeof WORKER_PROTOCOL_VERSION;
   request_id: string;
@@ -60,6 +77,14 @@ export function parseWorkerEvent(line: string): WorkerEvent {
 
 export function buildCancelRequest(request: Pick<WorkerStartRequest, "request_id" | "task_id">): WorkerCancelRequest {
   return { protocol_version: WORKER_PROTOCOL_VERSION, command: "cancel", request_id: request.request_id, task_id: request.task_id };
+}
+
+export function buildSupplementRequest(request: Pick<WorkerStartRequest, "request_id" | "task_id">, text: string): WorkerSupplementRequest {
+  return { protocol_version: WORKER_PROTOCOL_VERSION, command: "supplement", request_id: request.request_id, task_id: request.task_id, text };
+}
+
+export function buildAnswerRequest(request: Pick<WorkerStartRequest, "request_id" | "task_id">, questionId: string, answer: string): WorkerAnswerRequest {
+  return { protocol_version: WORKER_PROTOCOL_VERSION, command: "user_answer", request_id: request.request_id, task_id: request.task_id, question_id: questionId, answer };
 }
 
 export function isTerminalWorkerEvent(event: WorkerEvent): boolean {

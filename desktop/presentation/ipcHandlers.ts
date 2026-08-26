@@ -24,6 +24,7 @@ import { debugError, debugInfo } from "../application/debugLogger";
 import { createRendererEventPublisher } from "./rendererEventPublisher";
 import { createSessionEventRecorder } from "./sessionEventRecorder";
 import { createWorkerSessionLog } from "./workerSessionLog";
+import { notifyTaskOutcome, type TaskOutcome } from "../application/taskNotifier";
 
 export interface IpcContext {
   mainWindow: BrowserWindow | null;
@@ -66,6 +67,12 @@ export function registerIpc(ctx: IpcContext): void {
     const context = activeTaskContexts.get(event.task_id);
     publishRendererEvent("worker:event", event);
     persistEvent("worker", event.event_type, { payload: event.payload, error: event.error }, { status: event.status, taskId: event.task_id, requestId: event.request_id }, context, createWorkerSessionLog(event));
+    if (event.event_type === "agent_finished") {
+      const rawStatus = String(event.payload.status ?? event.status ?? "");
+      const outcome: TaskOutcome = rawStatus === "completed" ? "completed" : rawStatus === "cancelled" ? "cancelled" : rawStatus === "timeout" ? "timeout" : "failed";
+      const summary = typeof event.payload.response_preview === "string" ? event.payload.response_preview : undefined;
+      try { notifyTaskOutcome(outcome, summary); } catch (error) { debugError("worker-ipc", "notify-failed", error instanceof Error ? error : undefined, { taskId: event.task_id, outcome }); }
+    }
     if (event.event_type === "worker_finished" || event.status === "failed" || event.status === "cancelled") {
       persistTask(event.task_id, event.status === "cancelled" ? "stopped" : event.status, event.request_id, event.error ?? undefined, context);
       activeTaskContexts.delete(event.task_id);
@@ -149,6 +156,8 @@ export function registerIpc(ctx: IpcContext): void {
   });
 
   ipcMain.handle("worker:cancel", (_event, taskId: unknown) => { debugInfo("worker-ipc", "cancel-request", { taskId }); if (typeof taskId !== "string") return false; const cancelled = workerService.cancel(taskId); if (cancelled) persistTask(taskId, "stopped", undefined, { code: "cancelled", message: "用户已取消任务。" }, activeTaskContexts.get(taskId)); return cancelled; });
+  ipcMain.handle("worker:supplement", (_event, taskId: unknown, text: unknown) => { debugInfo("worker-ipc", "supplement-request", { taskId, textPreview: typeof text === "string" ? text.slice(0, 80) : undefined }); if (typeof taskId !== "string" || typeof text !== "string" || !text.trim()) return false; return workerService.sendSupplement(taskId, text); });
+  ipcMain.handle("worker:answer", (_event, taskId: unknown, questionId: unknown, answer: unknown) => { debugInfo("worker-ipc", "answer-request", { taskId, questionId, answerPreview: typeof answer === "string" ? answer.slice(0, 80) : undefined }); if (typeof taskId !== "string" || typeof questionId !== "string" || typeof answer !== "string" || !answer.trim()) return false; return workerService.sendAnswer(taskId, questionId, answer); });
   ipcMain.handle("model:stream", async (_event, config: unknown, messages: unknown, permissionMode: unknown, networkEnabled: unknown) => {
     debugInfo("model-ipc", "stream-request", { model: isRecordValue(config) ? config.model : undefined, baseUrl: isRecordValue(config) ? config.baseUrl : undefined, messageCount: Array.isArray(messages) ? messages.length : 0, permissionMode, networkEnabled, apiKeyConfigured: isRecordValue(config) && typeof config.apiKey === "string" && config.apiKey.length > 0 });
     if (!isModelConfig(config) || !Array.isArray(messages) || !messages.every(isChatMessage)) throw new Error("模型配置或消息格式无效。");
