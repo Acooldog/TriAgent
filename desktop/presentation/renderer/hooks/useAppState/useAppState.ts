@@ -80,6 +80,7 @@ export function useAppState() {
     showToast,
     toolActionPattern: TOOL_ACTION_PATTERN,
     promptText,
+    setPromptText,
     navigateTo,
   });
 

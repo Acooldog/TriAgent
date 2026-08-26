@@ -18,6 +18,7 @@ interface UseAgentStateOptions {
   showToast: (msg: string) => void;
   toolActionPattern: RegExp;
   promptText: string;
+  setPromptText: (text: string) => void;
   navigateTo: (target: Page) => void;
 }
 
@@ -29,6 +30,7 @@ export function useAgentState({
   showToast,
   toolActionPattern,
   promptText,
+  setPromptText,
   navigateTo,
 }: UseAgentStateOptions) {
   // --- LLM streaming state ---
@@ -84,6 +86,7 @@ export function useAgentState({
   const sendPrompt = useCallback(async () => {
     const userText = promptText.trim();
     if (!userText) { showToast("先告诉 TriMusicAgent 你的想法"); return; }
+    setPromptText("");
 
     if (AGENT_TRIGGER_KEYWORDS.test(userText)) {
       setConversationMode(true);
@@ -142,13 +145,14 @@ export function useAgentState({
       setLlmMessages((prev) => [...prev, { role: "error", text: message }]);
       showToast(message);
     }
-  }, [promptText, modelConfig, permMode, netEnabled, showToast, page, agentMessages, llmMessages, navigateTo]);
+  }, [promptText, setPromptText, modelConfig, permMode, netEnabled, showToast, page, agentMessages, llmMessages, navigateTo]);
 
   // --- Agent worker operations ---
   const startProcessing = useCallback(async () => {
     if (processing) { showToast("任务已经在处理中"); return; }
     const userText = promptText.trim();
     if (!userText) { showToast("先告诉 Agent 你想处理什么"); return; }
+    setPromptText("");
     setConversationMode(true);
     setAgentMessages((prev) => [...prev.filter((m) => m.role !== "notice"), { role: "user", text: userText }]);
     setToolEvents([]);
@@ -176,7 +180,7 @@ export function useAgentState({
       setAgentMessages((prev) => [...prev, { role: "error", text: message }]);
       showToast(message);
     }
-  }, [promptText, processing, modelConfig, permMode, agentMessages, showToast]);
+  }, [promptText, setPromptText, processing, modelConfig, permMode, agentMessages, showToast]);
 
   const stopProcessing = useCallback(async () => {
     const taskId = agentTaskIdRef.current;
@@ -206,6 +210,7 @@ export function useAgentState({
     if (!processing) { showToast("任务未在运行"); return; }
     const userText = promptText.trim();
     if (!userText) { showToast("先输入补充内容"); return; }
+    setPromptText("");
     const taskId = agentTaskIdRef.current;
     if (!taskId) { showToast("任务未启动"); return; }
     setAgentMessages((prev) => [...prev, { role: "user", text: userText }]);
@@ -216,7 +221,7 @@ export function useAgentState({
       setAgentMessages((prev) => [...prev, { role: "error", text: message }]);
       showToast(message);
     }
-  }, [promptText, processing, showToast]);
+  }, [promptText, setPromptText, processing, showToast]);
 
   const answerAgentQuestion = useCallback(async (answer: string) => {
     const q = agentQuestion;
