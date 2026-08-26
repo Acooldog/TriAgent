@@ -228,11 +228,28 @@ function handleWorkerEvent(args: { deps: WorkerEventDeps; eventType: string; pay
       const content = String(payload.content ?? "");
       if (content) {
         const isToolAction = deps.toolActionPattern.test(content);
-        deps.setAgentMessages((prev) => [...prev, { role: (isToolAction ? "notice" : "assistant") as LlmMessage["role"], text: content, createdAt: Date.now() }]);
-        // Thinking/progress messages → create thinking segment (only if it looks like planning/thinking text)
-        if (String(payload.kind ?? "") === "progress" || (!isToolAction && content.length < 200)) {
+        const isNotice = isToolAction || String(payload.kind ?? "") === "progress";
+
+        // assistant 消息：更新最后一条（如果是 assistant），避免 LangGraph 分 chunk 发导致前端碎片
+        // notice 消息：追加（一次性事件通知）
+        deps.setAgentMessages((prev) => {
+          if (!isNotice) {
+            // 尝试更新最后一条 assistant 消息
+            const last = prev[prev.length - 1];
+            if (last && last.role === "assistant") {
+              const updated = [...prev];
+              updated[prev.length - 1] = { ...last, text: content, createdAt: Date.now() };
+              return updated;
+            }
+          }
+          // 追加新消息
+          return [...prev, { role: (isNotice ? "notice" : "assistant") as LlmMessage["role"], text: content, createdAt: Date.now() }];
+        });
+
+        // Thinking segment：只在 kind=progress（工具动作通知）时创建
+        // 正常 assistant 输出不需要思考卡片（API 没开深度思考）
+        if (String(payload.kind ?? "") === "progress" && !isToolAction) {
           deps.setAgentSegments((prev) => {
-            // Merge consecutive thinking segments by appending content to last one
             const last = prev[prev.length - 1];
             if (last && last.type === "thinking" && last.status === "running") {
               const updated = [...prev];

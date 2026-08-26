@@ -4,7 +4,7 @@
  * handlers. It is consumed by useAppState.ts which spreads its results
  * into the final return object.
  */
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import type { PermissionMode } from "../../../../application/tools/toolProtocol";
 import type { ModelConfig } from "../../../../application/model/modelProtocol";
 import { AGENT_TRIGGER_KEYWORDS } from "./useAppState.helpers";
@@ -20,6 +20,8 @@ interface UseAgentStateOptions {
   promptText: string;
   setPromptText: (text: string) => void;
   navigateTo: (target: Page) => void;
+  setAgentSegments: Dispatch<SetStateAction<import("./useAppState.types").AgentSegment[]>>;
+  setBatchProgress: Dispatch<SetStateAction<import("./useAppState.types").BatchProgressState>>;
 }
 
 export function useAgentState({
@@ -32,6 +34,8 @@ export function useAgentState({
   promptText,
   setPromptText,
   navigateTo,
+  setAgentSegments,
+  setBatchProgress,
 }: UseAgentStateOptions) {
   // --- LLM streaming state ---
   const [llmMessages, setLlmMessages] = useState<LlmMessage[]>([]);
@@ -90,7 +94,13 @@ export function useAgentState({
 
     if (AGENT_TRIGGER_KEYWORDS.test(userText)) {
       setConversationMode(true);
-      setAgentMessages((prev) => [...prev.filter((m) => m.role !== "notice"), { role: "user", text: userText, createdAt: Date.now() }]);
+      // 同上：清空上一个会话
+      setAgentMessages([{ role: "user", text: userText, createdAt: Date.now() }]);
+      setAgentSegments([]);
+      setBatchProgress({
+        active: false, kind: "generic", totalCount: 0, currentIndex: 0, currentProgress: 0,
+        successCount: 0, skippedCount: 0, failedCount: 0, finished: false,
+      });
       setToolEvents([]);
       setStepIndex(0);
       setProgress(0);
@@ -99,12 +109,9 @@ export function useAgentState({
       showToast("检测到音乐处理请求，正在启动 Agent...");
       const modelCfg = buildModelCfg(modelConfig);
       try {
-        const history = agentMessages
-          .filter((m) => m.role === "user" || m.role === "assistant")
-          .map((m) => ({ role: m.role, content: m.text }));
         const result = await window.triMusicAgent.startWorker(
           "agent",
-          { message: userText, model_config: modelCfg, max_iterations: 40, conversation_history: history },
+          { message: userText, model_config: modelCfg, max_iterations: 40, conversation_history: [] },
           permMode
         );
         agentTaskIdRef.current = result.taskId;
@@ -154,21 +161,25 @@ export function useAgentState({
     if (!userText) { showToast("先告诉 Agent 你想处理什么"); return; }
     setPromptText("");
     setConversationMode(true);
-    setAgentMessages((prev) => [...prev.filter((m) => m.role !== "notice"), { role: "user", text: userText, createdAt: Date.now() }]);
+    // 清空上一个会话的所有状态，确保新任务干净开始
+    setAgentMessages([{ role: "user", text: userText, createdAt: Date.now() }]);
+    setAgentSegments([]);
     setToolEvents([]);
+    setBatchProgress({
+      active: false, kind: "generic", totalCount: 0, currentIndex: 0, currentProgress: 0,
+      successCount: 0, skippedCount: 0, failedCount: 0, finished: false,
+    });
     setStepIndex(0);
     setProgress(0);
     setProcessing(true);
     setTaskStatus("连接中");
     showToast("正在启动 Agent...");
     const modelCfg = buildModelCfg(modelConfig);
-    const history = agentMessages
-      .filter((m) => m.role === "user" || m.role === "assistant")
-      .map((m) => ({ role: m.role, content: m.text }));
+    // 新任务不带任何历史上下文（conversation_history 为空数组）
     try {
       const result = await window.triMusicAgent.startWorker(
         "agent",
-        { message: userText, model_config: modelCfg, max_iterations: 15, conversation_history: history },
+        { message: userText, model_config: modelCfg, max_iterations: 15, conversation_history: [] },
         permMode
       );
       agentTaskIdRef.current = result.taskId;
@@ -180,7 +191,7 @@ export function useAgentState({
       setAgentMessages((prev) => [...prev, { role: "error", text: message, createdAt: Date.now() }]);
       showToast(message);
     }
-  }, [promptText, setPromptText, processing, modelConfig, permMode, agentMessages, showToast]);
+  }, [promptText, setPromptText, processing, modelConfig, permMode, showToast]);
 
   const stopProcessing = useCallback(async () => {
     const taskId = agentTaskIdRef.current;

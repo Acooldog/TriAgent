@@ -42,7 +42,7 @@ export function handleBatchEvent(
         currentIndex: idx,
         currentProgress: 0,
         currentFile: String(payload.input_path ?? "").split(/[\\/]/).pop() || "",
-        currentStage: "decrypting",
+        currentStage: prev.kind === "transcode" ? "transcoding" : "decrypting",
         totalCount: total || prev.totalCount,
       }));
       break;

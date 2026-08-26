@@ -87,6 +87,8 @@ export function useAppState() {
     promptText,
     setPromptText,
     navigateTo,
+    setAgentSegments,
+    setBatchProgress,
   });
 
   // --- Settings hydration ---
