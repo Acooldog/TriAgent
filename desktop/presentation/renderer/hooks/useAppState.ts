@@ -27,6 +27,7 @@ export interface HistoryItem {
   success: number;
   failed: number;
   status: string;
+  messages?: LlmMessage[];
 }
 
 export interface LlmMessage {
@@ -272,6 +273,28 @@ export function useAppState() {
           setAgentMessages((prev) => [...prev, { role: "error", text: errMsg }]);
         }
         showToast(finalStatus === "completed" ? "Agent 任务已完成" : `任务失败: ${finalStatus}`);
+
+        // 保存到历史记录，支持会话恢复
+        setAgentMessages((prev) => {
+          const currentMessages = [...prev];
+          setHistory((h) => {
+            const title = currentMessages.find((m) => m.role === "user")?.text?.slice(0, 40) || "未命名任务";
+            const newItem: HistoryItem = {
+              id: `hist_${Date.now()}`,
+              title,
+              date: new Date().toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }),
+              total: 0,
+              time: "",
+              success: finalStatus === "completed" ? 1 : 0,
+              failed: finalStatus === "failed" ? 1 : 0,
+              status: finalStatus === "completed" ? "成功" : finalStatus === "cancelled" ? "已停止" : "失败",
+              messages: currentMessages,
+            };
+            console.info("[useAppState] saved to history:", newItem);
+            return [newItem, ...h];
+          });
+          return currentMessages;
+        });
       } else if (eventType === "agent_error") {
         const errMsg = String(payload.error ?? "未知错误");
         setAgentMessages((prev) => [...prev, { role: "error", text: `Agent 错误: ${errMsg}` }]);
@@ -393,7 +416,8 @@ export function useAppState() {
     if (AGENT_TRIGGER_KEYWORDS.test(userText)) {
       setPromptText("");
       setConversationMode(true);
-      setAgentMessages([{ role: "user", text: userText }]);
+      // 保留之前的对话历史，追加新的用户消息
+      setAgentMessages((prev) => [...prev.filter((m) => m.role !== "notice"), { role: "user", text: userText }]);
       setToolEvents([]);
       setStepIndex(0);
       setProgress(0);
@@ -410,9 +434,13 @@ export function useAppState() {
       };
 
       try {
+        const historyMessages = agentMessages
+          .filter((m) => m.role === "user" || m.role === "assistant")
+          .map((m) => ({ role: m.role, content: m.text }));
+
         const result = await window.triMusicAgent.startWorker(
           "agent",
-          { message: userText, model_config: modelCfg, max_iterations: 15 },
+          { message: userText, model_config: modelCfg, max_iterations: 15, conversation_history: historyMessages },
           permMode
         );
         agentTaskIdRef.current = result.taskId;
@@ -457,7 +485,7 @@ export function useAppState() {
       setLlmMessages((prev) => [...prev, { role: "error", text: message }]);
       showToast(message);
     }
-  }, [promptText, modelConfig, permMode, netEnabled, showToast, llmMessages]);
+  }, [promptText, modelConfig, permMode, netEnabled, showToast, llmMessages, agentMessages]);
 
   const submitFromDashboard = useCallback((text: string) => {
     if (!text.trim()) { showToast("先告诉 TriMusicAgent 你的想法"); return; }
@@ -497,7 +525,9 @@ export function useAppState() {
     const userText = promptText.trim();
     setConversationMode(true);
     setPromptText("");
-    setAgentMessages([{ role: "user", text: userText }]);
+
+    // 保留之前的对话历史，追加新的用户消息
+    setAgentMessages((prev) => [...prev.filter((m) => m.role !== "notice"), { role: "user", text: userText }]);
     setToolEvents([]);
     setStepIndex(0);
     setProgress(0);
@@ -513,10 +543,15 @@ export function useAppState() {
       max_tokens: modelConfig.maxTokens ?? 4096,
     };
 
+    // 收集对话历史作为上下文传递给后端
+    const historyMessages = agentMessages
+      .filter((m) => m.role === "user" || m.role === "assistant")
+      .map((m) => ({ role: m.role, content: m.text }));
+
     try {
       const result = await window.triMusicAgent.startWorker(
         "agent",
-        { message: userText, model_config: modelCfg, max_iterations: 15 },
+        { message: userText, model_config: modelCfg, max_iterations: 15, conversation_history: historyMessages },
         permMode
       );
       agentTaskIdRef.current = result.taskId;
@@ -529,7 +564,7 @@ export function useAppState() {
       setAgentMessages((prev) => [...prev, { role: "error", text: message }]);
       showToast(message);
     }
-  }, [processing, promptText, showToast, modelConfig, permMode]);
+  }, [processing, promptText, showToast, modelConfig, permMode, agentMessages]);
 
   const stopProcessing = useCallback(async () => {
     const taskId = agentTaskIdRef.current;
@@ -542,6 +577,22 @@ export function useAppState() {
     setProcessing(false);
     setTaskStatus("已停止");
     showToast("任务已停止");
+  }, [showToast]);
+
+  const stopLlmStreaming = useCallback(async () => {
+    const requestId = llmRequestIdRef.current;
+    if (requestId) {
+      try {
+        await window.triMusicAgent.cancelModel(requestId);
+        console.info("[useAppState] llm streaming cancelled:", requestId);
+      } catch { /* ignore cancel errors */ }
+    }
+    setLlmStreaming(null);
+    setLlmThinking(false);
+    llmTextRef.current = "";
+    llmReasoningRef.current = "";
+    llmRequestIdRef.current = null;
+    showToast("已打断回复");
   }, [showToast]);
 
   const sendSupplement = useCallback(async () => {
@@ -648,7 +699,7 @@ export function useAppState() {
     saveConfig, testModelConnection,
     sendPrompt, compressContext, submitFromDashboard, dashboardPromptRef,
     resetSettings, createSession,
-    startProcessing, stopProcessing, sendSupplement,
+    startProcessing, stopProcessing, stopLlmStreaming, sendSupplement,
     addFile,
     workspaceRoot,
     resetModel,

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import logging
 import pathlib
@@ -350,7 +350,8 @@ def _maybe_transcode(logger: logging.Logger, input_path: pathlib.Path, target_fo
     if target_format == "auto" or detected_container == "bin" or target_format == detected_container:
         return current_path, detected_container, None
     started = time.perf_counter()
-    target_path = current_path.with_suffix(f".{target_format}")
+    # 使用 parent / name 拼接，避免 with_suffix 对无扩展名路径的错误截断
+    target_path = current_path.parent / f"{current_path.stem}.{target_format}"
     profile_parts: list[str] = []
     if sample_rate_hz:
         profile_parts.append(f"{sample_rate_hz}Hz")

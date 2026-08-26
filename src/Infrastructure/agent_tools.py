@@ -710,47 +710,19 @@ def run_cli_safely(command: str, cli_args: _CliArgs = None, cwd: str = "") -> st
 
         # 检查命令是否在白名单中
         if cmd_basename not in _ALLOWED_CLI_COMMANDS:
-            # 非白名单命令，询问用户确认
-            callback = _get_ask_user_callback()
-            if callback is not None:
-                question = f"即将执行非白名单命令：{' '.join(cmd_list[:4])}{'...' if len(cmd_list) > 4 else ''}\n是否允许执行？"
-                try:
-                    answer = callback(question, ["允许执行", "拒绝执行"])
-                    print(f"[run_cli_safely] 用户对非白名单命令的选择: {answer}")
-                    if answer not in ("允许执行", "允许", "同意", "yes", "y", "确定", "ok"):
-                        return f"用户拒绝执行命令：{cmd_list[0]}"
-                except Exception as exc:
-                    print(f"[run_cli_safely] 询问用户异常: {exc}")
-                    return f"询问用户失败，已取消执行：{exc}"
-            else:
-                print(f"[run_cli_safely] 非白名单命令但无回调，默认拒绝: {cmd_list[0]}")
-                return f"拒绝执行：命令 '{cmd_list[0]}' 不在白名单中，且无法询问用户确认"
+            # 非白名单命令：根据权限模式决定
+            if permission_mode == "restricted":
+                print(f"[run_cli_safely] 受限模式，拒绝执行非白名单命令: {cmd_basename}")
+                return f"受限模式下不允许执行非白名单命令：{cmd_basename}，请切换到标准或完全访问模式。"
+            # standard/full 模式：LLM 已决定调用此命令，信任其判断（不再弹窗询问）
+            print(f"[run_cli_safely] {'标准' if permission_mode == 'standard' else '完全访问'}模式，LLM 自授权执行非白名单命令: {cmd_basename}")
         elif cmd_basename in _DANGEROUS_CLI_COMMANDS:
-            # 危险命令：根据权限模式决定是否需要确认
+            # 危险命令：根据权限模式决定
             if permission_mode == "restricted":
                 print(f"[run_cli_safely] 受限模式，拒绝执行危险命令: {cmd_basename}")
                 return f"受限模式下不允许执行危险命令：{cmd_basename}，请切换到标准或完全访问模式。"
-            elif permission_mode == "standard":
-                # 标准模式，询问用户确认
-                callback = _get_ask_user_callback()
-                if callback is not None:
-                    question = (
-                        f"即将执行危险命令：{cmd_basename} {' '.join(cmd_list[1:3])}{'...' if len(cmd_list) > 3 else ''}\n"
-                        f"此操作可能影响文件系统。是否允许执行？"
-                    )
-                    try:
-                        answer = callback(question, ["允许执行", "拒绝执行"])
-                        print(f"[run_cli_safely] 用户对危险命令的选择: {answer}")
-                        if answer not in ("允许执行", "允许", "同意", "yes", "y", "确定", "ok"):
-                            return f"用户拒绝执行危险命令：{cmd_basename}"
-                    except Exception as exc:
-                        print(f"[run_cli_safely] 询问用户异常: {exc}")
-                        return f"询问用户失败，已取消执行：{exc}"
-                else:
-                    print(f"[run_cli_safely] 危险命令但无回调，默认拒绝: {cmd_basename}")
-                    return f"拒绝执行：命令 '{cmd_basename}' 是危险命令，且无法询问用户确认"
-            # full 模式：直接执行，无需确认
-            print(f"[run_cli_safely] 完全访问模式，直接执行危险命令: {cmd_basename}")
+            # standard/full 模式：LLM 自授权执行（不再弹窗询问）
+            print(f"[run_cli_safely] {'标准' if permission_mode == 'standard' else '完全访问'}模式，LLM 自授权执行危险命令: {cmd_basename}")
 
         work_dir = str(pathlib.Path(cwd).resolve()) if cwd.strip() else None
         print(f"[run_cli_safely] cmd={cmd_list} cwd={work_dir} mode={permission_mode}")

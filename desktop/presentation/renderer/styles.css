@@ -4553,6 +4553,8 @@ select:focus {
     overflow-y: auto;
     overscroll-behavior: contain;
     padding-right: 4px;
+    /* 确保滚动容器独立，不会溢出 */
+    contain: content;
 }
 
 .llm-execution-sticky.is-collapsed .llm-execution-events {

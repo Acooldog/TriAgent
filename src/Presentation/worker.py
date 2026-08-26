@@ -221,6 +221,11 @@ def run_agent(payload: dict[str, Any], runtime: WorkerRuntime) -> int:
     model_config.setdefault("base_url", "https://open.bigmodel.cn/api/paas/v4")
     max_iterations = int(payload.get("max_iterations", 15) or 15)
 
+    # 对话历史（用于会话恢复/连续对话）
+    conversation_history = list(payload.get("conversation_history") or [])
+    if conversation_history:
+        runtime.log(f"收到对话历史 {len(conversation_history)} 条，将作为上下文传入")
+
     from src.Infrastructure.agent_progress import build_initial_action_message
     runtime.emit("agent_message", payload={
         "content": build_initial_action_message(user_message),
@@ -285,6 +290,7 @@ def run_agent(payload: dict[str, Any], runtime: WorkerRuntime) -> int:
                 stop_requested=runtime.cancelled.is_set,
                 announce_start=False,
                 consume_supplements=runtime.drain_supplements,
+                conversation_history=conversation_history,
             )
         runtime.log(f"Agent 执行完成，结果: status={result.get('status')}, response_len={len(str(result.get('response', '')))}")
 

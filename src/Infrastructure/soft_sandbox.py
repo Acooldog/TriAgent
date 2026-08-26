@@ -45,15 +45,16 @@ class SoftSandbox:
     def add_path(self, path: str | pathlib.Path) -> None:
         """添加授权目录。
 
-        Args:
-            path: 目录路径
+        如果目录不存在会自动创建，确保 Agent 可以授权并使用新目录。
 
-        Raises:
-            ValueError: 路径不存在或不是目录
+        Args:
+            path: 目录路径（不存在时自动创建）
         """
         path_obj = pathlib.Path(path).expanduser().resolve()
         if not path_obj.exists():
-            raise ValueError(f"路径不存在: {path_obj}")
+            # 自动创建不存在的目录
+            path_obj.mkdir(parents=True, exist_ok=True)
+            print(f"[SoftSandbox] 自动创建目录: {path_obj}")
         if not path_obj.is_dir():
             raise ValueError(f"路径不是目录: {path_obj}")
         with self._lock:

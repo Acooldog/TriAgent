@@ -70,7 +70,7 @@ export function LlmChat(state: UseAppStateResult) {
     conversationMode, setConversationMode, routeBack, executionCollapsed, setExecutionCollapsed,
     progress, toolEvents, contextUsage, toggleNetwork, selectMode,
     sendPrompt, attachedPaths, setAttachedPaths, llmRetry,
-    stopProcessing, dashboardPromptRef, startProcessing, sendSupplement, answerAgentQuestion, processing,
+    stopProcessing, stopLlmStreaming, dashboardPromptRef, startProcessing, sendSupplement, answerAgentQuestion, processing,
     agentQuestion,
   } = state;
 
@@ -119,6 +119,16 @@ export function LlmChat(state: UseAppStateResult) {
   }, []);
 
   const isTaskMode = conversationMode;
+  const hasInput = !!promptText.trim();
+
+  // 发送/中断按钮逻辑：
+  // - 任务模式 + 处理中 + 无输入 → 中断按钮（停止任务）
+  // - 任务模式 + 处理中 + 有输入 → 发送按钮（发送补充信息）
+  // - 任务模式 + 未处理 → 发送按钮（启动任务）
+  // - 对话模式 + 流式回复中 → 中断按钮（打断回复）
+  // - 对话模式 + 无流式回复 → 发送按钮
+  const isInterrupt = isTaskMode ? (processing && !hasInput) : !!llmStreaming;
+  const sendLabel = isInterrupt ? "■" : "↑";
 
   const esc = (s: string): string => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt", '"': "&quot;", "'": "&#39;" }[c]!));
 
@@ -242,14 +252,19 @@ export function LlmChat(state: UseAppStateResult) {
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
+              console.info("[LlmChat] enter-key:", { isTaskMode, processing, hasInput, llmStreaming });
               if (isTaskMode) {
                 if (processing) {
-                  sendSupplement();
+                  if (hasInput) {
+                    sendSupplement();
+                  } else {
+                    stopProcessing();
+                  }
                 } else {
                   startProcessing();
                 }
               } else if (llmStreaming) {
-                // interrupt
+                stopLlmStreaming();
               } else {
                 sendPrompt();
               }
@@ -280,13 +295,22 @@ export function LlmChat(state: UseAppStateResult) {
           </div>
           <span className="context-meter" style={{ "--usage": `${contextUsage}%` } as React.CSSProperties}><b>{contextUsage}%</b></span>
           <button
-            className={`llm-send ${llmStreaming ? "is-interrupt" : ""}`}
-            aria-label={llmStreaming ? "打断" : "发送"}
+            className={`llm-send ${isInterrupt ? "is-interrupt" : ""}`}
+            aria-label={isInterrupt ? "中断" : "发送"}
             onClick={() => {
+              console.info("[LlmChat] send-click:", { isTaskMode, processing, hasInput, llmStreaming, isInterrupt });
               if (isTaskMode) {
-                startProcessing();
+                if (processing) {
+                  if (hasInput) {
+                    sendSupplement();
+                  } else {
+                    stopProcessing();
+                  }
+                } else {
+                  startProcessing();
+                }
               } else if (llmStreaming) {
-                // interrupt - not implemented in prototype either
+                stopLlmStreaming();
               } else {
                 sendPrompt();
               }

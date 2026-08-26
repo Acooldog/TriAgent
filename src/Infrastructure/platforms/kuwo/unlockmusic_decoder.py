@@ -89,7 +89,9 @@ def decrypt_kwm_file(input_path: pathlib.Path, output_path: pathlib.Path) -> tup
     raw = input_path.read_bytes()
     decrypted = decrypt_kwm_bytes(raw)
     ext = _sniff_audio_ext(decrypted)
-    final_path = output_path.with_suffix(f".{ext}")
+    # 使用 with_name 而非 with_suffix，避免文件名含多个点号时被错误截断
+    # 例如 "G.E.M. 邓紫棋" 不能被 with_suffix 错误处理为 "G.E.M.mp3"
+    final_path = output_path.parent / f"{output_path.name}.{ext}"
     final_path.parent.mkdir(parents=True, exist_ok=True)
     final_path.write_bytes(decrypted)
     return final_path, ext

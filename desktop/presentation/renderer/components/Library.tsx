@@ -1,4 +1,4 @@
-import type { UseAppStateResult } from "../hooks/useAppState";
+import type { UseAppStateResult, HistoryItem } from "../hooks/useAppState";
 
 export function Library(state: UseAppStateResult) {
   const { queue, libraryQuery, setLibraryQuery, libraryPlatform, setLibraryPlatform, libraryFormat, setLibraryFormat, showToast, routeBack } = state;
@@ -46,7 +46,22 @@ export function Library(state: UseAppStateResult) {
 }
 
 export function History(state: UseAppStateResult) {
-  const { history, showToast, routeBack } = state;
+  const { history, showToast, routeBack, setAgentMessages, setConversationMode, navigateTo } = state;
+
+  const viewHistoryItem = (item: HistoryItem) => {
+    console.info("[History] viewing history item:", item.id);
+    setConversationMode(true);
+    if (item.messages && item.messages.length > 0) {
+      // 加载历史会话的完整消息
+      setAgentMessages(item.messages);
+    } else {
+      // 没有存储消息，显示恢复提示
+      setAgentMessages([{ role: "notice" as const, text: `正在恢复历史会话：${item.title}` }]);
+    }
+    navigateTo("llm");
+    showToast(`已恢复会话：${item.title.slice(0, 20)}`);
+  };
+
   return (
     <section className="page">
       <div className="page-heading">
@@ -59,13 +74,17 @@ export function History(state: UseAppStateResult) {
         <input placeholder="搜索任务名称" />
       </div>
       <div className="history-list">
-        {history.map((item) => (
+        {history.length === 0 ? (
+          <div className="empty-state" style={{ padding: "40px", textAlign: "center", color: "var(--km-label-tertiary)" }}>
+            暂无历史任务。完成任务后会自动记录在此。
+          </div>
+        ) : history.map((item) => (
           <article key={item.id} className="history-row">
             <div className="history-main"><b>{item.title}</b><small>{item.date} · {item.total} 个文件 · 总耗时 {item.time}</small></div>
             <div className="history-numbers"><span className="good">{item.success} 成功</span><span className="bad">{item.failed} 失败</span></div>
             <span className={`badge badge-${item.status.replace(/\s/g, "-")}`}>{item.status}</span>
             <div className="row-actions">
-              <button onClick={() => showToast("已打开任务详情")}>查看</button>
+              <button onClick={() => viewHistoryItem(item)}>查看</button>
               <button onClick={() => showToast("已重试任务")}>重试</button>
               <button onClick={() => showToast("已打开输出目录")}>打开目录</button>
             </div>

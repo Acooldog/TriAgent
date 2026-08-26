@@ -134,6 +134,7 @@ def run_agent(
     stop_requested: Callable[[], bool] | None = None,
     announce_start: bool = True,
     consume_supplements: Callable[[], list[str]] | None = None,
+    conversation_history: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     emitter = AgentEventEmitter(event_sink)
     emitter.emit("agent_started", {"message": user_message, "model": model_config.get("model", "")})
@@ -185,7 +186,20 @@ def run_agent(
         import concurrent.futures
         executor_timeout = 1800
 
-        conversation_messages: list = [HumanMessage(content=user_message)]
+        # 构建对话消息，包含历史上下文（如果有）
+        conversation_messages: list = []
+        if conversation_history:
+            for msg in conversation_history:
+                role = str(msg.get("role", ""))
+                content = str(msg.get("content", ""))
+                if role == "user":
+                    conversation_messages.append(HumanMessage(content=content))
+                elif role == "assistant":
+                    conversation_messages.append(AIMessage(content=content))
+            emitter._log(f"已加载 {len(conversation_history)} 条历史消息作为对话上下文", "info")
+
+        conversation_messages.append(HumanMessage(content=user_message))
+        emitter._log(f"当前共 {len(conversation_messages)} 条对话消息（含历史）", "debug")
         cancel_event = threading.Event()
 
         def _stream_once(messages: list) -> None:

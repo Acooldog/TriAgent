@@ -472,6 +472,7 @@ def transcode_file(
             encoding="utf-8",
             errors="replace",
             check=False,
+            timeout=300,
             **_subprocess_window_kwargs(),
         )
         if completed.returncode != 0:
@@ -481,6 +482,8 @@ def transcode_file(
             output_path.unlink()
         temp_output.replace(output_path)
         return {"ffmpeg_path": str(ffmpeg_path), "output_path": str(output_path), "return_code": completed.returncode}
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"ffmpeg 转码超时（300秒）: {input_path.name}")
     finally:
         if temp_output.exists():
             try:
@@ -504,6 +507,7 @@ def _run_ffmpeg_command(
             encoding="utf-8",
             errors="replace",
             check=False,
+            timeout=300,
             **_subprocess_window_kwargs(),
         )
         if completed.returncode != 0:
@@ -517,6 +521,8 @@ def _run_ffmpeg_command(
             "output_path": str(output_path),
             "return_code": completed.returncode,
         }
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"ffmpeg 执行超时（300秒）")
     finally:
         if temp_output.exists():
             try:

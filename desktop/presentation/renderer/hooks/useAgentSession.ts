@@ -32,7 +32,6 @@ export function useAgentSession(input: UseAgentSessionInput) {
     setTaskStatus,
     setAgentQuestion,
     agentTaskIdRef,
-    setModelConfig,
     setAgentTaskIdRef,
     modelConfig,
     permMode,
