@@ -62,7 +62,7 @@ export function useAgentSession(input: UseAgentSessionInput) {
       const result = await window.triMusicAgent.startWorker(
         "agent",
         { message: userText, model_config: modelCfg, max_iterations: 15, permission_mode: permMode },
-        permMode
+        permMode as "restricted" | "standard" | "full"
       );
       agentTaskIdRef.current = result.taskId;
       console.info("[useAgentSession] agent worker started:", result.requestId);
