@@ -1,4 +1,4 @@
-import type { ProviderManifest } from "../../application/provider/providerProtocol";
+﻿import type { ProviderManifest } from "../../application/provider/protocols/providerProtocol";
 
 export function providerManifestFixture(providerId = "example.provider"): ProviderManifest {
   return {

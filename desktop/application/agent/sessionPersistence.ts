@@ -1,4 +1,4 @@
-import type { ChatMessage, ModelConfig } from "../model/modelProtocol";
+﻿import type { ChatMessage, ModelConfig } from "../model/modelProtocol";
 import type { SessionInfo } from "../workspace/workspaceService";
 
 export type SessionStatus = "idle" | "running" | "stopped" | "completed" | "failed";
@@ -23,7 +23,7 @@ export interface SessionTaskState {
   requestId?: string;
   error?: { code: string; message: string };
   result?: Record<string, unknown>;
-  runtimeStatus?: import("../provider/providerRuntimeProtocol").ProviderRuntimeStatus;
+  runtimeStatus?: import("../provider/protocols/providerRuntimeProtocol").ProviderRuntimeStatus;
   recoverySuggestion?: string;
 }
 

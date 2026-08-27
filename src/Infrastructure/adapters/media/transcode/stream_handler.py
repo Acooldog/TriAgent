@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.Infrastructure.adapters.agent.agent_progress import AgentEventEmitter, build_tool_action_message
+from src.Infrastructure.adapters.agent.progress.agent_progress import AgentEventEmitter, build_tool_action_message
 
 try:
     from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage

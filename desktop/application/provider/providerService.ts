@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ArtifactReference, SessionEventRecord, SessionPersistenceService, SessionTaskState } from "../agent/sessionPersistence";
 import type { SessionInfo } from "../workspace/workspaceService";
-import { ProviderContractError, normalizeProviderError, sanitizeProviderData, validateArtifacts, validateProviderEvent, validateProviderOutput, type ProviderCall, type ProviderCapabilityManifest, type ProviderEvent, type ProviderGateway, type ProviderHealth, type ProviderInvocationRequest, type ProviderRegistration } from "./providerProtocol";
+import { ProviderContractError, normalizeProviderError, sanitizeProviderData, validateArtifacts, validateProviderEvent, validateProviderOutput, type ProviderCall, type ProviderCapabilityManifest, type ProviderEvent, type ProviderGateway, type ProviderHealth, type ProviderInvocationRequest, type ProviderRegistration } from "./protocols/providerProtocol";
 import type { ProviderRegistry } from "./providerRegistry";
 import { debugError, debugInfo } from "../../infrastructure/logging/debugLogger";
 
@@ -191,7 +191,7 @@ export class ProviderService {
     await this.onSessionChanged(context);
   }
 
-  private async persistArtifacts(context: ProviderSessionContext | undefined, artifacts: import("./providerProtocol").ProviderArtifact[]): Promise<void> {
+  private async persistArtifacts(context: ProviderSessionContext | undefined, artifacts: import("./protocols/providerProtocol").ProviderArtifact[]): Promise<void> {
     if (!context || !this.persistence) return;
     for (const artifact of artifacts) {
       const reference: ArtifactReference = { artifactId: artifact.artifact_id, relativePath: artifact.relative_path, kind: artifact.kind, createdAt: this.now().toISOString(), ...(artifact.metadata ? { metadata: sanitizeRecord(artifact.metadata) } : {}) };

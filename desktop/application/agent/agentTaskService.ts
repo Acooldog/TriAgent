@@ -1,6 +1,6 @@
-import { randomUUID } from "node:crypto";
+﻿import { randomUUID } from "node:crypto";
 import type { PermissionMode } from "../tools/toolProtocol";
-import type { ProviderEvent } from "../provider/providerProtocol";
+import type { ProviderEvent } from "../provider/protocols/providerProtocol";
 import type { ProviderRuntimeService } from "../provider/providerRuntimeService";
 import type { ProviderService, ProviderSessionContext } from "../provider/providerService";
 import type { SessionPersistenceService } from "./sessionPersistence";

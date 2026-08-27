@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { MVP_CAPABILITY_ID, MVP_PROVIDER_ID } from "../../infrastructure/providers/constants";
-import { AuthorizedMvpProviderGateway } from "../../infrastructure/providers/authorizedMvpProviderGateway";
+import { AuthorizedMvpProviderGateway } from "../../infrastructure/providers/gateways/authorizedMvpProviderGateway";
 import { WorkerService } from "../../application/worker/workerService";
 import { PythonWorkerClient } from "../../infrastructure/workers/pythonWorker";
 

@@ -25,8 +25,8 @@ class QQPlatformAdapter:
     _variant_adapter: QQVariantAdapterService | None = field(default=None, init=False, repr=False)
 
     def _load_runtime(self):
-        from src.Infrastructure.adapters.platforms.qq.runtime.frida_decrypt_gateway import FridaDecryptGateway
-        from src.Infrastructure.adapters.platforms.qq.runtime.qqmusic_decrypt import pick_safe_tmp_dir
+        from src.Infrastructure.adapters.platforms.qq.runtime.decrypt.frida_decrypt_gateway import FridaDecryptGateway
+        from src.Infrastructure.adapters.platforms.qq.runtime.decrypt.qqmusic_decrypt import pick_safe_tmp_dir
         return FridaDecryptGateway, pick_safe_tmp_dir
 
     def _ensure_variant_adapter(self) -> QQVariantAdapterService:
@@ -69,7 +69,7 @@ class QQPlatformAdapter:
         if auto_start:
             logger.info("[QQ adapter] QQ 音乐未运行，尝试自动启动...")
             try:
-                from src.Infrastructure.adapters.platforms.qq.runtime.launcher import launch_qqmusic
+                from src.Infrastructure.adapters.platforms.qq.runtime.launch.launcher import launch_qqmusic
                 started = launch_qqmusic()
                 if started:
                     info = find_process_by_name('QQMusic.exe') or find_process_by_substring(process_match)

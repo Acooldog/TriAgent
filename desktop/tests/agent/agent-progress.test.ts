@@ -10,7 +10,7 @@ const pythonEnv = { ...process.env, PYTHONUTF8: "1", PYTHONIOENCODING: "utf-8" }
 test("builds concise Chinese action messages before agent work", () => {
   const script = [
     "import json",
-    "from src.Infrastructure.adapters.agent.agent_progress import build_initial_action_message, build_tool_action_message",
+    "from src.Infrastructure.adapters.agent.progress.agent_progress import build_initial_action_message, build_tool_action_message",
     "print(json.dumps({",
     "  'initial': build_initial_action_message('请把目录里的 kgma 解密到输出目录'),",
     "  'scan': build_tool_action_message('scan_files'),",
@@ -26,7 +26,7 @@ test("builds concise Chinese action messages before agent work", () => {
 test("adds a fallback action message before a silent tool call", () => {
   const script = [
     "import json",
-    "from src.Infrastructure.adapters.agent.agent_progress import AgentEventEmitter",
+    "from src.Infrastructure.adapters.agent.progress.agent_progress import AgentEventEmitter",
     "from src.Infrastructure.adapters.media.transcode.stream_handler import _handle_stream_message",
     "events = []",
     "class AIMessage:",
@@ -79,8 +79,8 @@ test("worker publishes the action message before loading the full agent runtime"
   }, (event) => events.push(event));
   const result = await handle.completion;
   const actionIndex = events.findIndex((event) => event.event_type === "agent_message");
-  const importIndex = events.findIndex((event) => event.event_type === "agent_log" && String(event.payload.message).includes("步骤 1/3"));
+  const stepStartIndex = events.findIndex((event) => event.event_type === "agent_step_started");
   assert.equal(result.status, "failed");
   assert.ok(actionIndex >= 0);
-  assert.ok(importIndex > actionIndex);
+  assert.ok(stepStartIndex > actionIndex);
 });

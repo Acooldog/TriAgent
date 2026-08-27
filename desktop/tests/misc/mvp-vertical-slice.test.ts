@@ -12,8 +12,8 @@ import { ProviderRuntimeStartPolicy } from "../../application/provider/providerR
 import { ProviderService } from "../../application/provider/providerService";
 import { SessionPersistenceService } from "../../application/agent/sessionPersistence";
 import { FileSessionRepository } from "../../infrastructure/repositories/sessionRepository";
-import { AuthorizedMvpProviderGateway } from "../../infrastructure/providers/authorizedMvpProviderGateway";
-import { PrivateProviderRuntimeGateway } from "../../infrastructure/providers/privateProviderRuntimeGateway";
+import { AuthorizedMvpProviderGateway } from "../../infrastructure/providers/gateways/authorizedMvpProviderGateway";
+import { PrivateProviderRuntimeGateway } from "../../infrastructure/providers/gateways/privateProviderRuntimeGateway";
 import { WorkerService } from "../../application/worker/workerService";
 import { PythonWorkerClient } from "../../infrastructure/workers/pythonWorker";
 import { FileSystemWorkspaceRepository } from "../../infrastructure/repositories/workspaceRepository";

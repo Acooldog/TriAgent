@@ -1,12 +1,12 @@
-import { contextBridge, ipcRenderer } from "electron";
+﻿import { contextBridge, ipcRenderer } from "electron";
 import type { WorkspaceState } from "../application/workspace/workspaceService";
 import type { AgentEvent, AgentPlan } from "../application/agent/agentTaskService";
 import type { WorkerEvent } from "../application/worker/workerProtocol";
 import type { ChatMessage, ModelConfig, ModelEvent } from "../application/model/modelProtocol";
 import type { CompressionOptions, CompressionResult } from "../application/settings/contextCompression";
 import type { ToolManifest } from "../application/tools/toolProtocol";
-import type { ProviderCall, ProviderEvent, ProviderRegistration } from "../application/provider/providerProtocol";
-import type { ProviderRuntimeEvent, ProviderRuntimeStartRequest, ProviderRuntimeState } from "../application/provider/providerRuntimeProtocol";
+import type { ProviderCall, ProviderEvent, ProviderRegistration } from "../application/provider/protocols/providerProtocol";
+import type { ProviderRuntimeEvent, ProviderRuntimeStartRequest, ProviderRuntimeState } from "../application/provider/protocols/providerRuntimeProtocol";
 import type { DiagnosticReport, DiagnosticsRequest, ErrorSearchIssue, ErrorSearchResult } from "../application/diagnostics";
 import type { AppSettings } from "../application/settings/appSettings";
 

@@ -19,7 +19,7 @@ import threading
 import time
 from typing import Any, Callable
 
-from src.Infrastructure.adapters.agent.agent_progress import (
+from src.Infrastructure.adapters.agent.progress.agent_progress import (
     AgentEventEmitter,
     build_tool_action_message,
 )

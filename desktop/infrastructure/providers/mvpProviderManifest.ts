@@ -1,4 +1,4 @@
-import type { ProviderManifest } from "../../application/provider/providerProtocol";
+﻿import type { ProviderManifest } from "../../application/provider/protocols/providerProtocol";
 import { MVP_CAPABILITY_ID, MVP_PROVIDER_ID } from "./constants";
 
 export const MVP_PROVIDER_MANIFEST: ProviderManifest = {

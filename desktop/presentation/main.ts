@@ -8,19 +8,19 @@ import { StructuredContextCompressor } from "../application/settings/contextComp
 import { DiagnosticsService, ErrorSearchService } from "../application/diagnostics";
 import { ModelService } from "../application/model/modelService";
 import { PermissionPolicy, type PermissionRequest } from "../application/settings/permissionPolicy";
-import { ProviderContractError } from "../application/provider/providerProtocol";
+import { ProviderContractError } from "../application/provider/protocols/providerProtocol";
 import { ProviderRegistry } from "../application/provider/providerRegistry";
 import { ProviderService } from "../application/provider/providerService";
 import { ProviderRuntimeService } from "../application/provider/providerRuntimeService";
 import { ProviderRuntimeStartPolicy } from "../application/provider/providerRuntimePolicy";
-import type { ProviderRuntimeApprovalRequest } from "../application/provider/providerRuntimeProtocol";
+import type { ProviderRuntimeApprovalRequest } from "../application/provider/protocols/providerRuntimeProtocol";
 import { SessionPersistenceService, type SessionTaskState } from "../application/agent/sessionPersistence";
 import { ToolRegistry } from "../application/tools/toolProtocol";
 import { WorkspaceService, type SessionInfo, type WorkspaceState, type WorkspaceSettings } from "../application/workspace/workspaceService";
 import { WorkerService } from "../application/worker/workerService";
 import { FileSessionRepository } from "../infrastructure/repositories/sessionRepository";
-import { AuthorizedMvpProviderGateway } from "../infrastructure/providers/authorizedMvpProviderGateway";
-import { FakeMvpProviderRuntimeGateway } from "../infrastructure/providers/fakeMvpProviderRuntimeGateway";
+import { AuthorizedMvpProviderGateway } from "../infrastructure/providers/gateways/authorizedMvpProviderGateway";
+import { FakeMvpProviderRuntimeGateway } from "../infrastructure/providers/gateways/fakeMvpProviderRuntimeGateway";
 import { DuckDuckGoErrorSearchGateway } from "../infrastructure/duckDuckGoErrorSearch";
 import { PythonWorkerClient } from "../infrastructure/workers/pythonWorker";
 import { resolveProjectRoot, resolvePythonExecutable, resolveWorkerScript } from "../infrastructure/workers/pythonRuntimePaths";
@@ -28,8 +28,8 @@ import { OpenAiCompatibleClient } from "../infrastructure/openAiCompatibleClient
 import { JsonSettingsRepository } from "../infrastructure/repositories/settingsRepository";
 import { SystemDiagnosticsGateway } from "../infrastructure/systemDiagnostics";
 import { FileSystemWorkspaceRepository } from "../infrastructure/repositories/workspaceRepository";
-import { registerIpc, type IpcContext } from "./ipcHandlers";
-import { debugError, debugInfo } from "../infrastructure/logging/debugLogger";
+import { registerIpc, type IpcContext } from "./ipc/ipcHandlers";
+import { debugError, debugInfo } from "../application/logging/loggerService";
 import { configureAppUserModelId, notifyTaskOutcome } from "../application/agent/taskNotifier";
 
 let mainWindow: BrowserWindow | null = null;

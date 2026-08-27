@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, type CSSProperties } from "react";
 import type { UseAppStateResult } from "../../hooks/useAppState/useAppState";
 import type { AgentSegment, LlmMessage } from "../../hooks/useAppState/useAppState.types";
-import { renderMarkdown } from "../../markdown";
 import { BatchProgressCard } from "./BatchProgressCard";
 import { AgentExecutionSegments } from "./AgentExecutionSegments";
+import { ChatMessageRenderer } from "./ChatMessageRenderer";
 
 export function LlmChat(state: UseAppStateResult) {
   const {
@@ -86,61 +86,20 @@ export function LlmChat(state: UseAppStateResult) {
     return map;
   }, [isTaskMode, messageList, agentSegments]);
 
-  const esc = (s: string): string =>
-    s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt", '"': "&quot;", "'": "&#39;" }[c]!));
-
   const renderMessage = (message: LlmMessage, idx: number) => {
     const segsAbove = isTaskMode ? segmentsByMessage.get(idx) : undefined;
-    const role = message.role;
-
-    // Build the message element — avatar must be INSIDE .llm-chat-message
-    // because the CSS uses grid-template-columns: 32px 1fr on it
-    const msgEl = (() => {
-      if (role === "user") {
-        return (
-          <div key={idx} className="llm-chat-message user">
-            <span className="llm-avatar">我</span>
-            <div dangerouslySetInnerHTML={{ __html: renderMarkdown(message.text) }} />
-          </div>
-        );
-      }
-      if (role === "error") {
-        return (
-          <div key={idx} className="llm-chat-message assistant">
-            <span className="llm-avatar">T</span>
-            <div>
-              <strong style={{ color: "var(--系统错误色,#ff3b30)" }}>错误</strong>
-              <p style={{ color: "var(--系统错误色,#ff3b30)" }}>{esc(message.text)}</p>
-            </div>
-          </div>
-        );
-      }
-      if (role === "notice") {
-        return (
-          <div key={idx} className="llm-system-notice">
-            <span>{esc(message.text)}</span>
-          </div>
-        );
-      }
-      // assistant
-      return (
-        <div key={idx} className="llm-chat-message assistant">
-          <span className="llm-avatar">T</span>
-          <div dangerouslySetInnerHTML={{ __html: renderMarkdown(message.text) }} />
-        </div>
-      );
-    })();
-
-    if (segsAbove && segsAbove.length > 0) {
-      return (
-        <div key={`segs+msg-${idx}`}>
-          <AgentExecutionSegments segments={segsAbove} />
-          {msgEl}
-        </div>
-      );
-    }
-    return <div key={idx}>{msgEl}</div>;
+    return (
+      <ChatMessageRenderer
+        key={idx}
+        message={message}
+        index={idx}
+        segsAbove={segsAbove}
+      />
+    );
   };
+
+  const esc = (s: string): string =>
+    s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt", '"': "&quot;", "'": "&#39;" }[c]!));
 
   useEffect(() => {
     const el = scrollRef.current;

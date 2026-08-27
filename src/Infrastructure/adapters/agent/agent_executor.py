@@ -1,3 +1,12 @@
+"""Agent executor — Agent 执行编排器。
+
+负责串联：配置清理 → LLM预检 → Agent创建 → 流式执行 → 补充处理 → 结果汇总。
+
+注：嵌套闭包 _stream_once / _run_stream_with_timeout 保留在此文件中，
+因为它们共享 10+ 个 nonlocal 变量，提取风险较高。
+Token 优化逻辑已拆至 agent_token_optimizer.py / agent_token_tracker.py。
+配置预检已拆至 agent_config_preflight.py。
+"""
 from __future__ import annotations
 
 import concurrent.futures
@@ -19,10 +28,28 @@ from src.Infrastructure.adapters.agent.agent_helpers import (
     init_chat_model,
 )
 from src.Infrastructure.adapters.agent.agent_model import create_chat_model
-from src.Infrastructure.adapters.agent.agent_progress import (
+from src.Infrastructure.adapters.agent.progress.agent_progress import (
     AgentEventEmitter,
     build_initial_action_message,
     build_system_prompt,
+)
+from src.Infrastructure.adapters.agent.progress.agent_stream_processor import (
+    log_progress_snapshot,
+    prune_tool_results_after_tool_call,
+    process_tool_message_truncation,
+    update_thinking_state,
+)
+from src.Infrastructure.adapters.agent.token.agent_token_optimizer import (
+    prune_old_tool_results as _prune_old_tool_results,
+    truncate_tool_message as _truncate_tool_message,
+)
+from src.Infrastructure.adapters.agent.token.agent_token_tracker import (
+    classify_messages as _classify_msgs,
+    estimate_tokens as _estimate_tokens,
+)
+from src.Infrastructure.adapters.agent.config.agent_config_preflight import (
+    check_llm_connectivity,
+    clean_model_config,
 )
 from src.Infrastructure.adapters.agent.tools.agent_tools import TOOL_DESCRIPTIONS, TOOL_NAMES
 from src.Infrastructure.adapters.media.transcode.stream_handler import (
@@ -47,21 +74,15 @@ def run_agent(
     emitter = AgentEventEmitter(event_sink)
     emitter.emit("agent_started", {"message": user_message, "model": model_config.get("model", "")})
 
+    # 发送初始行动说明，让用户知道 Agent 即将执行的步骤
+    initial_msg = build_initial_action_message(user_message)
+    emitter.emit("agent_message", {"content": initial_msg, "kind": "progress"})
+
     # 注入事件发射回调，让解密/转码工具能发 batch_* 进度事件
     set_event_sink(event_sink)
 
     # === 统一清理 model_config 所有字段 ===
-    # 前端可能把 base_url / api_key / model 复制粘贴时带上反引号、尾部逗号等
-    from src.Infrastructure.adapters.agent.agent_model import _clean_field
-    if isinstance(model_config, dict):
-        for _k in ("base_url", "api_key", "model", "provider"):
-            _v = model_config.get(_k)
-            if isinstance(_v, str):
-                _original = _v
-                _cleaned = _clean_field(_v)
-                if _cleaned != _original:
-                    emitter._log(f"清理 model_config.{_k}: {_original!r} → {_cleaned!r}", "debug")
-                    model_config[_k] = _cleaned
+    clean_model_config(model_config, emitter._log)
 
     if not _LANGCHAIN_AVAILABLE:
         emitter._log("langchain 不可用，返回失败", "error")
@@ -85,40 +106,12 @@ def run_agent(
 
         # 轻量预检：只检查 base_url 可达 + api_key 非空（不烧 token）
         emitter._log("正在检查模型配置...")
-        _bu = str(model_config.get("base_url", ""))
-        _ak = str(model_config.get("api_key", ""))
-        _bl = _bu.lower()
-        _is_local = "localhost" in _bl or "127.0.0.1" in _bl or "0.0.0.0" in _bl
-        if not _ak and not _is_local:
-            emitter._log("LLM 配置错误：api_key 为空", "error")
-            emitter.emit("agent_step_failed", {"step": 1, "error": "未配置 API Key"})
-            emitter.emit("agent_finished", {"status": "error", "error": "missing_api_key"})
-            return {"status": "error", "error": "missing_api_key"}
-        try:
-            import urllib.request as _ur
-            import urllib.error as _ue
-            # 优先用 base_url + /chat/completions 检测（这是真正的 API 端点）
-            _probe = _bu.rstrip("/").removesuffix("/chat/completions") + "/chat/completions"
-            _req = _ur.Request(_probe, method="HEAD", headers={"User-Agent": "TriMusicAgent/1.0"})
-            _resp = _ur.urlopen(_req, timeout=8)
-            emitter._log(f"模型服务可达 (HTTP {_resp.status}, 端点 {_probe})")
-        except Exception as _url_exc:
-            _code = getattr(_url_exc, "code", None)
-            # 405 = Method Not Allowed（POST-only API） → 端点存在，可达
-            # 401/403 = 需要鉴权 → 端点存在，可达
-            # 404 on /chat/completions → 端点真的不存在
-            if _code in (405, 401, 403):
-                emitter._log(f"模型服务可达 (HTTP {_code}, 端点存在但拒绝 HEAD)")
-            elif _code == 404:
-                emitter._log(f"模型端点不存在: {_probe} → HTTP 404", "error")
-                emitter.emit("agent_step_failed", {"step": 1, "error": f"模型端点不存在: {_probe}"})
-                emitter.emit("agent_finished", {"status": "error", "error": "endpoint_not_found"})
-                return {"status": "error", "error": f"endpoint_not_found: {_probe}"}
-            else:
-                emitter._log(f"模型服务不可达: {_url_exc}", "error")
-                emitter.emit("agent_step_failed", {"step": 1, "error": f"模型服务不可达: {_url_exc}"})
-                emitter.emit("agent_finished", {"status": "error", "error": "llm_unreachable"})
-                return {"status": "error", "error": str(_url_exc)}
+        preflight = check_llm_connectivity(model_config, emitter._log)
+        if not preflight.ok:
+            emitter._log(f"LLM 预检失败: {preflight.error}", "error")
+            emitter.emit("agent_step_failed", {"step": 1, "error": preflight.error})
+            emitter.emit("agent_finished", {"status": "error", "error": preflight.error})
+            return {"status": "error", "error": preflight.error}
 
         emitter._log("正在构建工具列表...")
         tools = _build_tools_for_llm()
@@ -145,29 +138,8 @@ def run_agent(
 
         # === token 估算日志 ===
         _total_estimated_input_tokens = 0  # 累计发给 LLM 的输入 token（估算）
-        _total_pruned_chars = 0            # 累计被截断/裁剪掉的字符数
         _total_truncate_saved = 0          # 截断工具输出省的字符
         _total_prune_saved = 0             # 裁剪旧轮次省的字符
-
-        def _estimate_tokens(msgs: list) -> tuple[int, int]:
-            """粗估 conversation_messages 的字符数和 token 数（1 token ≈ 3.5 字符，中英混合）。"""
-            total_chars = 0
-            for m in msgs:
-                c = getattr(m, "content", "") or ""
-                if isinstance(c, list):
-                    c = str(c)
-                total_chars += len(str(c))
-            return total_chars, int(total_chars / 3.5)
-
-        def _classify_msgs(msgs: list) -> str:
-            """按消息类型分类统计，方便看哪种消息占空间。"""
-            counts: dict[str, int] = {}
-            for m in msgs:
-                t = type(m).__name__
-                c = getattr(m, "content", "") or ""
-                counts[t] = counts.get(t, 0) + len(str(c))
-            parts = [f"{k}:{v}ch" for k, v in counts.items()]
-            return " ".join(parts)
 
         def _stream_once(messages: list) -> None:
             nonlocal last_ai_message, stream_error, event_count, actual_iterations, cancelled
@@ -201,65 +173,24 @@ def run_agent(
                     msg, metadata = item
                     _handle_stream_message(msg, metadata, emitter, tool_call_registry, pending_text)
 
-                    # === 深度思考进度提示 ===
-                    _content_now = str(getattr(msg, "content", "")) if hasattr(msg, "content") else ""
-                    _tc_now = bool(getattr(msg, "tool_calls", None)) and len(getattr(msg, "tool_calls", None) or []) > 0
-                    if isinstance(msg, (AIMessage, AIMessageChunk)) or type(msg).__name__ in ("AIMessage", "AIMessageChunk"):
-                        if not _content_now and not _tc_now:
-                            _thinking_count += 1
-                            if _thinking_count > 0 and _thinking_count % 30 == 0:
-                                emitter._log(
-                                    f"模型正在深度思考... (已收到 {_thinking_count} 个思考块)",
-                                    "info",
-                                )
-                                emitter.emit("agent_thinking_delta", {
-                                    "content": f"⏳ 模型正在深度思考... ({_thinking_count} chunks)",
-                                })
-                        else:
-                            if _thinking_count > 0:
-                                emitter._log(f"思考结束，开始输出内容/工具调用（思考了 {_thinking_count} 块）", "info")
-                                _thinking_count = 0
+                    # === 深度思考检测与进度上报 ===
+                    _thinking_count = update_thinking_state(msg, emitter, _thinking_count)
 
                     if event_count % 20 == 0:
                         _flush_pending_text(emitter, pending_text)
-                    if event_count % 50 == 0:
-                        _mt = type(msg).__name__
-                        _mc = str(getattr(msg, "content", ""))[:30] if hasattr(msg, "content") else ""
-                        _has_tc = bool(getattr(msg, "tool_calls", None)) and len(getattr(msg, "tool_calls", None) or []) > 0
-                        _pt_len = sum(len(p) for p in pending_text)
-                        emitter._log(
-                            f"已处理 {event_count} 事件 | 最新={_mt}(content={_mc!r}, tool_calls={_has_tc}) | pending_text={_pt_len}字符",
-                            "debug",
-                        )
+                    log_progress_snapshot(event_count, msg, pending_text, emitter)
 
-                    # === 关键：ToolMessage content 截断，防止每轮重发长结果烧 token ===
-                    if isinstance(msg, ToolMessage) or type(msg).__name__ == "ToolMessage":
-                        _tool_name = getattr(msg, "name", "tool")
-                        # scan/list 类结果需要保留完整 summary（含数量），让小模型知道还有多少文件要处理
-                        if _tool_name in ("scan_files", "list_directory", "rag_retrieve"):
-                            _trunc_saved = _truncate_tool_message(msg, max_chars=1200, keep_head=1000)
-                        else:
-                            _trunc_saved = _truncate_tool_message(msg, max_chars=300, keep_head=200)
-                        if _trunc_saved > 0:
-                            _total_truncate_saved += _trunc_saved
-                            emitter._log(
-                                f"[token] 截断 ToolMessage({_tool_name}) 节省 {_trunc_saved} 字符 ≈ {int(_trunc_saved/3.5)} tokens",
-                                "info",
-                            )
+                    # === ToolMessage content 截断 ===
+                    _total_truncate_saved = process_tool_message_truncation(
+                        msg, emitter, _total_truncate_saved,
+                    )
 
                     conversation_messages.append(msg)
 
-                    if isinstance(msg, (AIMessage, AIMessageChunk)) or type(msg).__name__ in ("AIMessage", "AIMessageChunk"):
-                        if hasattr(msg, "tool_calls") and msg.tool_calls:
-                            actual_iterations += 1
-                            # === 关键：每轮 AIMessage（触发了工具调用）后，清理旧 ToolMessage ===
-                            _pr_saved = _prune_old_tool_results(conversation_messages, keep_last_rounds=2)
-                            if _pr_saved > 0:
-                                _total_prune_saved += _pr_saved
-                                emitter._log(
-                                    f"[token] 裁剪旧轮次节省 {_pr_saved} 字符 ≈ {int(_pr_saved/3.5)} tokens",
-                                    "info",
-                                )
+                    # === 每轮 AIMessage 触发工具调用后裁剪旧轮次 ===
+                    actual_iterations, _total_prune_saved = prune_tool_results_after_tool_call(
+                        msg, conversation_messages, emitter, actual_iterations, _total_prune_saved,
+                    )
                 if not cancelled:
                     flushed = _flush_pending_text(emitter, pending_text)
                     if flushed:
@@ -308,149 +239,41 @@ def run_agent(
             })
             _run_stream_with_timeout(conversation_messages)
 
-        if timed_out:
-            return {"status": "timeout", "error": "llm_timeout"}
-        if cancelled:
-            elapsed = round(time.perf_counter() - step_started, 3)
-            emitter._log(f"Agent 已取消，耗时 {elapsed}s", "info")
-            emitter.emit("agent_finished", {"status": "cancelled"})
-            return {"status": "cancelled", "elapsed_sec": elapsed}
+        from src.Infrastructure.adapters.agent.handlers.agent_result_reporter import (
+            handle_timeout_or_cancelled,
+            report_success_and_return,
+        )
+        early_result = handle_timeout_or_cancelled(timed_out, cancelled, emitter, step_started)
+        if early_result is not None:
+            return early_result
 
-        emitter._log("agent.stream() 完成")
-        elapsed = round(time.perf_counter() - step_started, 3)
-        emitter._log(f"执行耗时: {elapsed}s, 共处理 {event_count} 个事件")
-        emitter._log(f"实际工具调用迭代: {actual_iterations}")
-
-        tool_calls_made = list(tool_call_registry.values())
-        emitter._log(f"共检测到 {len(tool_calls_made)} 个工具调用")
-        emitter.emit("agent_step_finished", {
-            "step": 1, "elapsed_sec": elapsed, "tool_calls_count": len(tool_calls_made),
-        })
-        emitter._log(f"Agent 最终输出: {str(last_ai_message)[:200]}")
-        emitter._log(f"Agent 执行完成，共调用 {len(tool_calls_made)} 个工具")
-
-        # === token 消耗汇总 ===
-        _total_saved_chars = _total_truncate_saved + _total_prune_saved
-        _total_saved_tokens = int(_total_saved_chars / 3.5)
-        emitter._log(
-            f"[token 汇总] 累计输入 ≈ {_total_estimated_input_tokens} tokens | "
-            f"截断节省 ≈ {int(_total_truncate_saved/3.5)} tokens | "
-            f"裁剪节省 ≈ {int(_total_prune_saved/3.5)} tokens | "
-            f"**节流总计 ≈ {_total_saved_tokens} tokens**（相当于 {_total_saved_tokens/1000:.1f}K）",
-            "info",
+        return report_success_and_return(
+            emitter=emitter,
+            step_started=step_started,
+            event_count=event_count,
+            actual_iterations=actual_iterations,
+            tool_call_registry=tool_call_registry,
+            last_ai_message=last_ai_message,
+            total_estimated_input_tokens=_total_estimated_input_tokens,
+            total_truncate_saved=_total_truncate_saved,
+            total_prune_saved=_total_prune_saved,
         )
 
-        emitter.emit("agent_finished", {
-            "status": "completed", "tool_calls_count": len(tool_calls_made),
-            "response_preview": str(last_ai_message)[:200] if last_ai_message else "",
-            "elapsed_sec": elapsed,
-        })
-        return {
-            "status": "completed", "response": str(last_ai_message),
-            "tool_calls": tool_calls_made, "iterations": actual_iterations,
-            "elapsed_sec": elapsed,
-        }
-
     except Exception as exc:
-        import traceback
-        tb = traceback.format_exc()
-        completed_count = len(tool_call_registry)
-        tool_summary = [info.get("tool_name", "unknown") for info in tool_call_registry.values()]
-
-        if _is_recursion_error(exc):
-            emitter._log(f"Agent 达到递归限制，转为总结模式: {exc}", "warning")
-            summary_result = _generate_recursion_summary(
-                emitter, create_chat_model, model_config, tool_call_registry,
-                conversation_messages, str(exc),
-            )
-            emitter.emit("agent_message", {
-                "content": summary_result.get("message", ""), "kind": "progress",
-            })
-            emitter.emit("agent_finished", {
-                "status": "completed", "tool_calls_count": completed_count,
-                "response_preview": summary_result.get("message", "")[:200],
-                "elapsed_sec": round(time.perf_counter() - step_started, 3),
-            })
-            return {
-                "status": "completed", "response": summary_result.get("message", ""),
-                "tool_calls": list(tool_call_registry.values()), "iterations": actual_iterations,
-                "elapsed_sec": round(time.perf_counter() - step_started, 3),
-                "recursion_limit_hit": True,
-            }
-
-        emitter._log(f"Agent 执行异常: {exc}\n{tb}", "error")
-        emitter.emit("agent_error", {
-            "error": str(exc), "completed_tool_calls": completed_count,
-            "tool_calls_summary": tool_summary,
-        })
-        emitter.emit("agent_message", {
-            "content": (
-                f"执行中断：已完成 {completed_count} 个工具调用"
-                f"（{', '.join(tool_summary) if tool_summary else '无'}）后因异常中止：{exc}。"
-                "已处理的文件已记录在 _processed_index.json，重新发起任务时会自动跳过，继续未完成的部分。"
-            ),
-            "kind": "error",
-        })
-        emitter.emit("agent_finished", {
-            "status": "failed", "error": str(exc), "completed_tool_calls": completed_count,
-        })
-        return {
-            "status": "failed", "error": str(exc),
-            "completed_tool_calls": completed_count,
-            "tool_calls": list(tool_call_registry.values()),
-        }
-
-
-def _truncate_tool_message(msg: Any, max_chars: int = 300, keep_head: int = 200) -> int:
-    """直接修改 ToolMessage.content —— 超过 max_chars 就截断。返回节省的字符数。"""
-    content = getattr(msg, "content", None)
-    if content is None:
-        return 0
-    text = str(content)
-    if len(text) <= max_chars:
-        return 0
-    original_len = len(text)
-    truncated = text[:keep_head].rstrip() + f"...(已截断，原始 {original_len} 字符)"
-    saved = original_len - len(truncated)
-    try:
-        msg.content = truncated
-    except Exception:
-        pass
-    return saved
-
-
-def _prune_old_tool_results(messages: list, keep_last_rounds: int = 2) -> int:
-    """清理 conversation_messages 中的旧 ToolMessage。返回节省的字符数。"""
-    tool_round_indices: list[int] = []
-    for i, m in enumerate(messages):
-        if isinstance(m, AIMessage) or type(m).__name__ == "AIMessage":
-            tool_calls = getattr(m, "tool_calls", None)
-            if tool_calls:
-                tool_round_indices.append(i)
-
-    if len(tool_round_indices) <= keep_last_rounds:
-        return 0
-
-    rounds_to_keep = tool_round_indices[-keep_last_rounds:]
-    keep_from = rounds_to_keep[0]
-
-    total_saved = 0
-    for i in range(keep_from):
-        m = messages[i]
-        if isinstance(m, ToolMessage) or type(m).__name__ == "ToolMessage":
-            orig_text = str(getattr(m, "content", ""))
-            if "(已截断" in orig_text:
-                continue
-            name = getattr(m, "name", "tool")
-            summary = f"[{name} 结果已省略 — 属于前序轮次]"
-            saved = len(orig_text) - len(summary)
-            if saved > 0:
-                total_saved += saved
-            try:
-                m.content = summary
-            except Exception:
-                pass
-    return total_saved
+        from src.Infrastructure.adapters.agent.handlers.agent_exception_handler import handle_agent_exception
+        result = handle_agent_exception(
+            exc=exc,
+            emitter=emitter,
+            model_config=model_config,
+            tool_call_registry=tool_call_registry,
+            conversation_messages=conversation_messages,
+            step_started=step_started,
+            actual_iterations=actual_iterations,
+            create_chat_model_fn=create_chat_model,
+            is_recursion_error_fn=_is_recursion_error,
+            generate_recursion_summary_fn=_generate_recursion_summary,
+        )
+        return result.data
 
 
 def get_available_tools() -> list[dict[str, str]]:
@@ -461,6 +284,7 @@ def get_available_tools() -> list[dict[str, str]]:
 
 
 # Re-export langchain helpers for callers that import from this module
+# Also re-export token optimizer functions for backward compatibility
 __all__ = [
     "run_agent",
     "check_langchain_available",
@@ -469,4 +293,10 @@ __all__ = [
     "init_chat_model",
     "HumanMessage",
     "AIMessage",
+    # Re-exported for backward compat (sub_agent.py imports these)
+    "_create_chat_model",
+    "_handle_stream_message",
+    "_truncate_tool_message",
+    "_prune_old_tool_results",
+    "ToolMessage",
 ]

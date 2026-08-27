@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { SessionPersistenceService, SessionTaskState } from "../agent/sessionPersistence";
 import { ProviderRuntimeStartPolicy } from "./providerRuntimePolicy";
-import { normalizeProviderRuntimeError, ProviderRuntimeError, sanitizeRuntimePayload, validateRuntimeDescriptor, DEFAULT_PROVIDER_RUNTIME_TIMEOUTS, type ProviderRuntimeDescriptor, type ProviderRuntimeEvent, type ProviderRuntimeExit, type ProviderRuntimeGateway, type ProviderRuntimeInstance, type ProviderRuntimeStartRequest, type ProviderRuntimeState, type ProviderRuntimeStatus, type ProviderRuntimeTimeouts } from "./providerRuntimeProtocol";
-import { validateProviderManifest } from "./providerProtocol";
+import { normalizeProviderRuntimeError, ProviderRuntimeError, sanitizeRuntimePayload, validateRuntimeDescriptor, DEFAULT_PROVIDER_RUNTIME_TIMEOUTS, type ProviderRuntimeDescriptor, type ProviderRuntimeEvent, type ProviderRuntimeExit, type ProviderRuntimeGateway, type ProviderRuntimeInstance, type ProviderRuntimeStartRequest, type ProviderRuntimeState, type ProviderRuntimeStatus, type ProviderRuntimeTimeouts } from "./protocols/providerRuntimeProtocol";
+import { validateProviderManifest } from "./protocols/providerProtocol";
 import type { ProviderRegistry } from "./providerRegistry";
 import type { ProviderSessionContext } from "./providerService";
 import { debugError, debugInfo } from "../../infrastructure/logging/debugLogger";
@@ -254,8 +254,8 @@ export class ProviderRuntimeService {
   private requireDescriptor(providerId: string): ProviderRuntimeDescriptor { const descriptor = this.descriptors.get(providerId); if (!descriptor) throw new ProviderRuntimeError("provider-runtime-unconfigured", "当前未配置此 Provider。", "discover"); return descriptor; }
   private requireConfiguredState(providerId: string): ProviderRuntimeState { const descriptor = this.requireDescriptor(providerId); return { providerId, displayName: descriptor.displayName, status: "stopped", updatedAt: this.now().toISOString() }; }
   private setRegistryUnhealthy(providerId: string, message: string): void { try { this.registry.setHealth(providerId, { status: "unhealthy", checkedAt: this.now().toISOString(), message }); } catch { /* Provider may not have completed a handshake. */ } }
-  private withTimeout<T>(phase: import("./providerRuntimeProtocol").ProviderRuntimePhase, milliseconds: number, operation: (signal: AbortSignal) => Promise<T>): Promise<T> { return this.withControllerTimeout(phase, milliseconds, new AbortController(), operation); }
-  private async withControllerTimeout<T>(phase: import("./providerRuntimeProtocol").ProviderRuntimePhase, milliseconds: number, controller: AbortController, operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  private withTimeout<T>(phase: import("./protocols/providerRuntimeProtocol").ProviderRuntimePhase, milliseconds: number, operation: (signal: AbortSignal) => Promise<T>): Promise<T> { return this.withControllerTimeout(phase, milliseconds, new AbortController(), operation); }
+  private async withControllerTimeout<T>(phase: import("./protocols/providerRuntimeProtocol").ProviderRuntimePhase, milliseconds: number, controller: AbortController, operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_resolve, reject) => { timer = setTimeout(() => { controller.abort(); reject(Object.assign(new Error("timeout"), { name: "TimeoutError" })); }, milliseconds); });
     try { return await Promise.race([operation(controller.signal), timeout]); } catch (error) { throw normalizeProviderRuntimeError(error, phase); } finally { if (timer) clearTimeout(timer); }

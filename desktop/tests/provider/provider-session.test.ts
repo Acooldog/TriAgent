@@ -1,8 +1,8 @@
-import assert from "node:assert/strict";
+﻿import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import path from "node:path";
 import { test } from "node:test";
-import { ProviderContractError, type ProviderEvent, type ProviderGateway, type ProviderGatewayResult, type ProviderHealth, type ProviderInvocationRequest, type ProviderManifest } from "../../application/provider/providerProtocol";
+import { ProviderContractError, type ProviderEvent, type ProviderGateway, type ProviderGatewayResult, type ProviderHealth, type ProviderInvocationRequest, type ProviderManifest } from "../../application/provider/protocols/providerProtocol";
 import { ProviderRegistry } from "../../application/provider/providerRegistry";
 import { ProviderService } from "../../application/provider/providerService";
 import { SessionPersistenceService } from "../../application/agent/sessionPersistence";
@@ -11,7 +11,7 @@ import { FileSessionRepository } from "../../infrastructure/repositories/session
 import { JsonSettingsRepository } from "../../infrastructure/repositories/settingsRepository";
 import { FileSystemWorkspaceRepository } from "../../infrastructure/repositories/workspaceRepository";
 import { providerManifestFixture } from "./providerFixture";
-import { registerProviderIpc } from "../../presentation/providerIpc";
+import { registerProviderIpc } from "../../presentation/ipc/providerIpc";
 
 const tempRoot = path.join(process.cwd(), ".tmp");
 

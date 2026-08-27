@@ -1,4 +1,4 @@
-import { ProviderContractError, validateProviderInput, validateProviderManifest, type ProviderCall, type ProviderCapabilityManifest, type ProviderHealth, type ProviderManifest, type ProviderRegistration } from "./providerProtocol";
+import { ProviderContractError, validateProviderInput, validateProviderManifest, type ProviderCall, type ProviderCapabilityManifest, type ProviderHealth, type ProviderManifest, type ProviderRegistration } from "./protocols/providerProtocol";
 
 export class ProviderRegistry {
   private readonly registrations = new Map<string, ProviderRegistration>();

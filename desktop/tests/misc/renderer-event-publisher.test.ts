@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createRendererEventPublisher, type RendererEventTarget } from "../../presentation/rendererEventPublisher";
+import { createRendererEventPublisher, type RendererEventTarget } from "../../presentation/ipc/rendererEventPublisher";
 
 test("窗口在 IPC 注册后创建时仍向当前 Renderer 发布事件", () => {
   const sent: Array<{ channel: string; payload: unknown }> = [];
