@@ -172,6 +172,6 @@ async function bootstrap(): Promise<void> {
   await createWindow();
 }
 
-void app.whenReady().then(bootstrap).catch((error: unknown) => { dialog.showErrorBox("TriMusicAgent 初始化失败", error instanceof Error ? error.message : "未知错误"); app.quit(); });
+void app.whenReady().then(bootstrap).catch((error: unknown) => { dialog.showErrorBox("TriAgent 初始化失败", error instanceof Error ? error.message : "未知错误"); app.quit(); });
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
 app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0 && workspaceService) void createWindow(); });
