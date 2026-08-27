@@ -1,8 +1,7 @@
 appId: com.triagent.app
 productName: TriAgent
 copyright: Copyright © 2025 TriAgent
-
-asar: true
+asar: false
 
 files:
   - dist/electron/**/*
@@ -10,14 +9,13 @@ files:
 
 directories:
   output: release
-  buildResources: build
 
 win:
   target:
-    - target: portable
+    - target: dir
       arch:
         - x64
-  artifactName: "${productName}-Portable-${version}.${ext}"
+  artifactName: "${productName}-${version}-${arch}.${ext}"
 
 extraResources:
   - from: dist/python-worker

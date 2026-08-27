@@ -3,16 +3,15 @@ const path = require("path");
 const { spawnSync } = require("child_process");
 
 const rootDir = path.resolve(__dirname, "..");
-const desktopDir = path.join(rootDir, "desktop");
-const distDir = path.join(desktopDir, "dist");
-const electronDistDir = path.join(rootDir, "dist", "electron");
-const pythonWorkerDir = path.join(rootDir, "dist", "python-worker");
-const releaseDir = path.join(rootDir, "release");
+const electronDistDir = path.join(rootDir, "node_modules", "electron", "dist");
+const electronPkg = require("electron/package.json");
+const appVersion = require(path.join(rootDir, "package.json")).version;
 
 const appName = "TriAgent";
+const exeName = "TriAgent";
 
-function log(step, message) {
-  console.log(`[package:electron] ${step} ${message}`);
+function log(msg) {
+  console.log(`[package:electron] ${msg}`);
 }
 
 function run(command, args, options = {}) {
@@ -33,32 +32,9 @@ function ensureDir(dirPath) {
   }
 }
 
-function killProcessByName(name) {
-  if (process.platform !== "win32") return;
-  try {
-    spawnSync("taskkill", ["/F", "/IM", name], { stdio: "pipe", shell: false });
-  } catch { }
-}
-
 function cleanDir(dirPath) {
   fs.rmSync(dirPath, { recursive: true, force: true });
   ensureDir(dirPath);
-}
-
-function forceCleanDir(dirPath) {
-  killProcessByName("TriAgent.exe");
-  killProcessByName("triagent-worker.exe");
-  for (let attempt = 0; attempt < 5; attempt++) {
-    try {
-      fs.rmSync(dirPath, { recursive: true, force: true });
-      ensureDir(dirPath);
-      return;
-    } catch {
-      if (attempt === 4) throw;
-      const { spawnSync: ss } = require("child_process");
-      ss("cmd", ["/c", "timeout", "/t", "1", "/nobreak"], { stdio: "pipe" });
-    }
-  }
 }
 
 function copyRecursive(sourceDir, targetDir) {
@@ -81,91 +57,133 @@ function copyRecursive(sourceDir, targetDir) {
 }
 
 function stepBuildElectron() {
-  log("1/4", "Building Electron frontend...");
+  log("1/4 Building Electron frontend...");
   run("node", [path.join(rootDir, "scripts", "build-electron.js")], { cwd: rootDir });
 }
 
 function stepBuildPythonWorker() {
-  log("2/4", "Building Python worker (standalone exe)...");
+  log("2/4 Building Python worker (standalone exe)...");
   run("node", [path.join(rootDir, "scripts", "build-python-worker.js")], { cwd: rootDir });
 }
 
-function stepStageAssets() {
-  log("3/4", "Staging assets for electron-builder...");
+function stepAssemblePackage() {
+  log("3/4 Assembling desktop package...");
 
-  cleanDir(electronDistDir);
-  cleanDir(path.join(rootDir, "dist", "python-worker"));
+  const winUnpackedDir = path.join(rootDir, "release", "win-unpacked");
 
-  const items = [
-    { from: path.join(distDir, "main.cjs"), to: path.join(electronDistDir, "main.cjs") },
-    { from: path.join(distDir, "preload.cjs"), to: path.join(electronDistDir, "preload.cjs") },
-    { from: path.join(distDir, "renderer"), to: path.join(electronDistDir, "renderer") },
-  ];
-
-  for (const { from, to } of items) {
-    if (!fs.existsSync(from)) {
-      throw new Error(`Missing build artifact: ${from}`);
+  const releaseDir = path.join(rootDir, "release");
+  if (fs.existsSync(releaseDir)) {
+    const timestamp = Date.now();
+    const oldDir = path.join(rootDir, `release_old_${timestamp}`);
+    try {
+      fs.renameSync(releaseDir, oldDir);
+      log("   Renamed old release to " + path.basename(oldDir));
+    } catch {
+      log("   WARNING: Cannot rename old release, will try to clean...");
     }
-    copyRecursive(from, to);
-    log("   ", `Copied: ${path.relative(rootDir, from)}`);
+  }
+  ensureDir(releaseDir);
+
+  log("   Copying Electron runtime...");
+  copyRecursive(electronDistDir, winUnpackedDir);
+
+  const electronExe = process.platform === "win32" ? "electron.exe" : "electron";
+  const appExe = process.platform === "win32" ? `${exeName}.exe` : exeName;
+  const electronExePath = path.join(winUnpackedDir, electronExe);
+  const appExePath = path.join(winUnpackedDir, appExe);
+
+  if (electronExePath !== appExePath) {
+    fs.renameSync(electronExePath, appExePath);
+  }
+
+  const appDir = path.join(winUnpackedDir, "resources", "app");
+  ensureDir(appDir);
+
+  const electronBuildDir = path.join(rootDir, "dist", "electron");
+  const items = ["main.cjs", "preload.cjs", "renderer"];
+  for (const item of items) {
+    const src = path.join(electronBuildDir, item);
+    const dst = path.join(appDir, item);
+    if (!fs.existsSync(src)) {
+      throw new Error(`Missing build artifact: ${src}`);
+    }
+    copyRecursive(src, dst);
+    log(`   Copied: ${item}`);
   }
 
   const pkg = {
     name: appName.toLowerCase(),
-    version: require(path.join(rootDir, "package.json")).version,
+    version: appVersion,
     description: appName,
     main: "main.cjs",
   };
   fs.writeFileSync(
-    path.join(electronDistDir, "package.json"),
+    path.join(appDir, "package.json"),
     JSON.stringify(pkg, null, 2),
     "utf8",
   );
 
-  if (fs.existsSync(pythonWorkerDir)) {
-    copyRecursive(pythonWorkerDir, path.join(rootDir, "dist", "python-worker"));
-    log("   ", "Python worker staged for extraResources");
+  const workerBuildDir = path.join(rootDir, "dist", "python-worker");
+  const workerDestDir = path.join(winUnpackedDir, "resources", "python-worker");
+  ensureDir(workerDestDir);
+  if (fs.existsSync(workerBuildDir)) {
+    copyRecursive(workerBuildDir, workerDestDir);
+    log("   Copied: python-worker");
   } else {
-    log("   ", "WARNING: Python worker not built yet (will be bundled on next run)");
+    log("   WARNING: python-worker not built yet");
   }
 
-  log("   ", `Staging complete: ${electronDistDir}`);
+  log(`   Assembled: ${winUnpackedDir}`);
+  return winUnpackedDir;
 }
 
-function stepBuildInstaller() {
-  log("4/4", "Building portable EXE with electron-builder...");
-  forceCleanDir(releaseDir);
+function stepCreateZip() {
+  log("4/4 Creating zip archive...");
 
-  const cliPath = path.join(rootDir, "node_modules", "electron-builder", "cli.js");
-  run("node", [cliPath, "--win", "portable"], { cwd: rootDir });
+  const releaseDir = path.join(rootDir, "release");
+  const winUnpackedDir = path.join(releaseDir, "win-unpacked");
+  const zipPath = path.join(releaseDir, `${appName}-${appVersion}-Win64.zip`);
 
-  const artifacts = fs.existsSync(releaseDir)
-    ? fs.readdirSync(releaseDir).filter(f => !f.startsWith("builder-"))
-    : [];
-  if (artifacts.length === 0) {
-    throw new Error("electron-builder did not produce any artifacts");
+  if (fs.existsSync(zipPath)) {
+    try { fs.rmSync(zipPath, { force: true }); } catch { }
   }
-  log("   ", `Release artifacts: ${artifacts.join(", ")}`);
+
+  const exeName = process.platform === "win32" ? "TriAgent.exe" : "TriAgent";
+  const zipCmd = `$ErrorActionPreference='SilentlyContinue'; Compress-Archive -Path "${winUnpackedDir}\\*" -DestinationPath "${zipPath}" -Force`;
+  const result = spawnSync("powershell", [
+    "-ExecutionPolicy", "Bypass", "-Command", zipCmd
+  ], { cwd: rootDir, timeout: 300000, stdio: "pipe" });
+
+  if (!fs.existsSync(zipPath)) {
+    throw new Error("Failed to create zip archive");
+  }
+
+  const sizeMB = Math.round(fs.statSync(zipPath).size / 1024 / 1024);
+  log(`   ZIP ready: ${path.basename(zipPath)} (${sizeMB} MB)`);
 }
 
 function main() {
   console.log(`\n${"=".repeat(50)}`);
-  console.log(`  ${appName} - One-Click Desktop Packaging`);
+  console.log(`  ${appName} - Desktop Packaging`);
+  console.log(`  Electron ${electronPkg.version}`);
   console.log(`${"=".repeat(50)}\n`);
-
-  log("0/4", "Killing stale processes...");
-  killProcessByName("TriAgent.exe");
-  killProcessByName("triagent-worker.exe");
 
   try {
     stepBuildElectron();
     stepBuildPythonWorker();
-    stepStageAssets();
-    stepBuildInstaller();
+    stepAssemblePackage();
+    stepCreateZip();
+
+    const releaseDir = path.join(rootDir, "release");
+    const exePath = path.join(releaseDir, "win-unpacked", `${exeName}.exe`);
+    const zipPath = path.join(releaseDir, `${appName}-${appVersion}-Win64.zip`);
 
     console.log(`\n${"=".repeat(50)}`);
-    console.log(`  Done! Your portable EXE is in:`);
-    console.log(`  ${releaseDir}`);
+    console.log(`  Done!`);
+    console.log(`\n  Run directly:`);
+    console.log(`    ${exePath}`);
+    console.log(`\n  Or distribute the zip:`);
+    console.log(`    ${zipPath}`);
     console.log(`${"=".repeat(50)}\n`);
   } catch (error) {
     console.error(`\n[package:electron] FAILED:`, error.message);
