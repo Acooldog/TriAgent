@@ -39,6 +39,9 @@ from src.Infrastructure.adapters.agent.progress.agent_message_handler import (
     _flush_pending_text, _generate_recursion_summary,
     _handle_stream_message, _is_recursion_error,
 )
+from src.Infrastructure.adapters.agent.model_adapters import (
+    ModelAdapterContext, select_adapter,
+)
 from src.Infrastructure.adapters.agent.config.agent_config_preflight import (
     check_llm_connectivity, clean_model_config,
 )
@@ -232,6 +235,43 @@ def run_agent(
                     raise stream_error
 
         _run_stream_with_timeout(conversation_messages)
+
+        # === 模型适配器补救：检测弱工具调用模型 ===
+        if not cancelled and not timed_out and actual_iterations == 0 and last_ai_message:
+            emitter._log("检测到模型输出文本但未调用工具，尝试适配器补救...", "info")
+            adapter = select_adapter(model_config)
+            emitter._log(f"选择适配器: {adapter.__class__.__name__}", "info")
+
+            adapter_ctx = ModelAdapterContext(
+                model_config=model_config,
+                user_message=user_message,
+                model_output_text=last_ai_message,
+                event_count=event_count,
+                actual_iterations=actual_iterations,
+                tool_call_count=len(tool_call_registry),
+            )
+            adapter_ctx = adapter.handle_no_tool_calls(adapter_ctx)
+
+            # 输出适配器日志
+            for log_line in adapter_ctx.adapter_logs:
+                emitter._log(log_line, "debug")
+
+            if adapter_ctx.re_prompt_needed and adapter_ctx.re_prompt_message:
+                emitter._log("适配器生成补救 prompt，重跑 agent.stream()", "info")
+                emitter.emit("agent_message", {
+                    "content": f"⚠️ 检测到模型未调用工具，正在重新引导...",
+                    "kind": "progress",
+                })
+                conversation_messages.append(
+                    HumanMessage(content=adapter_ctx.re_prompt_message)
+                )
+                emitter.emit("agent_step_started", {"step": 2, "message": "适配器补救"})
+                _run_stream_with_timeout(conversation_messages)
+                emitter._log(
+                    f"补救后: {actual_iterations} 次工具调用迭代，"
+                    f"{len(tool_call_registry)} 个注册表项",
+                    "info",
+                )
 
         # === 处理用户补充 ===
         supplement_round = 0
