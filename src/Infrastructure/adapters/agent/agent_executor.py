@@ -180,7 +180,9 @@ def run_agent(
                     _thinking_count = update_thinking_state(msg, emitter, _thinking_count, deep_thinking=deep_thinking)
 
                     if event_count % 20 == 0:
-                        _flush_pending_text(emitter, pending_text)
+                        flushed_chunk = _flush_pending_text(emitter, pending_text)
+                        if flushed_chunk:
+                            last_ai_message += flushed_chunk
                     log_progress_snapshot(event_count, msg, pending_text, emitter)
                     _total_truncate_saved = process_tool_message_truncation(msg, emitter, _total_truncate_saved)
 
@@ -202,9 +204,9 @@ def run_agent(
                 _stream_elapsed = round(time.perf_counter() - _stream_start, 3)
                 emitter._log(f"agent.stream() 完成，共 {event_count} 事件，耗时 {_stream_elapsed}s", "info")
                 if not cancelled:
-                    flushed = _flush_pending_text(emitter, pending_text)
-                    if flushed:
-                        last_ai_message = flushed
+                    flushed_tail = _flush_pending_text(emitter, pending_text)
+                    if flushed_tail:
+                        last_ai_message += flushed_tail
             except Exception as e:
                 stream_error = e
                 _flush_pending_text(emitter, pending_text)

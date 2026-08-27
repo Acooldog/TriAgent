@@ -55,6 +55,13 @@ def report_success_and_return(
     full_output = str(last_ai_message)
     emitter._log(f"Agent 最终输出（完整 {len(full_output)} 字符）: {full_output}", "info")
 
+    # === 空输出兜底：确保始终有回复内容 ===
+    if not full_output.strip():
+        full_output = _build_fallback_response(tool_calls_made, elapsed)
+        emitter._log(f"模型输出为空，生成兜底回复 ({len(full_output)} 字符)", "warning")
+        # 把兜底内容发射给前端显示
+        emitter.emit("agent_message", {"content": full_output, "tool_calls_count": 0})
+
     emitter._log(f"Agent 最终输出预览: {full_output[:200]}")
     emitter._log(f"Agent 执行完成，共调用 {len(tool_calls_made)} 个工具")
 
@@ -81,7 +88,31 @@ def report_success_and_return(
     }
 
 
+def _build_fallback_response(tool_calls_made: list, elapsed: float) -> str:
+    """当模型输出为空时，根据工具调用情况生成兜底回复。"""
+    if tool_calls_made:
+        # 有工具调用但无文本 → 汇总工具执行结果
+        lines = ["## ✅ 任务执行完成\n"]
+        for i, tc in enumerate(tool_calls_made, 1):
+            name = tc.get("tool_name", "未知工具")
+            result = str(tc.get("tool_result", ""))[:200]
+            status = "✅" if result else "⏳"
+            lines.append(f"{status} **{name}** — {result[:100] if result else '执行中'}")
+        lines.append(f"\n> 耗时 {elapsed}s，共 {len(tool_calls_made)} 个步骤")
+        return "\n".join(lines)
+    else:
+        # 无工具调用也无文本 → 简单完成模板
+        return (
+            f"## ✅ 任务已完成\n\n"
+            f"Agent 已处理你的请求，耗时 **{elapsed}s**。\n\n"
+            f"- 处理事件数：{len(tool_calls_made)} 个工具调用\n"
+            f"- 状态：正常结束\n\n"
+            f"如有需要，请继续向 Agent 提问。"
+        )
+
+
 __all__ = [
     "handle_timeout_or_cancelled",
     "report_success_and_return",
+    "_build_fallback_response",
 ]
