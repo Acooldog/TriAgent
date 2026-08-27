@@ -102,8 +102,8 @@ def run_agent(
         emitter._log(f"意图检测结果: {detected_intent}")
 
         if detected_intent == "simple":
-            from src.Infrastructure.adapters.agent.progress.agent_progress import _select_tools_for_simple
-            tool_subset = _select_tools_for_simple(TOOL_NAMES)
+            from src.Infrastructure.adapters.agent.progress.agent_prompts import select_tools_for_simple
+            tool_subset = select_tools_for_simple(TOOL_NAMES)
             tools = [t for t in _build_tools_for_llm() if _safe_tool_name(t) in tool_subset]
             emitter._log(f"简单模式：{len(tools)} 个工具（子集）")
         elif detected_intent == "chat":

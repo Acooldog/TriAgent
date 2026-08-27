@@ -1,10 +1,11 @@
 """agent_progress — Agent 事件发射器 + 模块组合导出。
 
-原 4 职责拆分：
-- System Prompt → agent_prompts.py
-- 意图检测 → agent_intent.py
-- 行动消息 → agent_action_builder.py
-- 事件发射 → 本文件 (AgentEventEmitter)
+合并后的 5 文件结构：
+- agent_prompts.py — Prompt 定义 + 意图检测
+- agent_action_builder.py — 行动消息构建
+- agent_message_handler.py — 流处理 + delta 检测 + 递归处理
+- agent_stream_processor.py — 流处理辅助
+- 本文件 — AgentEventEmitter + 组合导出
 """
 from __future__ import annotations
 
@@ -17,13 +18,13 @@ from src.Infrastructure.adapters.agent.progress.agent_action_builder import (
     build_initial_action_message,
     build_tool_action_message,
 )
-from src.Infrastructure.adapters.agent.progress.agent_intent import detect_intent
 from src.Infrastructure.adapters.agent.progress.agent_prompts import (
     _SYSTEM_PROMPT_CHAT,
     _SYSTEM_PROMPT_FULL,
     _SYSTEM_PROMPT_SIMPLE,
     build_fallback_system_prompt,
     build_system_prompt,
+    detect_intent,
 )
 
 

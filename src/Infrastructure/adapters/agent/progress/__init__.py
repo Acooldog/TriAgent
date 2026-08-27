@@ -1,13 +1,11 @@
 """Agent progress subpackage — progress tracking and stream processing.
 
-SRP 拆分结构：
-- agent_progress.py     → AgentEventEmitter + 组合导出
-- agent_prompts.py      → System prompt 定义与组装
-- agent_intent.py       → 意图检测
-- agent_action_builder.py → 工具行动消息构建
-- agent_message_handler.py → 流式消息处理（对外 API 门面）
-- agent_delta_detector.py  → Delta 模式检测
-- agent_recursion_handler.py → 递归错误检测与总结
+合并后结构（5 文件 + __init__）：
+- agent_progress.py         → AgentEventEmitter + 组合导出
+- agent_prompts.py          → System prompt 定义 + 意图检测
+- agent_action_builder.py   → 工具行动消息构建
+- agent_message_handler.py  → 流处理 + delta 检测 + 递归处理
+- agent_stream_processor.py → 流处理辅助
 """
 from src.Infrastructure.adapters.agent.progress.agent_progress import (
     AgentEventEmitter,

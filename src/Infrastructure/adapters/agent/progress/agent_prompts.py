@@ -1,10 +1,13 @@
-"""agent_prompts — System prompt 定义与组装。
+"""agent_prompts — System prompt 定义、意图检测与组装。
 
-从 agent_progress.py 拆分而来，负责：
+从 agent_progress.py 拆分+合并而来，负责：
 - 全量/精简/聊天三种 prompt 模板
+- 用户意图检测（chat/simple/full）
 - 按意图选择 prompt + 裁剪工具列表
 """
 from __future__ import annotations
+
+import re
 
 _SYSTEM_PROMPT_FULL = """你是 TriMusicAgent，音乐处理助手。
 
@@ -81,6 +84,11 @@ def _select_tools_for_simple(tool_names: list[str]) -> list[str]:
     return [t for t in tool_names if t in _SIMPLE_TOOL_CATEGORIES]
 
 
+def select_tools_for_simple(tool_names: list[str]) -> list[str]:
+    """公开版本 — 为简单操作场景选择相关工具子集。"""
+    return _select_tools_for_simple(tool_names)
+
+
 def build_system_prompt(
     tool_names: list[str],
     tool_descriptions: dict[str, str],
@@ -115,7 +123,53 @@ def build_fallback_system_prompt(tool_names: list[str], tool_descriptions: dict[
 __all__ = [
     "build_system_prompt",
     "build_fallback_system_prompt",
+    "detect_intent",
+    "select_tools_for_simple",
     "_SYSTEM_PROMPT_FULL",
     "_SYSTEM_PROMPT_SIMPLE",
     "_SYSTEM_PROMPT_CHAT",
 ]
+
+
+# === 意图检测关键字 ===
+_CHAT_KEYWORDS: tuple[str, ...] = (
+    "你好", "hello", "hi", "谢谢", "再见", "拜拜",
+    "什么是", "怎么", "如何", "介绍", "解释",
+    "格式", "flac", "mp3", "m4a", "wav", "ogg",
+    "压缩", "音质", "比特率", "采样率",
+)
+_FULL_TASK_KEYWORDS: tuple[str, ...] = (
+    "解密", "转码", "转换", "批量", "处理", "加密",
+    "kgma", "kgm", "kgg", "vpr", "mflac", "mgg", "mmp4", "ncm", "kwm",
+    "酷狗", "网易云", "酷我", "转格式", "格式转换",
+)
+_SIMPLE_TASK_KEYWORDS: tuple[str, ...] = (
+    "移动", "复制", "重命名", "删除", "整理", "筛选",
+    "扫描", "查找", "列出", "检测", "列出目录",
+    "校验", "验证", "完整性",
+)
+
+
+def detect_intent(user_message: str) -> str:
+    """检测用户意图：chat（纯聊天）/ simple（单步操作）/ full（完整任务）。
+
+    优先级：full > simple > chat，确保不会误判为轻量模式。
+    """
+    normalized = user_message.lower().strip()
+    if not normalized:
+        return "full"
+
+    if any(k in normalized for k in _FULL_TASK_KEYWORDS):
+        return "full"
+
+    if any(k in normalized for k in _SIMPLE_TASK_KEYWORDS):
+        return "simple"
+
+    if any(k in normalized for k in _CHAT_KEYWORDS):
+        return "chat"
+
+    # 有明确文件路径的视为 full
+    if re.search(r'[A-Za-z]:[\\/]', user_message):
+        return "full"
+
+    return "full"
