@@ -43,10 +43,25 @@ def _build_post_process(
 
     def _post_process(output_path: str, container: str, dst_root: pathlib.Path) -> str | None:
         try:
-            from src.Infrastructure.adapters.media.transcode.transcoder import process_audio_file
+            from src.Infrastructure.adapters.media.transcode.transcoder import (
+                normalize_target_format,
+                process_audio_file,
+            )
             src = pathlib.Path(output_path)
             if not src.exists():
                 return None
+
+            # 同格式跳过：如果源文件已是目标格式，且无其他处理参数，直接跳过
+            if target_format:
+                src_ext = src.suffix.lower().lstrip(".")
+                try:
+                    norm_fmt = normalize_target_format(target_format)
+                except Exception:
+                    norm_fmt = target_format.lower()
+                if src_ext == norm_fmt and not any([sample_rate_hz, bitrate_kbps, gain_db]):
+                    print(f"[post_process] 同格式跳过: {src.name} ({src_ext} → {norm_fmt})")
+                    return output_path
+
             ext = f".{target_format}" if target_format else src.suffix
             dst = dst_root / f"{src.stem}{ext}"
             result = process_audio_file(

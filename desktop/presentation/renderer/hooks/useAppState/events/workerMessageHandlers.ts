@@ -75,7 +75,16 @@ export function handleAgentQuestion(
         .map((o) => String(o))
         .filter((o) => o.trim().length > 0);
     if (questionId && question && options.length >= 2) {
+        console.log("[agent_question] 收到提问:", { questionId, question, options });
         deps.setAgentQuestion({ questionId, question, options });
+    } else {
+        console.warn("[agent_question] 参数无效，对话框未弹出:", {
+            questionId,
+            question,
+            optionsCount: options.length,
+            rawOptions: optionsRaw,
+            payload,
+        });
     }
 }
 

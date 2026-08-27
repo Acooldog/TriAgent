@@ -153,6 +153,7 @@ def run_decrypt_batch(
 
     # 兜底重试：转换失败的文件单独再试一次（仅当用户要求转换时）
     retry_count = 0
+    transcode_fallback_success = 0
     if post_process is not None and post_retry_list:
         print(f"{log_prefix} === 兜底重试阶段：{len(post_retry_list)} 个转换失败文件 ===")
         emit_batch_event("batch_retry_started", {
@@ -161,9 +162,9 @@ def run_decrypt_batch(
             "kind": "decrypt",
         })
         retry_success = 0
+        still_failed: list[tuple] = []
         for file_path, out_path, container in post_retry_list:
             try:
-                # 清理可能残留的原解密文件
                 src = pathlib.Path(out_path)
                 if not src.exists():
                     print(f"{log_prefix} 重试跳过（原文件已不存在）: {file_path.name}")
@@ -171,7 +172,6 @@ def run_decrypt_batch(
                 processed = post_process(out_path, container, pathlib.Path(output_dir) if output_dir else file_path.parent)
                 if processed and processed != out_path:
                     retry_success += 1
-                    # 更新索引为转换后的路径
                     for item in pending:
                         if item["file"] == file_path:
                             idx = item["index"]
@@ -182,16 +182,60 @@ def run_decrypt_batch(
                             break
                     print(f"{log_prefix} 重试成功: {file_path.name} -> {pathlib.Path(processed).name}")
                 else:
+                    still_failed.append((file_path, out_path, container))
                     print(f"{log_prefix} 重试仍失败: {file_path.name}")
             except Exception as exc:
+                still_failed.append((file_path, out_path, container))
                 print(f"{log_prefix} 重试异常: {file_path.name} - {exc}")
-        retry_count = len(post_retry_list) - retry_success
-        print(f"{log_prefix} 重试完成：成功 {retry_success}，仍失败 {retry_count}")
+
+        # 第三级兜底：对重试仍失败的文件，直接调用 transcode_file 做纯净转码
+        if still_failed and target_format:
+            print(f"{log_prefix} === transcode_file 兜底阶段：{len(still_failed)} 个文件 ===")
+            try:
+                from src.Infrastructure.adapters.media.transcode.transcoder import transcode_file
+                dst_root = pathlib.Path(output_dir) if output_dir else pathlib.Path(still_failed[0][1]).parent
+                for file_path, out_path, container in still_failed:
+                    try:
+                        src = pathlib.Path(out_path)
+                        if not src.exists():
+                            print(f"{log_prefix} transcode 兜底跳过（原文件已不存在）: {file_path.name}")
+                            continue
+                        ext = f".{target_format}"
+                        dst = dst_root / f"{src.stem}{ext}"
+                        result = transcode_file(src, dst, target_format)
+                        new_path = str(result.get("output_path", ""))
+                        if new_path and pathlib.Path(new_path).exists():
+                            # 成功则删除原文件
+                            try:
+                                src.unlink()
+                            except Exception:
+                                pass
+                            transcode_fallback_success += 1
+                            # 更新索引
+                            for item in pending:
+                                if item["file"] == file_path:
+                                    idx = item["index"]
+                                    idx_dir = item["index_dir"]
+                                    idx_path = item["index_path"]
+                                    mark_processed(idx, file_path, idx_dir, new_path, container)
+                                    save_index(idx_path, idx)
+                                    break
+                            print(f"{log_prefix} transcode 兜底成功: {file_path.name} -> {pathlib.Path(new_path).name}")
+                        else:
+                            print(f"{log_prefix} transcode 兜底仍失败: {file_path.name}")
+                    except Exception as exc:
+                        print(f"{log_prefix} transcode 兜底异常: {file_path.name} - {exc}")
+            except ImportError as exc:
+                print(f"{log_prefix} transcode_file 导入失败: {exc}")
+
+        retry_count = len(post_retry_list) - retry_success - transcode_fallback_success
+        print(f"{log_prefix} 重试完成：post_process 成功 {retry_success}，transcode 兜底成功 {transcode_fallback_success}，仍失败 {retry_count}")
 
     skipped_count = len(skipped)
+    final_post_failed = post_failed - retry_success - transcode_fallback_success
     header = f"解密完成：共 {total} 个待处理，成功 {success}，失败 {failed}，跳过 {skipped_count}"
     if post_failed > 0:
-        header += f"，转换失败 {post_failed}（重试后仍失败 {retry_count}）"
+        header += f"，转换失败 {post_failed}（post_process 重试修复 {retry_success}，transcode 兜底修复 {transcode_fallback_success}，仍失败 {final_post_failed}）"
     print(f"{log_prefix} {header}")
 
     emit_batch_event("batch_finished", {
@@ -201,8 +245,10 @@ def run_decrypt_batch(
         "failed_count": failed,
         "skipped_count": skipped_count,
         "post_failed_count": post_failed,
-        "post_retry_remaining": retry_count,
-        "result_code": "ok" if (failed == 0 and post_failed == 0) else "partial",
+        "post_retry_remaining": final_post_failed,
+        "post_retry_fixed": retry_success,
+        "post_transcode_fallback_fixed": transcode_fallback_success,
+        "result_code": "ok" if (failed == 0 and final_post_failed == 0) else "partial",
         "kind": "decrypt",
     })
 
@@ -211,11 +257,14 @@ def run_decrypt_batch(
     if failed_details:
         parts.append("\n解密失败详情：")
         parts.extend(failed_details)
-    if post_failed_details:
-        parts.append("\n转换失败详情：")
-        parts.extend(post_failed_details)
-        if retry_count > 0:
-            parts.append("\n（重试后仍有失败，请检查文件是否损坏或格式兼容性）")
+    if post_failed_details and final_post_failed > 0:
+        parts.append("\n最终仍失败的转换详情：")
+        # 只保留最终仍失败的
+        for line in post_failed_details:
+            parts.append(line)
+        parts.append("\n（已尝试 post_process 重试 + transcode_file 兜底，仍失败请检查文件完整性）")
+    elif post_failed_details and final_post_failed == 0:
+        parts.append("\n（所有转换失败文件已通过重试/兜底修复）")
     if not failed_details and not post_failed_details:
         parts.append("全部成功。")
     return "\n".join(parts)
