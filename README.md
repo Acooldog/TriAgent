@@ -3,9 +3,9 @@
 # TriAgent
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](LICENSE)
-![Python](https://img.shields.io/badge/python-3.10%2B-blue)
-![TypeScript](https://img.shields.io/badge/typescript-5.8%2B-blue)
-![Electron](https://img.shields.io/badge/electron-37%2B-blue)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)
+![TypeScript](https://img.shields.io/badge/typescript-5.8%2B-blue.svg)
+![Electron](https://img.shields.io/badge/electron-37%2B-blue.svg)
 
 **基于大语言模型的本地音乐处理智能体**
 
@@ -296,27 +296,7 @@ npm run start:electron
 
 ## 贡献指南
 
-### 提交 Pull Request
-
-1. Fork 本仓库并创建你的分支：`git checkout -b feature/your-feature`
-2. 保持代码风格一致：遵循现有架构的 SOLID 原则
-3. 代码行数限制：单个文件不超过 300 行；子文件夹超过 7 个文件必须拆分
-4. 添加测试：新增功能必须附带对应测试
-5. 更新文档：涉及变更的 README/CODE_OF_CONDUCT 等文档需同步更新
-6. 通过 CI 检查：确保 TypeScript 类型检查和 Python 语法检查通过
-7. 双轴评审：提交前完成 Standard（代码规范）+ Spec（需求覆盖）双轴评审
-
-### 代码规范
-
-- TypeScript：遵循 ESLint 配置，不使用 `any` 除非必要
-- Python：遵循 PEP 8，类型注解全覆盖
-- 命名：语义清晰，避免缩写
-- 注释：公共 API 必须有文档字符串
-
-### Issue 分类
-
-- Bug 报告：请附上复现步骤、期望行为、实际行为、日志
-- 功能建议：请先阅读 [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md) 的相关规定
+详细的贡献规则、代码规范、PR 流程和评审标准请阅读 [CONTRIBUTING.md](./CONTRIBUTING.md)。
 
 ---
 
