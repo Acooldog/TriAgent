@@ -34,7 +34,7 @@ def truncate_tool_message(msg: Any, max_chars: int = 300, keep_head: int = 200) 
     return saved
 
 
-def prune_old_tool_results(messages: list, keep_last_rounds: int = 2) -> int:
+def prune_old_tool_results(messages: list, keep_last_rounds: int = 3) -> int:
     """清理 conversation_messages 中的旧 ToolMessage。返回节省的字符数。"""
     tool_round_indices: list[int] = []
     for i, m in enumerate(messages):
@@ -68,7 +68,7 @@ def prune_old_tool_results(messages: list, keep_last_rounds: int = 2) -> int:
     return total_saved
 
 
-def prune_old_ai_rounds(messages: list, keep_last_rounds: int = 3) -> int:
+def prune_old_ai_rounds(messages: list, keep_last_rounds: int = 4) -> int:
     """裁剪旧轮次 AIMessage 为摘要。返回节省的字符数。
 
     代理到 agent_helpers.prune_old_ai_messages，保持统一接口。

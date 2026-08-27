@@ -79,7 +79,7 @@ def estimate_messages_tokens(messages: list) -> tuple[int, int]:
 
 
 # === AIMessage 裁剪（公共函数） ===
-def prune_old_ai_messages(messages: list, keep_last_rounds: int = 3, max_chars_per_msg: int = 120) -> int:
+def prune_old_ai_messages(messages: list, keep_last_rounds: int = 4, max_chars_per_msg: int = 300) -> int:
     """裁剪旧轮次 AIMessage，只保留摘要。返回节省的字符数。
 
     规则：

@@ -21,6 +21,7 @@ class AgentService:
         announce_start: bool = True,
         consume_supplements: Callable[[], list[str]] | None = None,
         conversation_history: list[dict[str, Any]] | None = None,
+        deep_thinking: bool = True,
     ) -> dict[str, Any]:
         """Execute the agent loop. See Infrastructure adapter for full docs."""
         from src.Infrastructure.adapters.agent.agent_executor import run_agent as _run
@@ -33,6 +34,7 @@ class AgentService:
             announce_start=announce_start,
             consume_supplements=consume_supplements,
             conversation_history=conversation_history,
+            deep_thinking=deep_thinking,
         )
 
     def check_langchain_available(self) -> bool:

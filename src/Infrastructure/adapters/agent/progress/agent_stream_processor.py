@@ -27,6 +27,7 @@ def update_thinking_state(
     msg: Any,
     emitter: Any,
     thinking_count: int,
+    deep_thinking: bool = True,
 ) -> int:
     """检测深度思考状态并定期上报进度。返回更新后的 thinking_count。"""
     content_now = str(getattr(msg, "content", "")) if hasattr(msg, "content") else ""
@@ -35,6 +36,8 @@ def update_thinking_state(
 
     if is_ai:
         if not content_now and not tc_now:
+            if not deep_thinking:
+                return thinking_count
             thinking_count += 1
             if thinking_count > 0 and thinking_count % 30 == 0:
                 emitter._log(
@@ -98,7 +101,7 @@ def prune_tool_results_after_tool_call(
         actual_iterations += 1
 
         # 裁剪旧 ToolMessage
-        pr_saved = prune_old_tool_results(conversation_messages, keep_last_rounds=2)
+        pr_saved = prune_old_tool_results(conversation_messages, keep_last_rounds=3)
         if pr_saved > 0:
             total_prune_saved += pr_saved
             emitter._log(
@@ -107,7 +110,7 @@ def prune_tool_results_after_tool_call(
             )
 
         # 裁剪旧 AIMessage
-        ai_saved = prune_old_ai_rounds(conversation_messages, keep_last_rounds=3)
+        ai_saved = prune_old_ai_rounds(conversation_messages, keep_last_rounds=4)
         if ai_saved > 0:
             total_prune_saved += ai_saved
             emitter._log(
@@ -135,8 +138,8 @@ def check_token_budget(
             "warning",
         )
         # 主动压缩：裁剪更多轮次
-        ai_saved = prune_old_ai_rounds(messages, keep_last_rounds=2)
-        tool_saved = prune_old_tool_results(messages, keep_last_rounds=1)
+        ai_saved = prune_old_ai_rounds(messages, keep_last_rounds=4)
+        tool_saved = prune_old_tool_results(messages, keep_last_rounds=2)
         total_saved = ai_saved + tool_saved
         if total_saved > 0:
             emitter._log(

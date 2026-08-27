@@ -50,7 +50,12 @@ def report_success_and_return(
     emitter.emit("agent_step_finished", {
         "step": 1, "elapsed_sec": elapsed, "tool_calls_count": len(tool_calls_made),
     })
-    emitter._log(f"Agent 最终输出: {str(last_ai_message)[:200]}")
+
+    # === 完整输出日志 ===
+    full_output = str(last_ai_message)
+    emitter._log(f"Agent 最终输出（完整 {len(full_output)} 字符）: {full_output}", "info")
+
+    emitter._log(f"Agent 最终输出预览: {full_output[:200]}")
     emitter._log(f"Agent 执行完成，共调用 {len(tool_calls_made)} 个工具")
 
     # === token 消耗汇总 ===
@@ -66,11 +71,11 @@ def report_success_and_return(
 
     emitter.emit("agent_finished", {
         "status": "completed", "tool_calls_count": len(tool_calls_made),
-        "response_preview": str(last_ai_message)[:200] if last_ai_message else "",
+        "response_preview": full_output[:200] if full_output else "",
         "elapsed_sec": elapsed,
     })
     return {
-        "status": "completed", "response": str(last_ai_message),
+        "status": "completed", "response": full_output,
         "tool_calls": tool_calls_made, "iterations": actual_iterations,
         "elapsed_sec": elapsed,
     }

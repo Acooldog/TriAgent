@@ -148,10 +148,15 @@ export function handleWorkerEvent(args: { deps: WorkerEventDeps; eventType: stri
         deps.setAgentMessages((prev) => {
           if (!isNotice) {
             const last = prev[prev.length - 1];
-            if (last && last.role === "assistant") {
-              const updated = [...prev];
-              updated[prev.length - 1] = { ...last, text: content, createdAt: Date.now() };
-              return updated;
+            const lastIsAssistant = last && last.role === "assistant";
+            if (lastIsAssistant) {
+              const prevMsg = prev.length >= 2 ? prev[prev.length - 2] : null;
+              const hasNoticeBetween = prevMsg && prevMsg.role === "notice";
+              if (!hasNoticeBetween) {
+                const updated = [...prev];
+                updated[prev.length - 1] = { ...last, text: content, createdAt: Date.now() };
+                return updated;
+              }
             }
           }
           return [...prev, { role: (isNotice ? "notice" : "assistant") as LlmMessage["role"], text: content, createdAt: Date.now() }];

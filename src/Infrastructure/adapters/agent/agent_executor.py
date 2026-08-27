@@ -59,6 +59,7 @@ def run_agent(
     announce_start: bool = True,
     consume_supplements: Callable[[], list[str]] | None = None,
     conversation_history: list[dict[str, Any]] | None = None,
+    deep_thinking: bool = True,
 ) -> dict[str, Any]:
     emitter = AgentEventEmitter(event_sink)
     emitter.emit("agent_started", {"message": user_message, "model": model_config.get("model", "")})
@@ -157,8 +158,19 @@ def run_agent(
                     if hasattr(msg, "additional_kwargs"):
                         msg.additional_kwargs.pop("reasoning_content", None)
 
+                    # 记录模型原始输出（截断前）
+                    is_ai = isinstance(msg, (AIMessage, AIMessageChunk)) or type(msg).__name__ in ("AIMessage", "AIMessageChunk")
+                    if is_ai:
+                        raw_content = str(getattr(msg, "content", "")) if hasattr(msg, "content") else ""
+                        raw_tc = list(getattr(msg, "tool_calls", []) or [])
+                        if raw_content or raw_tc:
+                            emitter._log(
+                                f"[模型输出#{event_count}] content={raw_content[:200]!r} tool_calls={[tc.get('name','?') for tc in raw_tc]}",
+                                "debug",
+                            )
+
                     _handle_stream_message(msg, metadata, emitter, tool_call_registry, pending_text)
-                    _thinking_count = update_thinking_state(msg, emitter, _thinking_count)
+                    _thinking_count = update_thinking_state(msg, emitter, _thinking_count, deep_thinking=deep_thinking)
 
                     if event_count % 20 == 0:
                         _flush_pending_text(emitter, pending_text)

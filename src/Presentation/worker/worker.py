@@ -85,6 +85,10 @@ def run_agent(payload: dict[str, Any], runtime: WorkerRuntime) -> int:
     model_config.setdefault("base_url", "https://open.bigmodel.cn/api/paas/v4")
     max_iterations = int(payload.get("max_iterations", 15) or 15)
 
+    thinking_mode = str(model_config.get("thinking", "enabled") or "enabled").lower()
+    deep_thinking = thinking_mode != "disabled"
+    runtime.log(f"深度思考模式: {'开启' if deep_thinking else '关闭'} (thinking={thinking_mode})")
+
     conversation_history = list(payload.get("conversation_history") or [])
     if conversation_history:
         runtime.log(f"收到对话历史 {len(conversation_history)} 条，将作为上下文传入")
@@ -148,8 +152,14 @@ def run_agent(payload: dict[str, Any], runtime: WorkerRuntime) -> int:
                 announce_start=False,
                 consume_supplements=runtime.drain_supplements,
                 conversation_history=conversation_history,
+                deep_thinking=deep_thinking,
             )
         runtime.log(f"Agent 执行完成，结果: status={result.get('status')}, response_len={len(str(result.get('response', '')))}")
+        full_response = str(result.get("response", ""))
+        if full_response:
+            runtime.log(f"Agent 完整输出 ({len(full_response)} 字符): {full_response[:500]}", "info")
+            if len(full_response) > 500:
+                runtime.log(f"Agent 输出（续）: ...{full_response[-200:]}", "info")
 
         status = "completed" if result.get("status") == "completed" else "cancelled" if result.get("status") == "cancelled" else "failed"
         runtime.emit("agent_finished", payload={
