@@ -36,6 +36,15 @@ except ImportError:
 # === 智能 delta 模式检测 ===
 _DELTA_MODE: str | None = None
 _LAST_AI_CONTENT_LEN: int = 0
+_CHUNK_COUNT: int = 0  # 用于跳过首个 chunk 的检测
+
+
+def reset_delta_mode() -> None:
+    """每次 stream 调用前重置 delta 检测状态。"""
+    global _DELTA_MODE, _LAST_AI_CONTENT_LEN, _CHUNK_COUNT
+    _DELTA_MODE = None
+    _LAST_AI_CONTENT_LEN = 0
+    _CHUNK_COUNT = 0
 
 
 def _flush_pending_text(
@@ -59,13 +68,29 @@ def _detect_and_append_delta(
     content: str,
     emitter: AgentEventEmitter,
 ) -> None:
-    """智能追加 delta —— 自动检测是增量还是累积模式。"""
-    global _DELTA_MODE, _LAST_AI_CONTENT_LEN
+    """智能追加 delta —— 自动检测是增量还是累积模式。
+
+    首个 chunk 不做检测（空串是所有字符串的前缀，必然误判为累积模式），
+    从第二个 chunk 开始比较：如果新内容以当前累积文本为前缀→累积模式，
+    否则→增量模式。
+    """
+    global _DELTA_MODE, _LAST_AI_CONTENT_LEN, _CHUNK_COUNT
     if not content:
         return
 
+    _CHUNK_COUNT += 1
+
+    # 首个 chunk：不检测，直接追加
+    if _CHUNK_COUNT == 1:
+        pending_text.append(content)
+        _LAST_AI_CONTENT_LEN = len(content)
+        return
+
+    # 从第二个 chunk 开始检测
     if _DELTA_MODE is None:
-        if content.startswith("".join(pending_text)) and len(content) > len("".join(pending_text)):
+        accumulated = "".join(pending_text)
+        # 如果新内容以已有内容为前缀且更长 → 累积模式
+        if content.startswith(accumulated) and len(content) > len(accumulated):
             _DELTA_MODE = "accumulated"
             emitter._log("[delta-detect] 检测到累积模式，改用 replace 而非 append", "debug")
         else:
@@ -253,4 +278,5 @@ __all__ = [
     "_is_recursion_error",
     "_detect_and_append_delta",
     "_clean_llm_content",
+    "reset_delta_mode",
 ]

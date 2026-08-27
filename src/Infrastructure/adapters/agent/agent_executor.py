@@ -38,6 +38,7 @@ from src.Infrastructure.adapters.agent.progress.agent_stream_processor import (
 from src.Infrastructure.adapters.agent.progress.agent_message_handler import (
     _flush_pending_text, _generate_recursion_summary,
     _handle_stream_message, _is_recursion_error,
+    reset_delta_mode,
 )
 from src.Infrastructure.adapters.agent.model_adapters import (
     ModelAdapterContext, select_adapter,
@@ -139,6 +140,7 @@ def run_agent(
             nonlocal _total_estimated_input_tokens, _total_truncate_saved, _total_prune_saved
             nonlocal _using_light_prompt, _fallback_triggered, _current_tools, agent_inst, system_prompt
             _thinking_count = 0
+            reset_delta_mode()
             try:
                 _ch, _tk = _estimate_tokens(messages)
                 _total_estimated_input_tokens += _tk
