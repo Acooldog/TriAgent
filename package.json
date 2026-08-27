@@ -9,6 +9,7 @@
     "typecheck:electron": "tsc --noEmit -p desktop/tsconfig.json",
     "test:electron": "npm run build:electron && npm run typecheck:electron && node --import tsx --test desktop/tests/*.test.ts",
     "package": "node .\\script\\package.js",
+    "package:electron": "node .\\scripts\\package-electron.js",
     "build:console": "node .\\script\\build-console.js",
     "build:ui": "node .\\script\\build-ui.js",
     "build:native": "powershell -ExecutionPolicy Bypass -File .\\native\\build_native.ps1",
