@@ -33,9 +33,32 @@ function ensureDir(dirPath) {
   }
 }
 
+function killProcessByName(name) {
+  if (process.platform !== "win32") return;
+  try {
+    spawnSync("taskkill", ["/F", "/IM", name], { stdio: "pipe", shell: false });
+  } catch { }
+}
+
 function cleanDir(dirPath) {
   fs.rmSync(dirPath, { recursive: true, force: true });
   ensureDir(dirPath);
+}
+
+function forceCleanDir(dirPath) {
+  killProcessByName("TriAgent.exe");
+  killProcessByName("triagent-worker.exe");
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      fs.rmSync(dirPath, { recursive: true, force: true });
+      ensureDir(dirPath);
+      return;
+    } catch {
+      if (attempt === 4) throw;
+      const { spawnSync: ss } = require("child_process");
+      ss("cmd", ["/c", "timeout", "/t", "1", "/nobreak"], { stdio: "pipe" });
+    }
+  }
 }
 
 function copyRecursive(sourceDir, targetDir) {
@@ -111,7 +134,7 @@ function stepStageAssets() {
 
 function stepBuildInstaller() {
   log("4/4", "Building portable EXE with electron-builder...");
-  cleanDir(releaseDir);
+  forceCleanDir(releaseDir);
 
   const cliPath = path.join(rootDir, "node_modules", "electron-builder", "cli.js");
   run("node", [cliPath, "--win", "portable"], { cwd: rootDir });
@@ -129,6 +152,10 @@ function main() {
   console.log(`\n${"=".repeat(50)}`);
   console.log(`  ${appName} - One-Click Desktop Packaging`);
   console.log(`${"=".repeat(50)}\n`);
+
+  log("0/4", "Killing stale processes...");
+  killProcessByName("TriAgent.exe");
+  killProcessByName("triagent-worker.exe");
 
   try {
     stepBuildElectron();
