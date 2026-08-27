@@ -11,55 +11,53 @@
 
 Agent 自动扫描、解密、转码、整理你的音乐库。支持 QQ 音乐、酷狗、酷我、网易云四大平台的加密格式。
 
-<img src="./封面/封面.png" width="320" alt="TriAgent cover">
-
 </div>
 
 ---
 
-## ⚠️ 开发版声明
+## 开发版声明
 
-> **TriAgent 目前处于开发版（Alpha）阶段**，代码仍在快速迭代中，可能存在以下情况：
-> - 🐛 已知和未知的 Bug
-> - 🧩 界面交互不稳定
-> - 🔧 API 随时可能变更
-> - 📦 打包流程尚未稳定
+> TriAgent 目前处于开发版（Alpha）阶段，代码仍在快速迭代中，可能存在以下情况：
+> - 已知和未知的 Bug
+> - 界面交互不稳定
+> - API 随时可能变更
+> - 打包流程尚未稳定
 >
-> **如果你在使用中遇到问题，请务必提 Issues**，附上详细的复现步骤和日志，我会尽快排查修复。
+> 如果你在使用中遇到问题，请务必提 Issues，附上详细的复现步骤和日志，我会尽快排查修复。
 
 ---
 
 ## 项目概述
 
-**TriAgent** 是一个面向本地音乐文件处理场景的桌面智能体应用，前身为 **QKKDecrypt**（QQ/酷狗/酷我/网易云音乐解密工具）。项目引入了 LLM Agent 能力，能够通过自然语言指令自动完成：
+**TriAgent** 是一个面向本地音乐文件处理场景的桌面智能体应用。通过自然语言指令驱动大语言模型，自动完成：
 
-- 📂 扫描加密音乐文件
-- 🔓 解密各平台加密格式（kgm/kgma/kgg/mflac/mgg/ncm/kwm 等）
-- 🎵 格式转换（mp3/flac/wav/m4a/ogg）
-- 🎚️ 音频精细化处理（采样率、比特率、增益调整）
-- 🖼️ 封面嵌入与元数据整理
-- 📋 完整性校验与去重
+- 扫描加密音乐文件
+- 解密各平台加密格式（kgm/kgma/kgg/mflac/mgg/ncm/kwm 等）
+- 格式转换（mp3/flac/wav/m4a/ogg）
+- 音频精细化处理（采样率、比特率、增益调整）
+- 封面嵌入与元数据整理
+- 完整性校验与去重
 
 ### 技术栈
 
 | 层级 | 技术 |
 |------|------|
-| 前端框架 | **Electron 37** + **React 19** + **TypeScript 5.8** |
-| 后端框架 | **Python 3.10+** + **LangChain/LangGraph** |
-| 编解码 | **FFmpeg**（格式转换与音频处理） |
-| 数据库 | **ChromaDB**（向量存储/RAG） |
+| 前端框架 | Electron 37 + React 19 + TypeScript 5.8 |
+| 后端框架 | Python 3.10+ + LangChain/LangGraph |
+| 编解码 | FFmpeg（格式转换与音频处理） |
+| 数据库 | ChromaDB（向量存储/RAG） |
 | 原生能力 | C + Frida（QQ/酷我运行期解密） |
 
 ### 基于框架做的开发
 
-在 Electron + TypeScript 框架基础上，我们构建了：
+在 Electron + TypeScript 框架基础上，构建了：
 
-1. **三层前端架构**：Presentation / Application / Infrastructure 严格分层
-2. **六边形后端架构**：Presentation / Application / Domain / Infrastructure 端口适配器模式
-3. **Agent 工具系统**：基于 JSON Schema 的工具清单协议（ToolManifest v1）
-4. **Provider 能力注册中心**：可扩展的外部能力接入网关
-5. **会话持久化与上下文压缩**：基于 Token 预算的智能上下文管理
-6. **IPC 事件总线**：结构化 Worker 事件桥，支持流式进度渲染
+1. 三层前端架构：Presentation / Application / Infrastructure 严格分层
+2. 六边形后端架构：Presentation / Application / Domain / Infrastructure 端口适配器模式
+3. Agent 工具系统：基于 JSON Schema 的工具清单协议（ToolManifest v1）
+4. Provider 能力注册中心：可扩展的外部能力接入网关
+5. 会话持久化与上下文压缩：基于 Token 预算的智能上下文管理
+6. IPC 事件总线：结构化 Worker 事件桥，支持流式进度渲染
 
 ### 适配的服务
 
@@ -76,74 +74,74 @@ Agent 自动扫描、解密、转码、整理你的音乐库。支持 QQ 音乐�
 ### 前端三层架构
 
 ```
-┌─────────────────────────────────────────────────┐
-│ Presentation 展示层                              │
-│  ├── renderer/ (React 组件、Hooks、UI)           │
-│  ├── ipc/ (IPC Handler、事件发布)               │
-│  └── preload.ts (Context Bridge)                │
-├─────────────────────────────────────────────────┤
-│ Application 应用层                              │
-│  ├── agent/ (AgentTaskService、会话持久化)       │
-│  ├── model/ (ModelService、协议定义)            │
-│  ├── provider/ (Provider 注册、运行时)           │
-│  ├── tools/ (工具协议、清单)                     │
-│  ├── worker/ (Worker 协议、服务)                │
-│  └── settings/ (配置、权限策略)                  │
-├─────────────────────────────────────────────────┤
-│ Infrastructure 基础设施层                       │
-│  ├── providers/ (Provider 网关、Manifest)       │
-│  ├── repositories/ (仓库实现)                   │
-│  ├── workers/ (Python Worker 客户端)            │
-│  └── logging/ (调试日志)                        │
-└─────────────────────────────────────────────────┘
++--------------------------------------------------+
+| Presentation 展示层                               |
+|  +-- renderer/ (React 组件、Hooks、UI)            |
+|  +-- ipc/ (IPC Handler、事件发布)                 |
+|  +-- preload.ts (Context Bridge)                 |
++--------------------------------------------------+
+| Application 应用层                               |
+|  +-- agent/ (AgentTaskService、会话持久化)        |
+|  +-- model/ (ModelService、协议定义)             |
+|  +-- provider/ (Provider 注册、运行时)            |
+|  +-- tools/ (工具协议、清单)                      |
+|  +-- worker/ (Worker 协议、服务)                 |
+|  +-- settings/ (配置、权限策略)                   |
++--------------------------------------------------+
+| Infrastructure 基础设施层                        |
+|  +-- providers/ (Provider 网关、Manifest)        |
+|  +-- repositories/ (仓库实现)                    |
+|  +-- workers/ (Python Worker 客户端)             |
+|  +-- logging/ (调试日志)                         |
++--------------------------------------------------+
 ```
 
 ### 后端六边形架构
 
 ```
-┌─────────────────────────────────────────────────┐
-│ Presentation 表现层                             │
-│  ├── cli/ (命令行入口)                           │
-│  └── worker/ (Worker 运行时)                    │
-├─────────────────────────────────────────────────┤
-│ Application 应用层                              │
-│  ├── decrypt/ (解密编排服务)                    │
-│  ├── services/ (Agent/Config/Kugou/Platform)   │
-│  └── transcode/ (转码服务)                      │
-├─────────────────────────────────────────────────┤
-│ Domain 领域层                                   │
-│  ├── constants.py (业务常量)                    │
-│  ├── models.py (领域模型)                       │
-│  └── ports.py (端口接口)                        │
-├─────────────────────────────────────────────────┤
-│ Infrastructure 基础设施层                       │
-│  ├── adapters/agent/ (Agent 适配器集合)         │
-│  ├── adapters/platforms/ (各平台解密适配器)     │
-│  ├── adapters/media/ (媒体处理适配器)           │
-│  ├── adapters/storage/ (存储适配器)             │
-│  └── di.py (依赖注入容器)                       │
-└─────────────────────────────────────────────────┘
++--------------------------------------------------+
+| Presentation 表现层                              |
+|  +-- cli/ (命令行入口)                            |
+|  +-- worker/ (Worker 运行时)                     |
++--------------------------------------------------+
+| Application 应用层                               |
+|  +-- decrypt/ (解密编排服务)                     |
+|  +-- services/ (Agent/Config/Kugou/Platform)    |
+|  +-- transcode/ (转码服务)                       |
++--------------------------------------------------+
+| Domain 领域层                                    |
+|  +-- constants.py (业务常量)                     |
+|  +-- models.py (领域模型)                        |
+|  +-- ports.py (端口接口)                         |
++--------------------------------------------------+
+| Infrastructure 基础设施层                        |
+|  +-- adapters/agent/ (Agent 适配器集合)          |
+|  +-- adapters/platforms/ (各平台解密适配器)      |
+|  +-- adapters/media/ (媒体处理适配器)            |
+|  +-- adapters/storage/ (存储适配器)              |
+|  +-- di.py (依赖注入容器)                        |
++--------------------------------------------------+
 ```
 
 ### 架构约束
 
-- **SOLID 原则**：所有模块严格遵守单一职责、开闭原则、里氏替换、接口隔离、依赖倒置
-- **代码行数限制**：单个文件不超过 300 行
-- **子文件夹文件数**：7 个文件为提醒线，10 个必须拆分为子文件夹
-- **高内聚低耦合**：每个子模块只暴露必要的公共 API
+- SOLID 原则：所有模块严格遵守单一职责、开闭原则、里氏替换、接口隔离、依赖倒置
+- 代码行数限制：单个文件不超过 300 行
+- 子文件夹文件数：7 个文件为提醒线，10 个必须拆分为子文件夹
+- 高内聚低耦合：每个子模块只暴露必要的公共 API
 
 ---
 
 ## 项目优势
 
-- 🧠 **Agent 驱动**：自然语言交互，自动规划多步骤任务
-- 🔄 **流式实时反馈**：工具调用进度、思考过程、中间结果全可视
-- 🔐 **三级权限模式**：受限 / 标准 / 完全访问，敏感操作需审批
-- 💾 **会话持久化**：任务恢复、历史追溯、上下文压缩
-- 🎯 **多平台全格式**：QQ/酷狗/酷我/网易云，支持主流加密格式
-- ⚡ **去重优化**：已处理文件自动跳过，支持批量断点续跑
-- 🔧 **可扩展架构**：Provider 能力注册中心，新平台可快速接入
-- 🪶 **轻量前端**：React + Electron，内存占用低
+- Agent 驱动：自然语言交互，自动规划多步骤任务
+- 流式实时反馈：工具调用进度、思考过程、中间结果全可视
+- 三级权限模式：受限 / 标准 / 完全访问，敏感操作需审批
+- 会话持久化：任务恢复、历史追溯、上下文压缩
+- 多平台全格式：QQ/酷狗/酷我/网易云，支持主流加密格式
+- 去重优化：已处理文件自动跳过，支持批量断点续跑
+- 可扩展架构：Provider 能力注册中心，新平台可快速接入
+- 轻量前端：React + Electron，内存占用低
 
 ---
 
@@ -171,25 +169,25 @@ TriAgent 的工具系统基于 **ToolManifest v1 协议**，所有工具必须�
 ```typescript
 interface ToolManifest {
   protocol_version: "1";
-  tool_id: string;           // 唯一工具标识
-  version: string;            // 工具版本
-  name: string;               // 显示名称
-  description: string;        // 功能描述
-  input_schema: JsonSchema;   // 输入 JSON Schema
-  output_schema?: JsonSchema; // 输出 JSON Schema
-  capabilities: string[];     // 能力标签
-  permissions: PermissionMode[];  // 支持的权限模式
-  events: string[];           // 事件列表
-  cancellation: boolean;      // 是否支持取消
-  timeout_ms: number;         // 超时时间
-  sensitive_operation?: SensitiveOperation;  // 敏感操作类型
+  tool_id: string;
+  version: string;
+  name: string;
+  description: string;
+  input_schema: JsonSchema;
+  output_schema?: JsonSchema;
+  capabilities: string[];
+  permissions: PermissionMode[];
+  events: string[];
+  cancellation: boolean;
+  timeout_ms: number;
+  sensitive_operation?: SensitiveOperation;
 }
 ```
 
-- **协议版本**：当前为 `v1`
-- **权限模式**：`restricted`（受限）/ `standard`（标准）/ `full`（完全访问）
-- **敏感操作**：`built-in` / `process` / `command` / `file-write` / `file-delete` / `network` / `log-read` / `task-resume` / `provider`
-- **验证**：所有工具注册时强制校验输入/输出 Schema
+- 协议版本：当前为 `v1`
+- 权限模式：`restricted`（受限）/ `standard`（标准）/ `full`（完全访问）
+- 敏感操作：`built-in` / `process` / `command` / `file-write` / `file-delete` / `network` / `log-read` / `task-resume` / `provider`
+- 验证：所有工具注册时强制校验输入/输出 Schema
 
 ---
 
@@ -246,33 +244,33 @@ npm run start:electron
 
 ## 未完成事项
 
-- [ ] 更多 LLM Provider 的深度适配
-- [ ] Provider 运行时的独立安装流程
-- [ ] 完整的 PySide6 UI 重构（当前 Electron 优先）
-- [ ] 桌面打包与自动更新
-- [ ] 正式的 Provider 部署与分发
-- [ ] 更多平台的加密格式支持
-- [ ] 移动端（iOS/Android）适配
-- [ ] 多语言（i18n）支持
+- 更多 LLM Provider 的深度适配
+- Provider 运行时的独立安装流程
+- 完整的 PySide6 UI 重构（当前 Electron 优先）
+- 桌面打包与自动更新
+- 正式的 Provider 部署与分发
+- 更多平台的加密格式支持
+- 移动端（iOS/Android）适配
+- 多语言（i18n）支持
 
 ---
 
 ## 法律风险与免责声明
 
-> ⚠️ **以下内容是工程合规说明，不构成法律意见。**
+> 以下内容是工程合规说明，不构成法律意见。
 
 ### 你应当只在这些前提下使用本项目
 
-- ✅ **仅处理你本人拥有合法访问权限的本地文件**
-- ✅ 自行确认你的使用行为符合所在地法律、版权规则、平台协议和组织政策
-- ✅ 不要把本项目用于批量分发、倒卖、牟利或规避付费授权
+- 仅处理你本人拥有合法访问权限的本地文件
+- 自行确认你的使用行为符合所在地法律、版权规则、平台协议和组织政策
+- 不要把本项目用于批量分发、倒卖、牟利或规避付费授权
 
 ### 项目不承诺这些事情
 
-- ❌ 不承诺适用于所有地区、所有平台规则、所有用途
-- ❌ 不承诺一定符合你所在地区的合规要求
-- ❌ 不承诺任何特定商业用途可直接使用
-- ❌ 不为用户的侵权、违约或违规使用承担责任
+- 不承诺适用于所有地区、所有平台规则、所有用途
+- 不承诺一定符合你所在地区的合规要求
+- 不承诺任何特定商业用途可直接使用
+- 不为用户的侵权、违约或违规使用承担责任
 
 ### 对外发布建议口径
 
@@ -288,11 +286,11 @@ npm run start:electron
 
 主要依赖：
 
-- [x] PySide6 / PySide6-Fluent-Widgets（UI 框架）
-- [x] FFmpeg（媒体处理）
-- [x] LangChain / LangGraph（Agent 框架）
-- [x] Frida（运行期解密）
-- [x] Unlock Music（酷狗解密逻辑，仅私有 Provider 边界）
+- PySide6 / PySide6-Fluent-Widgets（UI 框架）
+- FFmpeg（媒体处理）
+- LangChain / LangGraph（Agent 框架）
+- Frida（运行期解密）
+- Unlock Music（酷狗解密逻辑，仅私有 Provider 边界）
 
 ---
 
@@ -300,13 +298,13 @@ npm run start:electron
 
 ### 提交 Pull Request
 
-1. **Fork 本仓库**并创建你的分支：`git checkout -b feature/your-feature`
-2. **保持代码风格一致**：遵循现有架构的 SOLID 原则
-3. **代码行数限制**：单个文件不超过 300 行；子文件夹超过 7 个文件必须拆分
-4. **添加测试**：新增功能必须附带对应测试
-5. **更新文档**：涉及变更的 README/CODE_OF_CONDUCT 等文档需同步更新
-6. **通过 CI 检查**：确保 TypeScript 类型检查和 Python 语法检查通过
-7. **双轴评审**：提交前完成 Standard（代码规范）+ Spec（需求覆盖）双轴评审
+1. Fork 本仓库并创建你的分支：`git checkout -b feature/your-feature`
+2. 保持代码风格一致：遵循现有架构的 SOLID 原则
+3. 代码行数限制：单个文件不超过 300 行；子文件夹超过 7 个文件必须拆分
+4. 添加测试：新增功能必须附带对应测试
+5. 更新文档：涉及变更的 README/CODE_OF_CONDUCT 等文档需同步更新
+6. 通过 CI 检查：确保 TypeScript 类型检查和 Python 语法检查通过
+7. 双轴评审：提交前完成 Standard（代码规范）+ Spec（需求覆盖）双轴评审
 
 ### 代码规范
 
@@ -317,8 +315,8 @@ npm run start:electron
 
 ### Issue 分类
 
-- 🐛 **Bug 报告**：请附上复现步骤、期望行为、实际行为、日志
-- 💡 **功能建议**：请先阅读 [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md) 的相关规定
+- Bug 报告：请附上复现步骤、期望行为、实际行为、日志
+- 功能建议：请先阅读 [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md) 的相关规定
 
 ---
 
