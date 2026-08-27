@@ -140,7 +140,7 @@ def create_chat_model_func(model_config: dict[str, Any]) -> Any:
     """Create chat model or raise RuntimeError when langchain is missing."""
     if not LANGCHAIN_AVAILABLE:
         raise RuntimeError("langchain 未安装")
-    from src.Infrastructure.adapters.agent.agent_model import create_chat_model
+    from src.Infrastructure.adapters.agent.config.agent_model import create_chat_model
     return create_chat_model(model_config, init_chat_model)
 
 

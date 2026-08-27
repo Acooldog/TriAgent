@@ -3,67 +3,45 @@ from __future__ import annotations
 import time
 from typing import Any, Callable
 
-SYSTEM_PROMPT = """你是 TriMusicAgent，一个专业的音乐处理助手。你需要像一个能干的助手一样与用户交流。
+# === 精简版 System Prompt ===
+_SYSTEM_PROMPT_FULL = """你是 TriMusicAgent，音乐处理助手。
 
-你的能力包括：
-1. 扫描和识别加密音乐文件（酷狗 kgma/kgm/kgg/vpr、QQ mflac/mgg/mmp4、网易云 ncm、酷我 kwm 等格式）
-2. 解密酷狗、QQ、网易云、酷我音乐文件，输出为可播放的音频文件。已解密的加密文件会在其所在目录的 _processed_index.json 中记录，再次解密前自动复查并跳过已处理文件
-3. 调用 ffmpeg 将解密后的音频转换为目标格式（mp3/m4a/flac/wav）
-4. 校验解密或转码后的音频文件是否完整可播放，损坏文件必须重新处理
-5. 管理文件（复制、移动、重命名、删除）
-6. 检测音频格式
+## 能力
+1. 扫描加密音乐（酷狗 kgma/kgm/kgg/vpr、QQ mflac/mgg/mmp4、网易云 ncm、酷我 kwm）
+2. 解密各平台加密文件，已处理文件在 _processed_index.json 记录，自动跳过
+3. ffmpeg 格式转换（mp3/m4a/flac/wav）
+4. 音频完整性校验
+5. 文件管理（复制/移动/重命名）
 
-## 反循环约束（最高优先级）
-- scan_files 是递归扫描，一次调用就能覆盖所有子目录，**扫描一次拿到结果后直接开始解密，禁止对同一目录反复调用 scan_files 或 list_directory**
-- list_directory 只在你需要确认某个路径是否存在或要查看目录层级结构时才用，**不要用来"查看 scan_files 已经告诉你的信息"**
-- 如果 scan_files 返回了"N 个加密文件"，直接调用对应的 decrypt_xxx 工具处理，不要再去扫描或列出目录
-- 工具调用次数是有限的（最多 40 次），每一次循环轮换都会消耗可用迭代次数
+## 核心规则
+- 中文交流，调用工具前用 markdown 说明参数
+- scan_files 一次覆盖全部子目录，拿到结果直接解密，**禁止重复扫描**
+- 每轮只调一个工具，工具完成后报告结果
+- 解密/转码后必须校验完整性
+- 同工具连失败 2 次换思路或问用户
+- 中文路径用 run_cli_safely 列表传参
+- 不确定时调用 ask_user 询问
 
-## 任务独立性（最高优先级）
-- 每个用户指令是独立的任务，之前的任务上下文只用于参考，不得覆盖当前指令。
-- 用户说"移动flac到backup"就是移动，不要因为看到flac文件就自动转码。
-- 用户说"只保留mp3"就是筛选/移动操作，不要把它理解为"把所有文件转成mp3"。
-- 只有当用户明确要求"解密"或"转换格式"时才执行解密/转码流程。
-- 多步指令（如"先解密再转mp3"）按顺序执行，单步指令只做当前步骤。
+## 任务独立
+- 单步指令只做当前步骤，多步指令按序执行
+- 不要因看到文件就自动转码，严格按用户意图行动"""
 
-## 交流规则
-- 必须使用中文。
-- **先判断用户意图**：用户的消息分为两种——①纯聊天/问答（如"你好"、"这个格式怎么读"、"什么是flac"），这类直接用自然语言回答，不调用任何工具；②任务请求（如"帮我转格式"、"扫描这个目录"、"解密文件"），这类才调用工具执行。
-- 收到任务后先简要说明准备怎么做，不展示隐含推理。
-- 调用工具前必须用 markdown 格式说明具体操作，包括工具名和关键参数。例如：`正在移动文件: move_files(source_dir="D:/音乐", target_dir="D:/音乐/backup", file_extensions=".flac,.ogg")`。不要用泛泛的"我现在调用命令行程序处理"。
-- 工具完成后用 markdown 报告结果，包括处理了多少文件、成功/失败数量。
-- 解密或格式转换完成后必须调用 verify_audio_integrity 校验文件完整性；损坏的文件必须重新解密或转码。
-- 工具调用失败时必须：①报告目前已完成的工具调用数和已处理文件数；②自查失败原因；③制定恢复方案并继续未完成任务。
-- 工具重试约束：同一工具用同一思路连续失败 2 次后，禁止再用同样方式重试第 3 次，必须换思路或询问用户。
-- 遇到不确定的操作必须先调用 ask_user 工具询问用户，由用户选择后再继续。
-- 命令行与中文路径处理：使用 run_cli_safely 工具，列表传参，路径先规范化。
-- 完成时给出结果摘要。
-- 每次只调用一个工具，等待结果后再决定下一步。
-- 文件操作安全由内置机制保障，无需预先调用 sandbox_manage 授权目录；仅当用户明确要求管理沙箱时才使用该工具。"""
+_SYSTEM_PROMPT_SIMPLE = """你是 TriMusicAgent，音乐处理助手。
 
-# 轻量聊天 Prompt — 用于纯聊天/问答场景，减少 token 消耗
-LIGHT_CHAT_PROMPT = """你是 TriMusicAgent，一个专业的音乐处理助手。
+## 规则
+- 中文交流，调工具前用 markdown 说明参数
+- scan_files 一次覆盖全目录，不要重复扫描
+- 每次只调一个工具，报告结果
+- 中文路径用 run_cli_safely
+- 同工具连失败 2 次换思路
 
-## 交流规则
-- 必须使用中文。
-- 当前对话为纯聊天/问答模式，**不要调用任何工具**。
-- 直接用自然语言回答用户的问题。
-- 简明扼要，回答完毕即可。"""
+## 能力
+- 文件扫描/复制/移动/重命名/格式检测/校验"""
 
-# 单步指令 Prompt — 用于简单文件操作，只保留核心约束
-SIMPLE_TASK_PROMPT = """你是 TriMusicAgent，一个专业的音乐处理助手。
+_SYSTEM_PROMPT_CHAT = """你是 TriMusicAgent，音乐处理助手。
 
-## 反循环约束（最高优先级）
-- scan_files 是递归扫描，一次调用就能覆盖所有子目录
-- 工具调用次数有限（最多 40 次），每轮都会消耗可用迭代
-
-## 交流规则
-- 必须使用中文。
-- 调用工具前用 markdown 格式说明操作和参数。
-- 工具完成后报告结果。
-- 解密/转码后必须校验文件完整性。
-- 同一工具连续失败 2 次后换思路或询问用户。
-- 中文路径用 run_cli_safely 列表传参。"""
+- 中文交流，纯聊天问答，不要调用任何工具
+- 直接回答，简明扼要"""
 
 # 意图检测：返回 'chat' / 'simple' / 'full'
 _CHAT_KEYWORDS = (
@@ -194,31 +172,53 @@ def build_system_prompt(
     tool_descriptions: dict[str, str],
     intent: str = "full",
 ) -> str:
-    """根据意图选择不同复杂度的 system prompt。
+    """根据意图选择不同复杂度的 system prompt + 按需裁剪工具列表。
 
     Args:
-        tool_names: 可用工具名列表
+        tool_names: 可用工具名列表（全量）
         tool_descriptions: 工具描述字典
         intent: 'chat' / 'simple' / 'full'
 
     Returns:
         组装好的 system prompt 字符串
     """
-    descriptions = "\n".join(f"- {name}: {tool_descriptions.get(name, '')}" for name in tool_names)
-
+    # 按意图选择 prompt 模板和工具子集
     if intent == "chat":
-        # 纯聊天：不传工具，节省 token
-        return LIGHT_CHAT_PROMPT
+        # 纯聊天：不传工具，节省大量 token
+        return _SYSTEM_PROMPT_CHAT
 
     if intent == "simple":
-        # 单步操作：精简 prompt + 完整工具列表
-        return f"{SIMPLE_TASK_PROMPT}\n\n可用工具：\n{descriptions}"
+        # 简单操作：只传文件操作相关工具
+        subset = _select_tools_for_simple(tool_names)
+        descriptions = "\n".join(
+            f"- {n}: {tool_descriptions.get(n, '')}" for n in subset
+        )
+        return f"{_SYSTEM_PROMPT_SIMPLE}\n\n可用工具：\n{descriptions}"
 
-    # full：完整 prompt + 完整工具列表（默认兜底）
-    return f"{SYSTEM_PROMPT}\n\n可用工具：\n{descriptions}"
+    # full：完整 prompt + 完整工具列表
+    descriptions = "\n".join(
+        f"- {n}: {tool_descriptions.get(n, '')}" for n in tool_names
+    )
+    return f"{_SYSTEM_PROMPT_FULL}\n\n可用工具：\n{descriptions}"
 
 
 def build_fallback_system_prompt(tool_names: list[str], tool_descriptions: dict[str, str]) -> str:
     """当轻量模式下模型返回工具调用时，构建全量 fallback prompt。"""
-    descriptions = "\n".join(f"- {name}: {tool_descriptions.get(name, '')}" for name in tool_names)
-    return f"{SYSTEM_PROMPT}\n\n可用工具：\n{descriptions}"
+    descriptions = "\n".join(
+        f"- {n}: {tool_descriptions.get(n, '')}" for n in tool_names
+    )
+    return f"{_SYSTEM_PROMPT_FULL}\n\n可用工具：\n{descriptions}"
+
+
+# === 工具子集选择 ===
+# 简单操作只需要文件操作相关工具，不需要解密/转码/rag 工具
+_SIMPLE_TOOL_CATEGORIES = {
+    "scan_files", "list_directory", "copy_files", "move_files",
+    "rename_file", "detect_format", "verify_audio_integrity",
+    "run_cli_safely", "ask_user", "sandbox_manage",
+}
+
+
+def _select_tools_for_simple(tool_names: list[str]) -> list[str]:
+    """为简单操作场景选择相关工具子集。"""
+    return [t for t in tool_names if t in _SIMPLE_TOOL_CATEGORIES]

@@ -11,7 +11,7 @@ from typing import Any, Callable
 
 def clean_model_config(model_config: dict[str, Any], log_fn: Callable[[str, str], None]) -> None:
     """清理 model_config 中 base_url/api_key/model/provider 的特殊字符。"""
-    from src.Infrastructure.adapters.agent.agent_model import _clean_field
+    from src.Infrastructure.adapters.agent.config.agent_model import _clean_field
     if not isinstance(model_config, dict):
         return
     for key in ("base_url", "api_key", "model", "provider"):
