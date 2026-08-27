@@ -141,6 +141,11 @@ def _handle_stream_message(
                 tool_args = str(raw_args)[:500] if raw_args else ""
                 tool_call_id = str(tc.get("id", "") or "")
 
+                emitter._log(
+                    f"[tool_call] name={tool_name!r} args={tool_args!r} call_id={tool_call_id!r}",
+                    "debug",
+                )
+
                 if tool_name and tool_args:
                     # 完整的工具调用（非流式 chunk）
                     emitter._log(f"调用工具: {tool_name}, 参数: {tool_args[:80]}", "info")
@@ -157,6 +162,7 @@ def _handle_stream_message(
                         "tool_input": tool_args,
                         "tool_result": "",
                         "tool_call_id": tool_call_id,
+                        "_emitted": True,
                     }
                 elif tool_call_id and not tool_name and not tool_args:
                     # 仅注册占位符：流式 chunk 中 name 和 args 还没到
@@ -199,6 +205,19 @@ def _handle_stream_message(
                             matched["tool_input"] = (existing + tool_args)[:500]
                         else:
                             matched["tool_name"] = tool_name
+                        # 如果 name 和 args 都就绪，且未 emit，则 emit
+                        if matched.get("tool_name") and matched.get("tool_input") and not matched.get("_emitted", False):
+                            full_input = matched["tool_input"]
+                            emitter._log(f"调用工具: {matched['tool_name']}, 参数: {full_input[:80]}", "info")
+                            emitter.emit("agent_tool_call", {
+                                "tool_name": matched["tool_name"],
+                                "tool_input": full_input,
+                                "tool_result": "执行中...",
+                                "elapsed_sec": 0,
+                                "step": len(tool_call_registry) + 1,
+                                "action_text": build_tool_action_message(matched["tool_name"], full_input),
+                            })
+                            matched["_emitted"] = True
                     else:
                         emitter._log(f"跳过无法匹配的 tool_call: name={tool_name}, args={tool_args[:50]}", "debug")
                 else:
@@ -245,15 +264,22 @@ def _handle_stream_message(
         tool_result = str(msg.content) if hasattr(msg, "content") else str(msg)
         tool_call_id = str(getattr(msg, "tool_call_id", ""))
 
+        emitter._log(
+            f"[tool_result] tool={tool_name!r} call_id={tool_call_id!r} result_len={len(tool_result)}",
+            "debug",
+        )
+
         tc = tool_call_registry.get(tool_call_id)
         if tc is None and tool_call_registry:
             # 兜底：如果精确匹配失败，用最后一个注册项
+            emitter._log(f"[tool_result] 精确匹配失败，使用兜底: registry size={len(tool_call_registry)}", "debug")
             tc = list(tool_call_registry.values())[-1]
             # 用正确的 tool_call_id 重新映射
             if tool_call_id and tool_call_id not in tool_call_registry:
                 tool_call_registry[tool_call_id] = tc
         if tc:
             tc["tool_result"] = tool_result[:1000]
+            emitter._log(f"[tool_result] emit agent_tool_call update: {tc.get('tool_name')}", "debug")
             emitter.emit("agent_tool_call", {
                 "tool_name": tool_name or tc.get("tool_name", ""),
                 "tool_input": tc["tool_input"],

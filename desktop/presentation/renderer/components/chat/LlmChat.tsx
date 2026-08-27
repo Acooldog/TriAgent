@@ -130,7 +130,11 @@ export function LlmChat(state: UseAppStateResult) {
           {messageList.map((msg, idx) => renderMessage(msg, idx))}
           {isTaskMode && (
             <>
-              {agentSegments.length > 0 && messageList.length > 0 && (() => {
+              {agentSegments.length > 0 && (() => {
+                if (messageList.length === 0) {
+                  // 所有 segments 都显示为尾部（无有效消息映射）
+                  return <AgentExecutionSegments segments={agentSegments} />;
+                }
                 // 末尾 segments：最后一条消息之后产生的 segments
                 const lastMsgTime = messageList[messageList.length - 1]?.createdAt ?? 0;
                 const tailSegs = agentSegments.filter((s) => s.createdAt >= lastMsgTime);

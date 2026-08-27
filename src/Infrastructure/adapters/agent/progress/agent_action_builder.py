@@ -35,19 +35,35 @@ def build_tool_action_message(tool_name: str, tool_args: str = "") -> str:
     if not tool_args:
         return base_msg
 
+    # tool_args 是 Python dict 的 str() 表示（如 "{'key': 'value'}"），需要转换
+    args_dict: dict[str, object] | None = None
     try:
-        args_dict: dict[str, object] = json.loads(tool_args) if isinstance(tool_args, str) else tool_args
-        if isinstance(args_dict, dict):
-            key_parts: list[str] = []
-            for k, v in args_dict.items():
-                v_str = str(v)
-                if len(v_str) > 80:
-                    v_str = v_str[:77] + "..."
-                key_parts.append(f"`{k}`={v_str}")
-            if key_parts:
-                return f"{base_msg}\n\n> 参数: {', '.join(key_parts)}"
+        # 先尝试 JSON（如果恰好是 JSON 格式）
+        parsed = json.loads(tool_args)
+        if isinstance(parsed, dict):
+            args_dict = parsed
     except (json.JSONDecodeError, TypeError):
         pass
+
+    if args_dict is None:
+        try:
+            # 尝试用 ast.literal_eval 解析 Python dict 字符串
+            import ast
+            parsed = ast.literal_eval(tool_args)
+            if isinstance(parsed, dict):
+                args_dict = parsed
+        except Exception:
+            pass
+
+    if args_dict is not None:
+        key_parts: list[str] = []
+        for k, v in args_dict.items():
+            v_str = str(v)
+            if len(v_str) > 80:
+                v_str = v_str[:77] + "..."
+            key_parts.append(f"`{k}`={v_str}")
+        if key_parts:
+            return f"{base_msg}\n\n> 参数: {', '.join(key_parts)}"
 
     args_preview = tool_args[:100] if len(tool_args) > 100 else tool_args
     return f"{base_msg}\n\n> 参数: `{args_preview}`"

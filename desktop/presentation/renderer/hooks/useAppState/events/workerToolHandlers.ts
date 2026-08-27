@@ -19,6 +19,13 @@ export function handleAgentToolCall(
     deps: ToolCallDeps & { setProgress: Dispatch<SetStateAction<number>> },
     payload: Record<string, unknown>,
 ): void {
+    console.log("[agent_tool_call] received", {
+        tool_name: payload.tool_name,
+        tool_input: String(payload.tool_input ?? "").slice(0, 100),
+        tool_result: String(payload.tool_result ?? "").slice(0, 100),
+        step: payload.step,
+        keys: Object.keys(payload),
+    });
     const detail = buildToolCallDetail(payload);
     const segmentContent = buildSegmentContent(detail, payload);
 

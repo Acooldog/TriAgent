@@ -80,8 +80,18 @@ export function useWorkerEventListener(deps: WorkerEventDeps) {
     let active = true;
     const cleanup = window.triMusicAgent.onWorkerEvent((event: { request_id: string; task_id: string; event_type: string; status: string; payload: Record<string, unknown>; error: { code: string; message: string } | null }) => {
       if (!active) return;
-      if (event.task_id !== deps.agentTaskIdRef.current) return;
+      if (event.task_id !== deps.agentTaskIdRef.current) {
+        console.warn("[worker_event] task_id mismatch", {
+          event_task_id: event.task_id,
+          current_task_id: deps.agentTaskIdRef.current,
+          event_type: event.event_type,
+        });
+        return;
+      }
       const { event_type: eventType, payload, status } = event;
+      if (eventType === "agent_tool_call") {
+        console.log("[worker_event] agent_tool_call passed filter", { task_id: event.task_id });
+      }
       handleWorkerEvent({ deps, eventType, payload, status, event });
     });
     return () => { active = false; cleanup(); };

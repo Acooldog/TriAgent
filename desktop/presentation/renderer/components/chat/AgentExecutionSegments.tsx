@@ -34,6 +34,11 @@ export function AgentExecutionSegments({ segments }: Props) {
 
   if (segments.length === 0) return null;
 
+  console.log("[AgentExecutionSegments] rendering", {
+    count: segments.length,
+    segments: segments.map((s) => ({ id: s.id, type: s.type, status: s.status, title: s.title?.slice(0, 50) })),
+  });
+
   const toggle = (id: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);
