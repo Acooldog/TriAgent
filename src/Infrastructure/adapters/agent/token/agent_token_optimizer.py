@@ -16,8 +16,17 @@ from src.Infrastructure.adapters.agent.agent_helpers import (
 )
 
 
+_ERROR_KEYWORDS = ("error", "traceback", "exception", "失败", "错误", "异常", "failed", "fail")
+
+
+def _contains_error(text: str) -> bool:
+    """归一化检测错误关键词。"""
+    lower = text.lower()
+    return any(kw in lower for kw in _ERROR_KEYWORDS)
+
+
 def truncate_tool_message(msg: Any, max_chars: int = 300, keep_head: int = 200) -> int:
-    """直接修改 ToolMessage.content —— 超过 max_chars 就截断。返回节省的字符数。"""
+    """直接修改 ToolMessage.content —— 超过 max_chars 就截断，但保留错误信息。返回节省的字符数。"""
     content = getattr(msg, "content", None)
     if content is None:
         return 0
@@ -25,6 +34,18 @@ def truncate_tool_message(msg: Any, max_chars: int = 300, keep_head: int = 200) 
     if len(text) <= max_chars:
         return 0
     original_len = len(text)
+    # 错误内容不截断 —— 给模型完整错误信息以便修复
+    if _contains_error(text):
+        # 只在极端超长(>2000字符)时才截断，且保留尾部错误信息
+        if len(text) > 2000:
+            truncated = text[:200].rstrip() + f"...(中间省略，原始 {original_len} 字符)\n\n--- 错误详情 ---\n" + text[-500:]
+            saved = original_len - len(truncated)
+            try:
+                msg.content = truncated
+            except Exception:
+                pass
+            return max(0, saved)
+        return 0
     truncated = text[:keep_head].rstrip() + f"...(已截断，原始 {original_len} 字符)"
     saved = original_len - len(truncated)
     try:

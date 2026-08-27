@@ -2,6 +2,8 @@ from __future__ import annotations
 import os
 import pathlib
 import shutil
+import traceback
+from src.Infrastructure.adapters.agent.tools.agent_safety import detect_destructive_intent
 from src.Infrastructure.adapters.agent.tools.agent_tools_state import (
     _ALLOWED_CLI_COMMANDS,
     _CliArgs,
@@ -13,6 +15,17 @@ from src.Infrastructure.adapters.agent.tools.agent_tools_state import (
 )
 from src.Infrastructure.adapters.platforms.kugou.decoder.kugou_decoder import detect_extension
 from src.Infrastructure.adapters.runtime.soft_sandbox import get_sandbox
+
+
+def _format_tool_error(exc: Exception, tool_name: str) -> str:
+    """格式化工具异常，保留类型和简化堆栈给模型。"""
+    tb = exc.__traceback__
+    if tb is not None:
+        tb_lines = traceback.format_exception(type(exc), exc, tb)
+        short_tb = "".join(tb_lines[-3:]).strip() if len(tb_lines) > 3 else "".join(tb_lines).strip()
+    else:
+        short_tb = "(无堆栈信息)"
+    return f"❌ {tool_name} 失败 [{type(exc).__name__}]: {exc}\n--- 堆栈 ---\n{short_tb}"
 @tool
 def copy_files(source_dir: str, target_dir: str, file_extensions: str = "") -> str:
     """将文件从源目录复制到目标目录（保留源文件），可选按扩展名过滤。
@@ -40,7 +53,7 @@ def copy_files(source_dir: str, target_dir: str, file_extensions: str = "") -> s
             count += 1
         return f"已复制 {count} 个文件从 {source_dir} 到 {target_dir}"
     except Exception as exc:
-        return f"复制文件失败：{exc}"
+        return _format_tool_error(exc, "copy_files")
 @tool
 def move_files(source_dir: str, target_dir: str, file_extensions: str = "") -> str:
     """将文件从源目录移动到目标目录（不保留源文件），可选按扩展名过滤。
@@ -69,7 +82,7 @@ def move_files(source_dir: str, target_dir: str, file_extensions: str = "") -> s
         ext_info = f"（扩展名过滤: {file_extensions}）" if file_extensions.strip() else "（所有文件）"
         return f"已移动 {count} 个文件从 {source_dir} 到 {target_dir}{ext_info}"
     except Exception as exc:
-        return f"移动文件失败：{exc}"
+        return _format_tool_error(exc, "move_files")
 @tool
 def rename_file(file_path: str, new_name: str) -> str:
     """重命名单个文件，文件保持在原目录不变。
@@ -91,7 +104,7 @@ def rename_file(file_path: str, new_name: str) -> str:
         print(f"[rename_file] {src.name} -> {target.name}")
         return f"已重命名: {src.name} -> {target}"
     except Exception as exc:
-        return f"重命名失败：{exc}"
+        return _format_tool_error(exc, "rename_file")
 @tool
 def list_directory(directory: str, show_hidden: bool = False) -> str:
     """列出指定目录下的所有文件和子目录。
@@ -115,15 +128,16 @@ def list_directory(directory: str, show_hidden: bool = False) -> str:
             lines.append(f"  {prefix} {entry.name} {size}".strip())
         return "\n".join(lines)
     except Exception as exc:
-        return f"列出目录失败：{exc}"
+        return _format_tool_error(exc, "list_directory")
+
 @tool
-def run_cli_safely(command: str, cli_args: _CliArgs = None, cwd: str = "") -> str:
+def run_cli_safely(command: str, cli_args: _CliArgs = None, cwd: str = "", confirmed: bool = False) -> str:
     """安全执行命令行程序，统一处理中文路径与编码问题。需要调用外部命令（如 ffmpeg、脚本）时必须使用本工具。
     权限模式说明：
     - 完全访问模式（full）：所有白名单命令直接执行，无需确认
-    - 标准模式（standard）：危险命令（cmd/copy/del/rmdir 等）需要用户确认
+    - 标准模式（standard）：危险命令（del/rmdir 等删除类）必须先向用户确认，再传 confirmed=True 执行
     - 受限模式（restricted）：危险命令被拒绝
-    Args: command: 可执行程序名或路径（如 "ffmpeg" 或 "python"）, cli_args: 参数列表，每个元素单独一项；含中文或空格的路径直接作为列表元素传入，不要手动拼接引号, cwd: 可选工作目录，留空则在当前目录执行
+    Args: command: 可执行程序名或路径（如 "ffmpeg" 或 "python"）, cli_args: 参数列表，每个元素单独一项；含中文或空格的路径直接作为列表元素传入，不要手动拼接引号, cwd: 可选工作目录，留空则在当前目录执行, confirmed: 是否已向用户确认删除类操作（标准模式下必须为 True 才能执行危险命令）
     """
     try:
         import subprocess
@@ -151,8 +165,18 @@ def run_cli_safely(command: str, cli_args: _CliArgs = None, cwd: str = "") -> st
             if permission_mode == "restricted":
                 print(f"[run_cli_safely] 受限模式，拒绝执行危险命令: {cmd_basename}")
                 return f"受限模式下不允许执行危险命令：{cmd_basename}，请切换到标准或完全访问模式。"
-            # standard/full 模式：LLM 自授权执行（不再弹窗询问）
-            print(f"[run_cli_safely] {'标准' if permission_mode == 'standard' else '完全访问'}模式，LLM 自授权执行危险命令: {cmd_basename}")
+            if permission_mode == "standard" and not confirmed:
+                # 标准模式：拦截删除类操作，要求模型先确认
+                destructive = detect_destructive_intent(cmd_list)
+                if destructive:
+                    print(f"[run_cli_safely] 标准模式，拦截危险删除操作: {cmd_basename} confirmed={confirmed}")
+                    return (
+                        f"⚠️ 这是一个删除/破坏性操作，必须先向用户确认。\n"
+                        f"请用通俗语言向用户解释该操作的目的和效果（不要显示命令行），"
+                        f"然后调用 ask_user 让用户确认。用户确认后，再次调用本工具并传 confirmed=True。\n"
+                        f"操作类型: {destructive}"
+                    )
+            print(f"[run_cli_safely] {'标准' if permission_mode == 'standard' else '完全访问'}模式，执行危险命令: {cmd_basename} confirmed={confirmed}")
         work_dir = str(pathlib.Path(cwd).resolve()) if cwd.strip() else None
         print(f"[run_cli_safely] cmd={cmd_list} cwd={work_dir} mode={permission_mode}")
         # 加 -nostdin 防止命令等待 stdin 挂起（ffmpeg 常见陷阱）
@@ -202,15 +226,13 @@ def detect_format(file_path: str) -> str:
         size = path.stat().st_size
         return f"文件: {path.name}\n大小: {size} bytes\n容器格式: {container}\n文件头 (hex): {head[:32].hex()}"
     except Exception as exc:
-        return f"检测失败：{exc}"
+        return _format_tool_error(exc, "detect_format")
+
 @tool
 def ask_user(question: str, options: list[str]) -> str:
-    """遇到不确定的操作时询问用户如何处理。调用后会弹出对话框等待用户选择，返回用户所选内容。
-    使用时机（必须调用本工具而非自行假设）：
-    - _processed_index.json 标记文件已处理，但目标输出目录为空（用户可能已删除输出文件或想重新处理）
-    - 目标路径已存在同名文件，覆盖/跳过/重命名无法判断用户意图
-    - 工具返回多种恢复路径，无法确定用户偏好
-    Args: question: 向用户提出的清晰问题（一句话，包含足够上下文让用户能做决定）, options: 2~4 个互斥选项字符串，每个选项是一条明确的可执行动作描述
+    """遇到不确定的操作时询问用户如何处理。调用后会弹出对话框等待用户选择。
+    使用时机：目标路径冲突/工具返回多种恢复路径/需要用户确认的操作。
+    Args: question: 向用户提出的清晰问题, options: 2~4 个互斥选项字符串
     """
     print(f"[ask_user] question={question[:80]} options={options}")
     callback = _get_ask_user_callback()
@@ -227,18 +249,13 @@ def ask_user(question: str, options: list[str]) -> str:
         return f"用户选择：{answer}"
     except Exception as exc:
         print(f"[ask_user] 异常: {exc}")
-        return f"询问用户失败：{exc}"
+        return _format_tool_error(exc, "ask_user")
+
 @tool
 def sandbox_manage(action: str, path: str = "") -> str:
     """管理文件操作沙箱：授权/取消授权目录、查看当前授权目录。
-    沙箱限制所有文件操作必须在授权目录范围内。支持的操作：
-    - "status": 查看当前沙箱状态和授权目录
-    - "add": 授权一个目录（path 参数必填）
-    - "remove": 取消授权一个目录（path 参数必填）
-    - "clear": 清空所有授权目录
-    - "enable": 启用沙箱
-    - "disable": 禁用沙箱（临时放行所有路径）
-    Args: action: 操作类型：status / add / remove / clear / enable / disable, path: 目录路径（add/remove 操作必填）
+    支持: status(查看) / add(授权) / remove(取消授权) / clear(清空) / enable(启用) / disable(禁用)
+    Args: action: 操作类型, path: 目录路径（add/remove 必填）
     """
     try:
         sandbox = get_sandbox()
@@ -282,7 +299,8 @@ def sandbox_manage(action: str, path: str = "") -> str:
     except ValueError as exc:
         return f"参数错误: {exc}"
     except Exception as exc:
-        return f"沙箱操作失败: {exc}"
+        return _format_tool_error(exc, "sandbox_manage")
+
 __all__ = [
     "copy_files",
     "move_files",

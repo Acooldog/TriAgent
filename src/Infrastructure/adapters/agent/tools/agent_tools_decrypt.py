@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pathlib
+import traceback
 
 from src.Infrastructure.adapters.agent.tools.agent_tools_batch import (
     run_decrypt_batch as _run_decrypt_batch,
@@ -13,6 +14,17 @@ from src.Infrastructure.adapters.agent.tools.agent_tools_state import (
 )
 from src.Infrastructure.adapters.storage.file_catalog import iter_supported_files
 from src.Infrastructure.adapters.platforms.kugou.decoder.kugou_decoder import decode_file
+
+
+def _format_tool_error(exc: Exception, tool_name: str) -> str:
+    """格式化工具异常，保留类型和简化堆栈给模型。"""
+    tb = exc.__traceback__
+    if tb is not None:
+        tb_lines = traceback.format_exception(type(exc), exc, tb)
+        short_tb = "".join(tb_lines[-3:]).strip() if len(tb_lines) > 3 else "".join(tb_lines).strip()
+    else:
+        short_tb = "(无堆栈信息)"
+    return f"❌ {tool_name} 失败 [{type(exc).__name__}]: {exc}\n--- 堆栈 ---\n{short_tb}"
 
 
 @tool
@@ -44,7 +56,7 @@ def scan_files(directory: str, recursive: bool = True, file_types: str = "kugou"
                 parts.append(f"    ... 还有 {len(paths) - 10} 个")
         return "\n".join(parts)
     except Exception as exc:
-        return f"扫描失败：{exc}"
+        return _format_tool_error(exc, "scan_files")
 
 
 @tool
@@ -75,7 +87,7 @@ def decrypt_kugou(input_path: str, output_dir: str, target_format: str = "auto")
             target_format=None if target_format == "auto" else target_format,
         )
     except Exception as exc:
-        return f"解密失败：{exc}"
+        return _format_tool_error(exc, "decrypt_kugou")
 
 
 @tool
@@ -112,7 +124,7 @@ def decrypt_qq(input_path: str, output_dir: str) -> str:
             platform_id="qq", input_path=input_path, output_dir=str(dst),
         )
     except Exception as exc:
-        return f"解密失败：{exc}"
+        return _format_tool_error(exc, "decrypt_qq")
 
 
 @tool
@@ -149,7 +161,7 @@ def decrypt_netease(input_path: str, output_dir: str) -> str:
             platform_id="netease", input_path=input_path, output_dir=str(dst),
         )
     except Exception as exc:
-        return f"解密失败：{exc}"
+        return _format_tool_error(exc, "decrypt_netease")
 
 
 @tool
@@ -183,7 +195,7 @@ def decrypt_kuwo(input_path: str, output_dir: str) -> str:
             platform_id="kuwo", input_path=input_path, output_dir=str(dst),
         )
     except Exception as exc:
-        return f"解密失败：{exc}"
+        return _format_tool_error(exc, "decrypt_kuwo")
 
 
 __all__ = [
