@@ -29,8 +29,7 @@ function buildPythonWorker() {
   console.log("[build-python-worker] Cleaning previous build...");
   fs.rmSync(buildDir, { recursive: true, force: true });
   fs.rmSync(outputDir, { recursive: true, force: true });
-
-  ensureDir(buildDir);
+  fs.mkdirSync(buildDir, { recursive: true });
 
   console.log("[build-python-worker] Building Python worker with PyInstaller...");
 
