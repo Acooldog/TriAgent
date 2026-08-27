@@ -34,12 +34,12 @@ from src.Infrastructure.adapters.agent.tools.agent_tools_state import (
 
 TOOL_DESCRIPTIONS = {
     "scan_files": "扫描目录下加密音乐文件（kgma/kgm/kgg/vpr/mflac/mgg/mmp4/ncm/kwm），返回按格式分组列表。扫描后直接解密，不要重复扫描。",
-    "decrypt_kugou": "解密酷狗加密文件（kgma/kgm/kgg/vpr），输出原生格式（flac/ogg），不做格式转换。传目录可批量处理。需要特定格式时后续调用 transcode_audio。",
-    "decrypt_qq": "解密 QQ 音乐加密文件（mflac→flac, mgg/mmp4→m4a），需 QQ 客户端运行。传目录可批量处理。需要特定格式时后续调用 transcode_audio。",
-    "decrypt_netease": "解密网易云加密文件（ncm），输出原生格式，无需客户端。传目录可批量处理。需要特定格式时后续调用 transcode_audio。",
-    "decrypt_kuwo": "解密酷我加密文件（kwm），输出原生格式，无需客户端。传目录可批量处理。需要特定格式时后续调用 transcode_audio。",
-    "transcode_audio": "【首选】音频格式转换工具（mp3/m4a/flac/wav/ogg），支持单文件和目录批量。必须用此工具，禁止用 run_cli_safely 调用 ffmpeg 做转码。解密后如需特定格式（如 ogg）调用此工具。",
-    "process_audio": "音频精细化处理：格式转换+采样率调整+比特率调整+增益调整。支持单文件和目录批量。参数可组合：target_format(mp3/m4a/flac/wav/ogg)、sample_rate_hz(如44100)、bitrate_kbps(如192)、gain_db(如3.0放大/-3.0缩小)。",
+    "decrypt_kugou": "解密酷狗加密文件（kgma/kgm/kgg/vpr）。支持边解密边转换：传 target_format(mp3/m4a/flac/wav/ogg) 即可一步完成解密+格式转换，还可传 sample_rate_hz/bitrate_kbps/gain_db。传目录可批量处理。",
+    "decrypt_qq": "解密 QQ 音乐加密文件（mflac→flac, mgg/mmp4→m4a），需 QQ 客户端运行。支持边解密边转换：传 target_format(mp3/m4a/flac/wav/ogg) 即可一步完成。传目录可批量处理。",
+    "decrypt_netease": "解密网易云加密文件（ncm），无需客户端。支持边解密边转换：传 target_format(mp3/m4a/flac/wav/ogg) 即可一步完成。传目录可批量处理。",
+    "decrypt_kuwo": "解密酷我加密文件（kwm），无需客户端。支持边解密边转换：传 target_format(mp3/m4a/flac/wav/ogg) 即可一步完成。传目录可批量处理。",
+    "transcode_audio": "音频格式转换工具（mp3/m4a/flac/wav/ogg），支持单文件和目录批量。仅用于已有解密文件的二次转换。禁止用 run_cli_safely 调用 ffmpeg 做转码。",
+    "process_audio": "音频精细化处理：格式转换+采样率+比特率+增益。参数可组合：target_format、sample_rate_hz、bitrate_kbps、gain_db。仅用于已有解密文件的处理。",
     "verify_audio_integrity": "校验音频文件完整性，判断是否损坏。解密/转码后必须调用。",
     "copy_files": "复制文件到目标目录，支持按扩展名过滤。",
     "move_files": "移动文件到目标目录，支持按扩展名过滤。",
