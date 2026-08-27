@@ -3,10 +3,25 @@
 从 agent_executor.py 拆出，负责：
 - 清理 model_config 中的特殊字符（反引号、尾部逗号等）
 - 轻量级 API 端点可达性检查
+- 元宝(Tencent Maas)等特殊 provider 的预检适配
 """
 from __future__ import annotations
 
 from typing import Any, Callable
+
+# 需要特殊预检策略的 provider 域名
+_SKIP_HEAD_PROVIDERS = ("tencentmaas.com", "hunyuan", "yuanbao")
+
+
+def _detect_provider(base_url: str) -> str:
+    """根据 base_url 检测 provider 类型。"""
+    bl = base_url.lower()
+    for domain in _SKIP_HEAD_PROVIDERS:
+        if domain in bl:
+            return "tencent_maas"
+    if "localhost" in bl or "127.0.0.1" in bl:
+        return "local"
+    return "standard"
 
 
 def clean_model_config(model_config: dict[str, Any], log_fn: Callable[[str, str], None]) -> None:
@@ -44,6 +59,9 @@ class PreflightResult:
 def check_llm_connectivity(model_config: dict[str, Any], log_fn: Callable[[str, str], None]) -> PreflightResult:
     """轻量预检：检查 base_url 可达 + api_key 非空。
 
+    元宝(Tencent Maas)等 provider 对 HEAD 返回 405，且流式 POST 可能有特殊行为，
+    因此对这些 provider 跳过 HEAD 预检，改为直接记录日志并放行。
+
     Returns:
         PreflightResult: ok=True 表示通过；ok=False 表示应提前退出。
     """
@@ -51,10 +69,16 @@ def check_llm_connectivity(model_config: dict[str, Any], log_fn: Callable[[str, 
     ak = str(model_config.get("api_key", ""))
     bl = bu.lower()
     is_local = "localhost" in bl or "127.0.0.1" in bl or "0.0.0.0" in bl
+    provider = _detect_provider(bu)
 
     if not ak and not is_local:
         log_fn("LLM 配置错误：api_key 为空", "error")
         return PreflightResult.fail("error", "missing_api_key")
+
+    # 元宝等 provider: HEAD 对其不准，跳过预检直接放行
+    if provider == "tencent_maas":
+        log_fn("检测到腾讯元宝(Tencent Maas)端点，跳过 HEAD 预检（元宝对 HEAD 返回 405，POST 正常）", "info")
+        return PreflightResult.ok_result()
 
     try:
         import urllib.request as ur
@@ -81,4 +105,5 @@ __all__ = [
     "clean_model_config",
     "check_llm_connectivity",
     "PreflightResult",
+    "_detect_provider",
 ]

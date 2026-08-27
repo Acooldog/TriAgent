@@ -4,15 +4,27 @@ import re
 from typing import Any, Callable
 
 
-def _build_extra_body(model_config: dict[str, Any]) -> dict[str, Any]:
-    """为不同模型提供商构建 provider-specific extra_body 参数（关闭深度思考等）。
-    
-    注意：extra_body 可能导致某些 API 鉴权失败（如讯飞新版 Spark HTTP API）。
-    如果遇到 11200 AppIdNoAuthError，先关掉 thinking 试试。
+def _detect_provider(base_url: str) -> str:
+    """根据 base_url 检测 provider 类型。"""
+    bl = base_url.lower()
+    if "tencentmaas.com" in bl or "hunyuan" in bl or "yuanbao" in bl:
+        return "tencent_maas"
+    if "localhost" in bl or "127.0.0.1" in bl:
+        return "local"
+    return "standard"
+
+
+def _build_extra_body(model_config: dict[str, Any], provider: str = "standard") -> dict[str, Any]:
+    """为不同模型提供商构建 provider-specific extra_body 参数。
+
+    元宝(Tencent Maas)等 provider 可能不支持 thinking 参数，
+    因此对这些 provider 跳过 extra_body 透传。
     """
     extra: dict[str, Any] = {}
+    # 元宝等 provider: 跳过 extra_body（可能不支持 thinking 字段导致 400）
+    if provider == "tencent_maas":
+        return extra
     thinking_mode = str(model_config.get("thinking", "enabled") or "enabled").lower()
-    # 只在明确要求关闭时才加 extra_body，默认不加（避免干扰鉴权）
     if thinking_mode == "disabled":
         extra["thinking"] = {"type": "disabled"}
     return extra
@@ -37,11 +49,14 @@ def create_chat_model(model_config: dict[str, Any], initializer: Callable[..., A
     api_key = _clean_field(str(model_config.get("api_key", "")))
     temperature = float(model_config.get("temperature", 0.7))
 
+    # === Provider 检测 ===
+    provider = _detect_provider(base_url)
+    print(f"[agent_model] 检测到 provider={provider} (base_url={base_url})", flush=True)
+
     # === 本地端点: Ollama/LM Studio 等不需要 api_key ===
-    _base_lower = base_url.lower()
-    _is_local = ("localhost" in _base_lower or "127.0.0.1" in _base_lower or "0.0.0.0" in _base_lower)
+    _is_local = provider == "local"
     if not api_key and _is_local:
-        api_key = "ollama"  # OpenAI SDK 要求 api_key 非空，本地模型随便填
+        api_key = "ollama"
         print(f"[agent_model] 本地端点，api_key 空 → 自动填 '{api_key}'", flush=True)
     if not api_key:
         raise RuntimeError("未配置 API Key")
@@ -55,8 +70,6 @@ def create_chat_model(model_config: dict[str, Any], initializer: Callable[..., A
     }
 
     # === 本地端点绕过系统代理 ===
-    # OpenAI SDK 内部用 httpx(trust_env=True) → 会读 Windows 系统代理
-    # 代理不处理 localhost → 返回 502 Bad Gateway（Hermes Agent / QwenPaw 等都踩过）
     if _is_local:
         try:
             import httpx
@@ -65,12 +78,23 @@ def create_chat_model(model_config: dict[str, Any], initializer: Callable[..., A
         except ImportError:
             pass
 
+    # === 元宝适配: 显式 httpx 超时，避免无限等待 ===
+    if provider == "tencent_maas":
+        try:
+            import httpx
+            kwargs["http_client"] = httpx.Client(
+                timeout=httpx.Timeout(connect=15.0, read=120.0, write=30.0, pool=30.0),
+            )
+            print(f"[agent_model] 元宝端点，设置 httpx 超时 (connect=15s, read=120s)", flush=True)
+        except ImportError:
+            print(f"[agent_model] httpx 不可用，跳过超时设置", flush=True)
+
     max_tokens = model_config.get("max_tokens")
     if max_tokens:
         kwargs["max_tokens"] = int(max_tokens)
-    # extra_body 透传 provider-specific 参数（如关闭深度思考）
-    extra_body = _build_extra_body(model_config)
-    print(f"[agent_model] create_chat_model: base_url={base_url}, model={model_name}, extra_body={extra_body}", flush=True)
+    # extra_body: 元宝自动跳过，其他 provider 按 thinking 配置生成
+    extra_body = _build_extra_body(model_config, provider=provider)
+    print(f"[agent_model] create_chat_model: base_url={base_url}, model={model_name}, provider={provider}, extra_body={extra_body}", flush=True)
     if extra_body:
         kwargs["extra_body"] = extra_body
     return initializer(**kwargs)

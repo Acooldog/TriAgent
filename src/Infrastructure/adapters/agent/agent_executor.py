@@ -144,6 +144,8 @@ def run_agent(
                 if actual_iterations >= 2 and not check_token_budget(messages, _max_input_tokens, emitter):
                     emitter._log("Token 预算超限，紧急压缩...", "warning")
 
+                _stream_start = time.perf_counter()
+                emitter._log(f"开始 agent.stream() — 等待首个模型输出...", "info")
                 for item in agent_inst.stream({"messages": messages}, config=graph_config, stream_mode="messages"):
                     if cancel_event.is_set():
                         cancelled = True
@@ -153,6 +155,11 @@ def run_agent(
                         break
                     event_count += 1
                     msg, metadata = item
+
+                    # 首个 chunk 到达计时
+                    if event_count == 1:
+                        _first_chunk_elapsed = round(time.perf_counter() - _stream_start, 3)
+                        emitter._log(f"首个模型输出到达 (+{_first_chunk_elapsed}s)", "info")
 
                     # 过滤 reasoning_content
                     if hasattr(msg, "additional_kwargs"):
@@ -192,6 +199,8 @@ def run_agent(
                     actual_iterations, _total_prune_saved = prune_tool_results_after_tool_call(
                         msg, conversation_messages, emitter, actual_iterations, _total_prune_saved,
                     )
+                _stream_elapsed = round(time.perf_counter() - _stream_start, 3)
+                emitter._log(f"agent.stream() 完成，共 {event_count} 事件，耗时 {_stream_elapsed}s", "info")
                 if not cancelled:
                     flushed = _flush_pending_text(emitter, pending_text)
                     if flushed:
