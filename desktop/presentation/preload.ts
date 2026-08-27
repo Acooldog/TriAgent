@@ -1,12 +1,14 @@
-import { contextBridge, ipcRenderer } from "electron";
-import type { WorkspaceState } from "../application/workspaceService";
-import type { WorkerEvent } from "../application/workerProtocol";
-import type { ChatMessage, ModelConfig, ModelEvent } from "../application/modelProtocol";
-import type { CompressionOptions, CompressionResult } from "../application/contextCompression";
-import type { ToolManifest } from "../application/toolProtocol";
-import type { ProviderCall, ProviderEvent, ProviderRegistration } from "../application/providerProtocol";
-import type { ProviderRuntimeEvent, ProviderRuntimeStartRequest, ProviderRuntimeState } from "../application/providerRuntimeProtocol";
+﻿import { contextBridge, ipcRenderer } from "electron";
+import type { WorkspaceState } from "../application/workspace/workspaceService";
+import type { AgentEvent, AgentPlan } from "../application/agent/agentTaskService";
+import type { WorkerEvent } from "../application/worker/workerProtocol";
+import type { ChatMessage, ModelConfig, ModelEvent } from "../application/model/modelProtocol";
+import type { CompressionOptions, CompressionResult } from "../application/settings/contextCompression";
+import type { ToolManifest } from "../application/tools/toolProtocol";
+import type { ProviderCall, ProviderEvent, ProviderRegistration } from "../application/provider/protocols/providerProtocol";
+import type { ProviderRuntimeEvent, ProviderRuntimeStartRequest, ProviderRuntimeState } from "../application/provider/protocols/providerRuntimeProtocol";
 import type { DiagnosticReport, DiagnosticsRequest, ErrorSearchIssue, ErrorSearchResult } from "../application/diagnostics";
+import type { AppSettings } from "../application/settings/appSettings";
 
 export interface ModelEventEnvelope {
   requestId: string;
@@ -20,14 +22,25 @@ contextBridge.exposeInMainWorld("triMusicAgent", {
   selectSession: (sessionId: string): Promise<WorkspaceState> => ipcRenderer.invoke("session:select", sessionId),
   compressSession: (options: CompressionOptions): Promise<CompressionResult> => ipcRenderer.invoke("session:compress", options),
   restoreOriginalContext: (): Promise<WorkspaceState> => ipcRenderer.invoke("session:restore-original"),
-  startWorker: (operation: "ping" | "capability", payload: Record<string, unknown>, permissionMode: "restricted" | "standard" | "full"): Promise<{ requestId: string; taskId: string }> => ipcRenderer.invoke("worker:start", operation, payload, permissionMode),
+  planAgentTask: (prompt: string): Promise<AgentPlan> => ipcRenderer.invoke("agent:plan", prompt),
+  startAgentTask: (prompt: string, permissionMode: "restricted" | "standard" | "full"): Promise<{ taskId: string; plan: AgentPlan }> => ipcRenderer.invoke("agent:start", prompt, permissionMode),
+  cancelAgentTask: (taskId: string): Promise<boolean> => ipcRenderer.invoke("agent:cancel", taskId),
+  onAgentEvent: (listener: (event: AgentEvent) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, agentEvent: AgentEvent) => listener(agentEvent);
+    ipcRenderer.on("agent:event", handler);
+    return () => ipcRenderer.removeListener("agent:event", handler);
+  },
+  startWorker: (operation: "ping" | "capability" | "agent", payload: Record<string, unknown>, permissionMode: "restricted" | "standard" | "full"): Promise<{ requestId: string; taskId: string }> => ipcRenderer.invoke("worker:start", operation, payload, permissionMode),
   cancelWorker: (taskId: string): Promise<boolean> => ipcRenderer.invoke("worker:cancel", taskId),
+  sendWorkerSupplement: (taskId: string, text: string): Promise<boolean> => ipcRenderer.invoke("worker:supplement", taskId, text),
+  sendWorkerAnswer: (taskId: string, questionId: string, answer: string): Promise<boolean> => ipcRenderer.invoke("worker:answer", taskId, questionId, answer),
   onWorkerEvent: (listener: (event: WorkerEvent) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, workerEvent: WorkerEvent) => listener(workerEvent);
     ipcRenderer.on("worker:event", handler);
     return () => ipcRenderer.removeListener("worker:event", handler);
   },
   startModel: (config: ModelConfig, messages: ChatMessage[], permissionMode: "restricted" | "standard" | "full", networkEnabled: boolean): Promise<{ requestId: string }> => ipcRenderer.invoke("model:stream", config, messages, permissionMode, networkEnabled),
+  saveModelConfig: (config: ModelConfig): Promise<boolean> => ipcRenderer.invoke("model:save-config", config),
   cancelModel: (requestId: string): Promise<boolean> => ipcRenderer.invoke("model:cancel", requestId),
   onModelEvent: (listener: (envelope: ModelEventEnvelope) => void): (() => void) => {
     const handler = (_event: Electron.IpcRendererEvent, envelope: ModelEventEnvelope) => listener(envelope);
@@ -70,4 +83,12 @@ contextBridge.exposeInMainWorld("triMusicAgent", {
     ipcRenderer.on("session:persistence-error", handler);
     return () => ipcRenderer.removeListener("session:persistence-error", handler);
   },
+  onSessionPersistenceWarning: (listener: (warning: { requestId: string; message: string }) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, warning: { requestId: string; message: string }) => listener(warning);
+    ipcRenderer.on("session:persistence-warning", handler);
+    return () => ipcRenderer.removeListener("session:persistence-warning", handler);
+  },
+  getAppSettings: (): Promise<AppSettings> => ipcRenderer.invoke("app:get-settings"),
+  updateAppSettings: (partial: Partial<AppSettings>): Promise<AppSettings> => ipcRenderer.invoke("app:update-settings", partial),
+  resetAppSettings: (): Promise<AppSettings> => ipcRenderer.invoke("app:reset-settings"),
 });

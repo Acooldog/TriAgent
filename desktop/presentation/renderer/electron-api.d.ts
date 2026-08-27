@@ -1,11 +1,13 @@
-import type { WorkspaceState } from "../../application/workspaceService";
-import type { WorkerEvent } from "../../application/workerProtocol";
-import type { ChatMessage, ModelConfig, ModelEvent } from "../../application/modelProtocol";
-import type { CompressionOptions, CompressionResult } from "../../application/contextCompression";
-import type { ToolManifest } from "../../application/toolProtocol";
-import type { ProviderCall, ProviderEvent, ProviderRegistration } from "../../application/providerProtocol";
-import type { ProviderRuntimeEvent, ProviderRuntimeStartRequest, ProviderRuntimeState } from "../../application/providerRuntimeProtocol";
+﻿import type { WorkspaceState } from "../../application/workspace/workspaceService";
+import type { AgentEvent, AgentPlan } from "../../application/agent/agentTaskService";
+import type { WorkerEvent } from "../../application/worker/workerProtocol";
+import type { ChatMessage, ModelConfig, ModelEvent } from "../../application/model/modelProtocol";
+import type { CompressionOptions, CompressionResult } from "../../application/settings/contextCompression";
+import type { ToolManifest } from "../../application/tools/toolProtocol";
+import type { ProviderCall, ProviderEvent, ProviderRegistration } from "../../application/provider/protocols/providerProtocol";
+import type { ProviderRuntimeEvent, ProviderRuntimeStartRequest, ProviderRuntimeState } from "../../application/provider/protocols/providerRuntimeProtocol";
 import type { DiagnosticReport, DiagnosticsRequest, ErrorSearchIssue, ErrorSearchResult } from "../../application/diagnostics";
+import type { AppSettings } from "../../application/settings/appSettings";
 
 export interface ModelEventEnvelope { requestId: string; event: ModelEvent; }
 
@@ -16,12 +18,20 @@ export interface TriMusicAgentApi {
   selectSession(sessionId: string): Promise<WorkspaceState>;
   compressSession(options: CompressionOptions): Promise<CompressionResult>;
   restoreOriginalContext(): Promise<WorkspaceState>;
+  planAgentTask(prompt: string): Promise<AgentPlan>;
+  startAgentTask(prompt: string, permissionMode: "restricted" | "standard" | "full"): Promise<{ taskId: string; plan: AgentPlan }>;
+  cancelAgentTask(taskId: string): Promise<boolean>;
+  onAgentEvent(listener: (event: AgentEvent) => void): () => void;
   onInitializationState(listener: (state: WorkspaceState) => void): () => void;
   onPersistenceError(listener: (error: { label: string; message: string }) => void): () => void;
-  startWorker(operation: "ping" | "capability", payload: Record<string, unknown>, permissionMode: "restricted" | "standard" | "full"): Promise<{ requestId: string; taskId: string }>;
+  onSessionPersistenceWarning(listener: (warning: { requestId: string; message: string }) => void): () => void;
+  startWorker(operation: "ping" | "capability" | "agent", payload: Record<string, unknown>, permissionMode: "restricted" | "standard" | "full"): Promise<{ requestId: string; taskId: string }>;
   cancelWorker(taskId: string): Promise<boolean>;
+  sendWorkerSupplement(taskId: string, text: string): Promise<boolean>;
+  sendWorkerAnswer(taskId: string, questionId: string, answer: string): Promise<boolean>;
   onWorkerEvent(listener: (event: WorkerEvent) => void): () => void;
   startModel(config: ModelConfig, messages: ChatMessage[], permissionMode: "restricted" | "standard" | "full", networkEnabled: boolean): Promise<{ requestId: string }>;
+  saveModelConfig(config: ModelConfig): Promise<boolean>;
   cancelModel(requestId: string): Promise<boolean>;
   onModelEvent(listener: (envelope: ModelEventEnvelope) => void): () => void;
   listTools(): Promise<ToolManifest[]>;
@@ -42,6 +52,9 @@ export interface TriMusicAgentApi {
   cancelProviderRuntime(providerId: string): Promise<boolean>;
   onProviderEvent(listener: (event: ProviderEvent) => void): () => void;
   onProviderRuntimeEvent(listener: (event: ProviderRuntimeEvent) => void): () => void;
+  getAppSettings(): Promise<AppSettings>;
+  updateAppSettings(partial: Partial<AppSettings>): Promise<AppSettings>;
+  resetAppSettings(): Promise<AppSettings>;
 }
 
 declare global {
@@ -50,4 +63,4 @@ declare global {
   }
 }
 
-export {};
+export { };
