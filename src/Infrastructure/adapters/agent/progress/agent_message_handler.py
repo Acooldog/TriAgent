@@ -137,10 +137,11 @@ def _handle_stream_message(
                 emitter.emit("agent_message", {"content": msg_content})
             for tc in msg.tool_calls:
                 tool_name = str(tc.get("name", "") or "").strip()
-                tool_args = str(tc.get("args", "") or "")[:500]
+                raw_args = tc.get("args", "") or {}
+                tool_args = str(raw_args)[:500] if raw_args else ""
                 tool_call_id = str(tc.get("id", "") or "")
 
-                if tool_name:
+                if tool_name and tool_args:
                     emitter._log(f"调用工具: {tool_name}, 参数: {tool_args[:80]}", "info")
                     emitter.emit("agent_tool_call", {
                         "tool_name": tool_name,
@@ -150,12 +151,16 @@ def _handle_stream_message(
                         "step": len(tool_call_registry) + 1,
                         "action_text": build_tool_action_message(tool_name, tool_args),
                     })
-                    tool_call_registry[tool_call_id] = {
+                    reg_key = tool_call_id or f"__pending_{len(tool_call_registry)}"
+                    tool_call_registry[reg_key] = {
                         "tool_name": tool_name,
                         "tool_input": tool_args,
                         "tool_result": "",
                         "tool_call_id": tool_call_id,
                     }
+                elif tool_name and not tool_args:
+                    # 流式 chunk：name 已到达但 args 还没到，跳过日志
+                    pass
                 else:
                     matched = None
                     if tool_call_id and tool_call_id in tool_call_registry:

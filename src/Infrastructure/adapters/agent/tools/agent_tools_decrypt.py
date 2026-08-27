@@ -57,7 +57,15 @@ def _build_post_process(
                 gain_db=gain_db,
             )
             new_path = str(result.get("output_path", ""))
-            return new_path if new_path and pathlib.Path(new_path).exists() else output_path
+            if new_path and pathlib.Path(new_path).exists():
+                # 转换成功后删除原解密文件，只保留转换后的文件
+                try:
+                    src.unlink()
+                    print(f"[post_process] 已删除原文件: {src.name}")
+                except Exception as del_exc:
+                    print(f"[post_process] 删除原文件失败（不影响主流程）: {del_exc}")
+                return new_path
+            return output_path
         except Exception as exc:
             print(f"[post_process] 后处理失败: {exc}")
             return None
