@@ -173,7 +173,43 @@ npm run start:electron
 | `npm run test:electron` | 运行前端测试 |
 | `npm run build:console` | 构建控制台版本 |
 | `npm run build:ui` | 构建 PySide6 UI 版本 |
-| `npm run package` | 打包发布版本 |
+| `npm run package` | 旧版打包（electron-builder，不推荐） |
+| `npm run package:electron` | 编译桌面 EXE 分发包（一键完成） |
+
+### 打包发行版
+
+一键命令即可生成可分发的桌面 EXE，用户下载后双击运行，无需安装 Python 或 Node.js。
+
+```powershell
+npm run package:electron
+```
+
+该命令自动完成以下步骤：
+
+| 步骤 | 内容 | 说明 |
+|------|------|------|
+| 1 | 编译 Electron 前端 | esbuild 打包 React + TypeScript → `desktop/dist/` |
+| 2 | 编译 Python 后端 | PyInstaller 打包为独立 exe → `dist/python-worker/triagent-worker/` |
+| 3 | 组装桌面应用 | 复制 Electron 运行时 + 注入前端代码 + 注入 Python Worker |
+| 4 | 创建分发包 | 生成可执行目录和 ZIP 压缩包 |
+
+**产物位置：**
+
+```
+release/
+├── win-unpacked/
+│   ├── TriAgent.exe              ← 本机直接双击运行
+│   ├── resources/
+│   │   ├── app/                  ← Electron 前端代码
+│   │   └── python-worker/        ← 编译后的 Python 后端
+│   └── ... (Electron 运行时文件)
+└── TriAgent-1.4.3-Win64.zip      ← 分发给用户的压缩包
+```
+
+**前提条件：**
+- Node.js >= 20
+- Python >= 3.10（`.venv` 虚拟环境已初始化）
+- `.venv` 中已安装 PyInstaller（脚本会自动检测，缺失时自动安装）
 
 ---
 
