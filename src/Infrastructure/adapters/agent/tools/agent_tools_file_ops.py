@@ -132,7 +132,8 @@ def list_directory(directory: str, show_hidden: bool = False) -> str:
 
 @tool
 def run_cli_safely(command: str, cli_args: _CliArgs = None, cwd: str = "", confirmed: bool = False) -> str:
-    """安全执行命令行程序，统一处理中文路径与编码问题。需要调用外部命令（如 ffmpeg、脚本）时必须使用本工具。
+    """安全执行命令行程序，统一处理中文路径与编码问题。仅用于 dir/ls/mkdir 等文件命令。
+    ⚠️ 禁止用本工具调用 ffmpeg 做格式转换 — 必须使用 transcode_audio 工具。
     权限模式说明：
     - 完全访问模式（full）：所有白名单命令直接执行，无需确认
     - 标准模式（standard）：危险命令（del/rmdir 等删除类）必须先向用户确认，再传 confirmed=True 执行
@@ -152,6 +153,31 @@ def run_cli_safely(command: str, cli_args: _CliArgs = None, cwd: str = "", confi
         # 提取基本命令名（去掉路径），转小写用于白名单匹配
         cmd_basename = pathlib.Path(cmd_list[0]).name.lower()
         permission_mode = _get_permission_mode()
+        # ⚠️ ffmpeg 拦截：禁止用 run_cli_safely 执行 ffmpeg 做音频转码
+        if cmd_basename in ("ffmpeg", "ffmpeg.exe"):
+            # 检查是否是转码操作（有 -i 输入 + 输出文件）
+            is_transcode = False
+            cli_args_list = cli_args or []
+            for i, arg in enumerate(cli_args_list):
+                if arg in ("-i", "-f", "-c:a", "-ab", "-ar", "-ac", "-vn"):
+                    is_transcode = True
+                    break
+                # 如果最后一个参数看起来像输出文件（不是 flag 开头）
+                if i == len(cli_args_list) - 1 and isinstance(arg, str) and not arg.startswith("-"):
+                    # 有输入文件参数，大概率是转码
+                    if any(a in ("-i",) for a in cli_args_list):
+                        is_transcode = True
+                        break
+            if is_transcode or len(cli_args_list) >= 2:
+                print(f"[run_cli_safely] 拦截 ffmpeg 转码请求，引导使用 transcode_audio")
+                return (
+                    "⚠️ 禁止用 run_cli_safely 调用 ffmpeg 做音频格式转换。\n"
+                    "请改用 transcode_audio 工具，参数:\n"
+                    "- input_path: 源文件或目录\n"
+                    "- target_format: 目标格式 (mp3/m4a/flac/wav/ogg)\n"
+                    "- output_dir: 输出目录（可选）\n"
+                    "示例: transcode_audio(input_path='/path/to/files', target_format='ogg', output_dir='/output')"
+                )
         # 检查命令是否在白名单中
         if cmd_basename not in _ALLOWED_CLI_COMMANDS:
             # 非白名单命令：根据权限模式决定
