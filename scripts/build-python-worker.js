@@ -1,6 +1,6 @@
 const fs = require("fs");
 const path = require("path");
-const { run, fail, ensureDir, ensureFile, resolvePythonExe } = require("../script/build-lib");
+const { run, fail, ensureFile, resolvePythonExe } = require("../script/build-lib");
 
 const rootDir = path.resolve(__dirname, "..");
 const srcDir = path.join(rootDir, "src");
@@ -9,20 +9,36 @@ const outputDir = path.join(rootDir, "dist", "python-worker");
 const buildDir = path.join(rootDir, "build", "python-worker");
 const exeName = "triagent-worker";
 
-function checkPyInstaller() {
-  const pyExe = resolvePythonExe(rootDir);
+const coreModules = [
+  "langchain",
+  "langchain_core",
+  "langchain_community",
+  "langchain_openai",
+  "langchain_text_splitters",
+  "sentence_transformers",
+  "transformers",
+  "torch",
+  "chromadb",
+  "frida",
+  "ncmdump",
+  "mutagen",
+  "aiohttp",
+  "httpx",
+  "pydantic",
+];
+
+function checkPyInstaller(pyExe) {
   try {
     run(pyExe, ["-c", "import PyInstaller; print(PyInstaller.__version__)"], { cwd: rootDir });
-    return pyExe;
   } catch {
     console.log("[build-python-worker] PyInstaller not found, installing...");
     run(pyExe, ["-m", "pip", "install", "pyinstaller", "--quiet"], { cwd: rootDir });
-    return pyExe;
   }
 }
 
 function buildPythonWorker() {
-  const pyExe = checkPyInstaller();
+  const pyExe = resolvePythonExe(rootDir);
+  checkPyInstaller(pyExe);
 
   ensureFile(workerEntry, "worker entry point");
 
@@ -31,9 +47,9 @@ function buildPythonWorker() {
   fs.rmSync(outputDir, { recursive: true, force: true });
   fs.mkdirSync(buildDir, { recursive: true });
 
-  console.log("[build-python-worker] Building Python worker with PyInstaller...");
+  console.log("[build-python-worker] Building Python worker (this may take a few minutes)...");
 
-  const pyInstallerArgs = [
+  const args = [
     "-m", "PyInstaller",
     "--noconfirm",
     "--clean",
@@ -52,7 +68,7 @@ function buildPythonWorker() {
     workerEntry,
   ];
 
-  run(pyExe, pyInstallerArgs, { cwd: rootDir, timeoutMs: 300000 });
+  run(pyExe, args, { cwd: rootDir, timeoutMs: 600000 });
 
   const exePath = path.join(outputDir, exeName, process.platform === "win32" ? `${exeName}.exe` : exeName);
   if (!fs.existsSync(exePath)) {
@@ -60,13 +76,8 @@ function buildPythonWorker() {
   }
 
   console.log(`[build-python-worker] Python worker built: ${exePath}`);
-  return exePath;
 }
 
-function main() {
-  console.log(`[build-python-worker] Building ${exeName}...`);
-  const exePath = buildPythonWorker();
-  console.log(`[build-python-worker] Done: ${exePath}`);
-}
-
-main();
+console.log(`[build-python-worker] Building ${exeName}...`);
+buildPythonWorker();
+console.log("[build-python-worker] Done.");

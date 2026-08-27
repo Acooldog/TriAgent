@@ -2,6 +2,8 @@
   "name": "qkkdecrypt",
   "version": "1.4.3",
   "private": true,
+  "main": "dist/electron/main.cjs",
+  "author": "TriAgent",
   "description": "TriAgent - Desktop AI Agent",
   "scripts": {
     "start:electron": "npm run build:electron && electron desktop/dist/main.cjs",
