@@ -52,17 +52,11 @@ export function BatchProgressCard({ progress }: BatchProgressCardProps) {
       ? `${platformLabel}${kindLabel}中 · ${progress.currentFile}`
       : `${platformLabel}${kindLabel}准备中`;
 
-  // 左边框颜色：有失败→红色，否则→暗色背景（和卡片背景区分）
-  const borderLeftColor = hasFailures
-    ? "#ef4444"
-    : "var(--km-label-tertiary, #6b6b6b)";
-
   return (
     <div
       className={`batch-progress-card ${isDone ? "finished" : ""} ${hasFailures ? "failed" : ""}`}
       style={{
         background: "var(--km-bg-tertiary, #292929)",
-        borderLeft: `4px solid ${borderLeftColor}`,
         borderRadius: 10,
         padding: "14px 16px",
         margin: "10px 0",
