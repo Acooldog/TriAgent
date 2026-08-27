@@ -127,10 +127,14 @@ def run_sub_agent(
     from src.Infrastructure.adapters.agent.agent_executor import (
         _create_chat_model,
         _handle_stream_message,
-        _truncate_tool_message,
-        _prune_old_tool_results,
         ToolMessage,
     )
+    from src.Infrastructure.adapters.agent.token.agent_token_optimizer import (
+        prune_old_ai_rounds,
+        prune_old_tool_results,
+        truncate_tool_message,
+    )
+    from src.Infrastructure.adapters.agent.progress.agent_stream_processor import check_token_budget
     from src.Infrastructure.adapters.agent.multi.tool_registry import get_role_description
 
     tool_names = [getattr(t, "name", t.__name__) for t in tools]
@@ -176,11 +180,16 @@ def run_sub_agent(
                     emitter._log(f"[sub_agent {agent_id}] 已处理 {event_count} 个流式事件...", "debug")
 
                 msg, metadata = item
+
+                # 深度思考内容过滤：reasoning_content 不加入对话历史
+                if hasattr(msg, "additional_kwargs"):
+                    msg.additional_kwargs.pop("reasoning_content", None)
+
                 _handle_stream_message(msg, metadata, emitter, tool_call_registry, pending_text)
 
                 # ToolMessage content 截断 —— 防止烧 token
                 if isinstance(msg, ToolMessage) or type(msg).__name__ == "ToolMessage":
-                    _truncate_tool_message(msg, max_chars=300, keep_head=200)
+                    truncate_tool_message(msg, max_chars=300, keep_head=200)
 
                 conversation_messages.append(msg)
 
@@ -188,8 +197,13 @@ def run_sub_agent(
                 if isinstance(msg, (AIMessage, AIMessageChunk)) or msg_type in ("AIMessage", "AIMessageChunk"):
                     if hasattr(msg, "tool_calls") and msg.tool_calls:
                         actual_iterations += 1
-                        # 子 Agent 轮次少，只保留最近 1 轮
-                        _prune_old_tool_results(conversation_messages, keep_last_rounds=1)
+                        # 子 Agent 轮次少，裁剪旧 Tool 结果 + 旧 AI 消息
+                        prune_old_tool_results(conversation_messages, keep_last_rounds=1)
+                        prune_old_ai_rounds(conversation_messages, keep_last_rounds=1)
+
+            # 结束前检查 token 预算
+            if actual_iterations >= 2:
+                check_token_budget(messages, max_input_tokens=4000, emitter=emitter)
 
             if not cancelled:
                 flushed = "".join(pending_text).strip()

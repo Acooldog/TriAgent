@@ -41,6 +41,78 @@ SYSTEM_PROMPT = """你是 TriMusicAgent，一个专业的音乐处理助手。�
 - 每次只调用一个工具，等待结果后再决定下一步。
 - 文件操作安全由内置机制保障，无需预先调用 sandbox_manage 授权目录；仅当用户明确要求管理沙箱时才使用该工具。"""
 
+# 轻量聊天 Prompt — 用于纯聊天/问答场景，减少 token 消耗
+LIGHT_CHAT_PROMPT = """你是 TriMusicAgent，一个专业的音乐处理助手。
+
+## 交流规则
+- 必须使用中文。
+- 当前对话为纯聊天/问答模式，**不要调用任何工具**。
+- 直接用自然语言回答用户的问题。
+- 简明扼要，回答完毕即可。"""
+
+# 单步指令 Prompt — 用于简单文件操作，只保留核心约束
+SIMPLE_TASK_PROMPT = """你是 TriMusicAgent，一个专业的音乐处理助手。
+
+## 反循环约束（最高优先级）
+- scan_files 是递归扫描，一次调用就能覆盖所有子目录
+- 工具调用次数有限（最多 40 次），每轮都会消耗可用迭代
+
+## 交流规则
+- 必须使用中文。
+- 调用工具前用 markdown 格式说明操作和参数。
+- 工具完成后报告结果。
+- 解密/转码后必须校验文件完整性。
+- 同一工具连续失败 2 次后换思路或询问用户。
+- 中文路径用 run_cli_safely 列表传参。"""
+
+# 意图检测：返回 'chat' / 'simple' / 'full'
+_CHAT_KEYWORDS = (
+    "你好", "hello", "hi", "谢谢", "再见", "拜拜",
+    "什么是", "怎么", "如何", "介绍", "解释",
+    "格式", "flac", "mp3", "m4a", "wav", "ogg",
+    "压缩", "音质", "比特率", "采样率",
+)
+_FULL_TASK_KEYWORDS = (
+    "解密", "转码", "转换", "批量", "处理", "加密",
+    "kgma", "kgm", "kgg", "vpr", "mflac", "mgg", "mmp4", "ncm", "kwm",
+    "酷狗", "网易云", "酷我", "转格式", "格式转换",
+)
+_SIMPLE_TASK_KEYWORDS = (
+    "移动", "复制", "重命名", "删除", "整理", "筛选",
+    "扫描", "查找", "列出", "检测", "列出目录",
+    "校验", "验证", "完整性",
+)
+
+
+def detect_intent(user_message: str) -> str:
+    """检测用户意图：chat（纯聊天）/ simple（单步操作）/ full（完整任务）。
+
+    优先级：full > simple > chat，确保不会误判为轻量模式。
+    """
+    normalized = user_message.lower().strip()
+    if not normalized:
+        return "full"
+
+    # 完整任务关键词优先
+    if any(k in normalized for k in _FULL_TASK_KEYWORDS):
+        return "full"
+
+    # 单步操作关键词
+    if any(k in normalized for k in _SIMPLE_TASK_KEYWORDS):
+        return "simple"
+
+    # 聊天关键词
+    if any(k in normalized for k in _CHAT_KEYWORDS):
+        return "chat"
+
+    # 有明确文件路径的视为 full
+    import re
+    if re.search(r'[A-Za-z]:[\\/]', user_message):
+        return "full"
+
+    # 不确定 → full（安全兜底）
+    return "full"
+
 TOOL_ACTION_MESSAGES = {
     "scan_files": "我先扫描目标目录，确认有哪些可处理的音乐文件。",
     "decrypt_kugou": "文件范围已经确认，我现在开始解密，并会记录成功和失败结果。",
@@ -117,6 +189,36 @@ def build_tool_action_message(tool_name: str, tool_args: str = "") -> str:
     return f"{base_msg}\n\n> 参数: `{args_preview}`"
 
 
-def build_system_prompt(tool_names: list[str], tool_descriptions: dict[str, str]) -> str:
+def build_system_prompt(
+    tool_names: list[str],
+    tool_descriptions: dict[str, str],
+    intent: str = "full",
+) -> str:
+    """根据意图选择不同复杂度的 system prompt。
+
+    Args:
+        tool_names: 可用工具名列表
+        tool_descriptions: 工具描述字典
+        intent: 'chat' / 'simple' / 'full'
+
+    Returns:
+        组装好的 system prompt 字符串
+    """
+    descriptions = "\n".join(f"- {name}: {tool_descriptions.get(name, '')}" for name in tool_names)
+
+    if intent == "chat":
+        # 纯聊天：不传工具，节省 token
+        return LIGHT_CHAT_PROMPT
+
+    if intent == "simple":
+        # 单步操作：精简 prompt + 完整工具列表
+        return f"{SIMPLE_TASK_PROMPT}\n\n可用工具：\n{descriptions}"
+
+    # full：完整 prompt + 完整工具列表（默认兜底）
+    return f"{SYSTEM_PROMPT}\n\n可用工具：\n{descriptions}"
+
+
+def build_fallback_system_prompt(tool_names: list[str], tool_descriptions: dict[str, str]) -> str:
+    """当轻量模式下模型返回工具调用时，构建全量 fallback prompt。"""
     descriptions = "\n".join(f"- {name}: {tool_descriptions.get(name, '')}" for name in tool_names)
     return f"{SYSTEM_PROMPT}\n\n可用工具：\n{descriptions}"

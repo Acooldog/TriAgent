@@ -4,6 +4,7 @@
 - 深度思考检测与进度上报
 - 定期进度日志
 - ToolMessage 截断 + 旧轮次裁剪
+- AIMessage 裁剪 + Token 预算检查
 """
 from __future__ import annotations
 
@@ -13,8 +14,10 @@ from src.Infrastructure.adapters.agent.agent_helpers import (
     AIMessage,
     AIMessageChunk,
     ToolMessage,
+    estimate_messages_tokens,
 )
 from src.Infrastructure.adapters.agent.token.agent_token_optimizer import (
+    prune_old_ai_rounds,
     prune_old_tool_results,
     truncate_tool_message,
 )
@@ -89,18 +92,60 @@ def prune_tool_results_after_tool_call(
     actual_iterations: int,
     total_prune_saved: int,
 ) -> tuple[int, int]:
-    """每轮 AIMessage（触发工具调用）后裁剪旧 ToolMessage。返回 (actual_iterations, total_prune_saved)。"""
+    """每轮 AIMessage（触发工具调用）后裁剪旧 ToolMessage + AIMessage。返回 (actual_iterations, total_prune_saved)。"""
     is_ai = isinstance(msg, (AIMessage, AIMessageChunk)) or type(msg).__name__ in ("AIMessage", "AIMessageChunk")
     if is_ai and hasattr(msg, "tool_calls") and msg.tool_calls:
         actual_iterations += 1
+
+        # 裁剪旧 ToolMessage
         pr_saved = prune_old_tool_results(conversation_messages, keep_last_rounds=2)
         if pr_saved > 0:
             total_prune_saved += pr_saved
             emitter._log(
-                f"[token] 裁剪旧轮次节省 {pr_saved} 字符 ≈ {int(pr_saved/3.5)} tokens",
+                f"[token] 裁剪旧 ToolMessage 节省 {pr_saved} 字符 ≈ {int(pr_saved/3.5)} tokens",
                 "info",
             )
+
+        # 裁剪旧 AIMessage
+        ai_saved = prune_old_ai_rounds(conversation_messages, keep_last_rounds=3)
+        if ai_saved > 0:
+            total_prune_saved += ai_saved
+            emitter._log(
+                f"[token] 裁剪旧 AIMessage 节省 {ai_saved} 字符 ≈ {int(ai_saved/3.5)} tokens",
+                "info",
+            )
+
     return actual_iterations, total_prune_saved
+
+
+def check_token_budget(
+    messages: list,
+    max_input_tokens: int,
+    emitter: Any,
+) -> bool:
+    """检查当前对话是否超出 token 预算。超出时自动压缩。
+
+    Returns:
+        True 表示预算充足可继续，False 表示已超限需压缩。
+    """
+    _chars, _tk = estimate_messages_tokens(messages)
+    if _tk > max_input_tokens * 0.9:
+        emitter._log(
+            f"[token] 警告：当前输入 ≈ {_tk} tokens 接近预算上限 {max_input_tokens}，触发压缩...",
+            "warning",
+        )
+        # 主动压缩：裁剪更多轮次
+        ai_saved = prune_old_ai_rounds(messages, keep_last_rounds=2)
+        tool_saved = prune_old_tool_results(messages, keep_last_rounds=1)
+        total_saved = ai_saved + tool_saved
+        if total_saved > 0:
+            emitter._log(
+                f"[token] 紧急压缩节省 {total_saved} 字符 ≈ {int(total_saved/3.5)} tokens",
+                "info",
+            )
+        _chars2, _tk2 = estimate_messages_tokens(messages)
+        return _tk2 <= max_input_tokens
+    return True
 
 
 __all__ = [
@@ -108,4 +153,5 @@ __all__ = [
     "log_progress_snapshot",
     "process_tool_message_truncation",
     "prune_tool_results_after_tool_call",
+    "check_token_budget",
 ]

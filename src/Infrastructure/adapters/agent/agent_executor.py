@@ -30,10 +30,13 @@ from src.Infrastructure.adapters.agent.agent_helpers import (
 from src.Infrastructure.adapters.agent.agent_model import create_chat_model
 from src.Infrastructure.adapters.agent.progress.agent_progress import (
     AgentEventEmitter,
+    build_fallback_system_prompt,
     build_initial_action_message,
     build_system_prompt,
+    detect_intent,
 )
 from src.Infrastructure.adapters.agent.progress.agent_stream_processor import (
+    check_token_budget,
     log_progress_snapshot,
     prune_tool_results_after_tool_call,
     process_tool_message_truncation,
@@ -117,10 +120,19 @@ def run_agent(
         tools = _build_tools_for_llm()
         emitter._log(f"已加载 {len(tools)} 个工具: {TOOL_NAMES}")
 
-        system_prompt = build_system_prompt(TOOL_NAMES, TOOL_DESCRIPTIONS)
+        # === 意图检测：选择合适复杂度的 system prompt ===
+        detected_intent = detect_intent(user_message)
+        emitter._log(f"意图检测结果: {detected_intent}")
+        system_prompt = build_system_prompt(TOOL_NAMES, TOOL_DESCRIPTIONS, intent=detected_intent)
+
+        # Token 预算上限：默认 8000 tokens，或模型 max_tokens * 2
+        _max_input_tokens = int(model_config.get("max_tokens", 4096) or 4096) * 2
+        _using_light_prompt = detected_intent in ("chat", "simple")
+        _fallback_triggered = False
+
         emitter._log("正在创建 agent...")
         agent_inst = create_agent(llm, tools, system_prompt=system_prompt)
-        emitter._log("Agent 已创建")
+        emitter._log(f"Agent 已创建 (prompt模式={detected_intent})")
 
         emitter.emit("agent_ready", {"tools": TOOL_NAMES})
         emitter._log(f"开始调用 agent.stream()，用户消息: {user_message[:80]}...")
@@ -144,6 +156,7 @@ def run_agent(
         def _stream_once(messages: list) -> None:
             nonlocal last_ai_message, stream_error, event_count, actual_iterations, cancelled
             nonlocal _total_estimated_input_tokens, _total_truncate_saved, _total_prune_saved
+            nonlocal _using_light_prompt, _fallback_triggered
             _thinking_count = 0  # 本轮深度思考块计数
             try:
                 # === stream 前：估算本轮 LLM 输入 token ===
@@ -155,6 +168,10 @@ def run_agent(
                     "info",
                 )
                 emitter._log(f"[token#{actual_iterations + 1}] 累计输入 ≈ {_total_estimated_input_tokens} tokens", "debug")
+
+                # === Token 预算检查：超限则自动压缩 ===
+                if actual_iterations >= 3 and not check_token_budget(messages, _max_input_tokens, emitter):
+                    emitter._log("Token 预算已超限，紧急压缩后继续...", "warning")
 
                 for item in agent_inst.stream(
                     {"messages": messages},
@@ -171,6 +188,13 @@ def run_agent(
                         break
                     event_count += 1
                     msg, metadata = item
+
+                    # === 深度思考内容过滤：reasoning_content 不加入对话历史 ===
+                    msg_reasoning = ""
+                    if hasattr(msg, "additional_kwargs"):
+                        msg_reasoning = str(msg.additional_kwargs.get("reasoning_content", ""))
+                        msg.additional_kwargs.pop("reasoning_content", None)
+
                     _handle_stream_message(msg, metadata, emitter, tool_call_registry, pending_text)
 
                     # === 深度思考检测与进度上报 ===
@@ -184,6 +208,17 @@ def run_agent(
                     _total_truncate_saved = process_tool_message_truncation(
                         msg, emitter, _total_truncate_saved,
                     )
+
+                    # === Fallback：轻量模式下若模型返回工具调用，切回全量 prompt ===
+                    is_ai_msg = isinstance(msg, (AIMessage, AIMessageChunk)) or type(msg).__name__ in ("AIMessage", "AIMessageChunk")
+                    if _using_light_prompt and not _fallback_triggered and is_ai_msg:
+                        has_tc = hasattr(msg, "tool_calls") and msg.tool_calls
+                        if has_tc:
+                            _fallback_triggered = True
+                            _using_light_prompt = False
+                            emitter._log("[fallback] 轻量模式检测到工具调用，切换到全量 prompt", "warning")
+                            system_prompt = build_fallback_system_prompt(TOOL_NAMES, TOOL_DESCRIPTIONS)
+                            agent_inst = create_agent(llm, tools, system_prompt=system_prompt)
 
                     conversation_messages.append(msg)
 

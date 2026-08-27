@@ -1,24 +1,20 @@
 """Agent token tracker — 对话历史 token 估算和分类统计。
 
-从 agent_executor.py 拆出，提供会话消息的粗略 token 估算。
-1 token ≈ 3.5 字符（中英混合场景）。
+从 agent_executor.py 拆出，提供会话消息的精确 token 估算。
+区分中英文字符权重：中文 ≈ 1.5 tokens/char，英文 ≈ 0.25 tokens/char。
 """
 from __future__ import annotations
 
+from src.Infrastructure.adapters.agent.agent_helpers import estimate_messages_tokens
+
 
 def estimate_tokens(messages: list) -> tuple[int, int]:
-    """粗估 conversation_messages 的字符数和 token 数。
+    """精确估算 conversation_messages 的字符数和 token 数（区分中英）。
 
     Returns:
         (total_chars, estimated_tokens)
     """
-    total_chars = 0
-    for m in messages:
-        c = getattr(m, "content", "") or ""
-        if isinstance(c, list):
-            c = str(c)
-        total_chars += len(str(c))
-    return total_chars, int(total_chars / 3.5)
+    return estimate_messages_tokens(messages)
 
 
 def classify_messages(messages: list) -> str:

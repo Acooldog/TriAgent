@@ -25,7 +25,9 @@ from src.Infrastructure.adapters.agent.multi.tool_registry import get_tools_by_r
 logger = logging.getLogger("qkkdecrypt.infrastructure.multi_agent.orchestrator")
 
 # ============== Feature Flag ==============
-MULTI_AGENT_ENABLED: bool = True
+# 多 Agent 默认关闭，节省 token（每个子 Agent 独立消耗 ~1.5-2x token）
+# 用户可通过 set_multi_agent_enabled(True) 显式开启
+MULTI_AGENT_ENABLED: bool = False
 
 # QQ 解密全局锁（Frida hook 必须串行）
 _QQ_DECRYPT_LOCK = threading.Lock()
