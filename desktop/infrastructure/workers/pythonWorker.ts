@@ -62,11 +62,24 @@ export class PythonWorkerClient implements WorkerRunner {
   }
 
   public start(request: WorkerStartRequest, onEvent: (event: WorkerEvent) => void, timeoutMs = this.defaultTimeoutMs): WorkerRunHandle {
-    debugInfo("worker", "start", { operation: request.operation, requestId: request.request_id, taskId: request.task_id, timeoutMs, pythonConfigured: Boolean(this.pythonExecutable) });
+    debugInfo("worker", "start", { operation: request.operation, requestId: request.request_id, taskId: request.task_id, timeoutMs, pythonConfigured: Boolean(this.pythonExecutable), workerScript: this.options.workerScript });
     if (this.active.has(request.task_id)) throw new WorkerBridgeError("worker-start-failed", "该 Agent 任务已有一个活动 worker。");
     let processHandle: WorkerProcess;
     try {
-      processHandle = this.spawnWorker(this.pythonExecutable, [this.options.workerScript], { cwd: this.options.cwd, env: { ...process.env, PYTHONUNBUFFERED: "1", PYTHONUTF8: "1", PYTHONIOENCODING: "utf-8" }, stdio: ["pipe", "pipe", "pipe"] });
+      const spawnEnv = { ...process.env };
+      const spawnOpts: SpawnOptions = { cwd: this.options.cwd, stdio: ["pipe", "pipe", "pipe"] };
+      if (this.pythonExecutable) {
+        spawnEnv.PYTHONUNBUFFERED = "1";
+        spawnEnv.PYTHONUTF8 = "1";
+        spawnEnv.PYTHONIOENCODING = "utf-8";
+        processHandle = this.spawnWorker(this.pythonExecutable, [this.options.workerScript], { ...spawnOpts, env: spawnEnv });
+      } else {
+        const ext = process.platform === "win32" ? ".exe" : "";
+        const command = this.options.workerScript.endsWith(ext)
+          ? this.options.workerScript
+          : this.options.workerScript + ext;
+        processHandle = this.spawnWorker(command, [], { ...spawnOpts, env: spawnEnv });
+      }
     } catch (error) {
       throw new WorkerBridgeError("worker-start-failed", error instanceof Error ? error.message : "无法启动 Python worker。");
     }

@@ -1,0 +1,26 @@
+appId: com.triagent.app
+productName: TriAgent
+copyright: Copyright © 2025 TriAgent
+
+asar: true
+
+files:
+  - dist/electron/**/*
+  - "!node_modules"
+
+directories:
+  output: release
+  buildResources: build
+
+win:
+  target:
+    - target: portable
+      arch:
+        - x64
+  artifactName: "${productName}-Portable-${version}.${ext}"
+
+extraResources:
+  - from: dist/python-worker
+    to: python-worker
+    filter:
+      - "**/*"

@@ -1,4 +1,4 @@
-﻿const fs = require("fs");
+const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
 
@@ -99,22 +99,22 @@ function copyRecursive(sourceDir, targetDir) {
 }
 
 function resolvePythonExe(rootDir) {
-  const fromEnv = process.env.QKK_PYTHON_EXE && process.env.QKK_PYTHON_EXE.trim();
-  if (fromEnv) {
-    ensureFile(fromEnv, "python from QKK_PYTHON_EXE");
-    return fromEnv;
+  const envVars = ["TRIAGENT_PYTHON", "QKK_PYTHON_EXE"];
+  for (const envVar of envVars) {
+    const fromEnv = process.env[envVar] && process.env[envVar].trim();
+    if (fromEnv && fs.existsSync(fromEnv) && fs.statSync(fromEnv).isFile()) {
+      return fromEnv;
+    }
   }
   const candidates = [
     path.join(rootDir, ".venv", "Scripts", "python.exe"),
-    path.join(path.dirname(rootDir), "A_QKKd", ".venv", "Scripts", "python.exe"),
   ];
   for (const candidate of candidates) {
     if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
       return candidate;
     }
   }
-  ensureFile(candidates[0], "venv python");
-  return candidates[0];
+  return "python";
 }
 
 function locateIscc() {

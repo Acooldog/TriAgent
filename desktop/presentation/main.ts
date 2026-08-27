@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog } from "electron";
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
 import path from "node:path";
 import { BUILT_IN_TOOL_MANIFESTS } from "../application/tools/builtInTools";
 import { AgentTaskService } from "../application/agent/agentTaskService";
@@ -123,11 +124,19 @@ async function bootstrap(): Promise<void> {
 
   const appPath = app.getAppPath();
   const projectRoot = resolveProjectRoot(appPath, __dirname);
+  const exeDir = path.dirname(app.getPath("exe"));
+  const workerExeName = process.platform === "win32" ? "triagent-worker.exe" : "triagent-worker";
+  const bundledWorkerDir = path.join(exeDir, "resources", "python-worker", "triagent-worker");
   const workerScript = resolveWorkerScript(appSettings.worker.scriptPath, projectRoot, appPath);
-  const pythonExe = resolvePythonExecutable(process.env.TRIMUSIC_PYTHON, projectRoot, process.platform);
-  debugInfo("python-worker", "using python", { python: pythonExe, appPath, projectRoot, workerScript });
+  const bundled = fs.existsSync(path.join(bundledWorkerDir, workerExeName));
+  const finalWorkerScript = bundled
+    ? path.join(bundledWorkerDir, workerExeName)
+    : workerScript;
+  const pythonExe = bundled ? "" : resolvePythonExecutable(process.env.TRIMUSIC_PYTHON, projectRoot, process.platform);
+  const workerCwd = bundled ? bundledWorkerDir : projectRoot;
+  debugInfo("python-worker", "using python", { python: pythonExe, appPath, projectRoot, workerScript: finalWorkerScript, bundled });
 
-  workerService = new WorkerService(new PythonWorkerClient({ workerScript, pythonExecutable: pythonExe, cwd: projectRoot }));
+  workerService = new WorkerService(new PythonWorkerClient({ workerScript: finalWorkerScript, pythonExecutable: pythonExe, cwd: workerCwd }));
   permissions = new PermissionPolicy({ requestApproval: requestSensitiveOperationApproval });
   toolRegistry = new ToolRegistry(); toolRegistry.refresh(BUILT_IN_TOOL_MANIFESTS);
   modelService = new ModelService(new OpenAiCompatibleClient(), toolRegistry, permissions);
