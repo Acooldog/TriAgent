@@ -62,7 +62,8 @@ def scan_files(directory: str, recursive: bool = True, file_types: str = "kugou"
 @tool
 def decrypt_kugou(input_path: str, output_dir: str, target_format: str = "auto") -> str:
     """【推荐】解密酷狗音乐加密文件（kgma/kgm/kgg/vpr）。input_path 可直接传**目录路径**，工具会自动批量处理目录下所有加密文件，一次搞定全部！也可传单个文件路径。
-    Args: input_path: 加密文件路径 **或整个目录路径**（推荐传目录！）, output_dir: 解密后音频文件的输出目录, target_format: 输出格式，可选 "auto"、"flac"、"m4a"、"mp3"、"wav"
+    ⚠️ 本工具输出平台原生格式（flac/ogg，取决于源文件），不做格式转换。如果需要特定格式（ogg/mp3/m4a/flac/wav），请在解密完成后调用 transcode_audio。
+    Args: input_path: 加密文件路径 **或整个目录路径**（推荐传目录！）, output_dir: 解密后音频文件的输出目录, target_format: （仅用于去重判断）输出格式，可选 "auto"、"flac"、"m4a"、"mp3"、"wav"
     """
     try:
         src = _to_path(input_path)
@@ -93,6 +94,7 @@ def decrypt_kugou(input_path: str, output_dir: str, target_format: str = "auto")
 @tool
 def decrypt_qq(input_path: str, output_dir: str) -> str:
     """【推荐】解密 QQ 音乐加密文件（mflac/mgg/mmp4）。input_path 可直接传**目录路径**，工具会自动批量处理目录下所有加密文件，一次搞定全部！也可传单个文件路径。需要 QQ 音乐客户端已运行。
+    ⚠️ 本工具输出平台原生格式（mflac→flac，mgg/mmp4→m4a），不做格式转换。如果需要特定格式（ogg/mp3/wav 等），请在解密完成后调用 transcode_audio。
     Args: input_path: 加密文件路径 **或整个目录路径**（推荐传目录！）, output_dir: 解密后音频文件的输出目录
     """
     try:
@@ -130,6 +132,7 @@ def decrypt_qq(input_path: str, output_dir: str) -> str:
 @tool
 def decrypt_netease(input_path: str, output_dir: str) -> str:
     """【推荐】解密网易云音乐加密文件（ncm 格式）。input_path 可直接传**目录路径**，工具会自动批量处理目录下所有加密文件，一次搞定全部！也可传单个文件路径。无需运行网易云音乐客户端。
+    ⚠️ 本工具输出平台原生格式，不做格式转换。如果需要特定格式（ogg/mp3/m4a/flac/wav），请在解密完成后调用 transcode_audio。
     Args: input_path: 加密文件路径 **或整个目录路径**（推荐传目录！）, output_dir: 解密后音频文件的输出目录
     """
     try:
@@ -167,6 +170,7 @@ def decrypt_netease(input_path: str, output_dir: str) -> str:
 @tool
 def decrypt_kuwo(input_path: str, output_dir: str) -> str:
     """【推荐】解密酷我音乐加密文件（kwm 格式）。input_path 可直接传**目录路径**，工具会自动批量处理目录下所有加密文件，一次搞定全部！也可传单个文件路径。无需运行酷我音乐客户端。
+    ⚠️ 本工具输出平台原生格式，不做格式转换。如果需要特定格式（ogg/mp3/m4a/flac/wav），请在解密完成后调用 transcode_audio。
     Args: input_path: 加密文件路径 **或整个目录路径**（推荐传目录！）, output_dir: 解密后音频文件的输出目录
     """
     try:

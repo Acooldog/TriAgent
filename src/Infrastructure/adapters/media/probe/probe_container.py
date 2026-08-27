@@ -15,7 +15,7 @@ except Exception:  # pragma: no cover - optional runtime dependency
     MP4 = None  # type: ignore[assignment]
 
 
-SUPPORTED_TARGET_FORMATS = {"auto", "flac", "m4a", "mp3", "wav"}
+SUPPORTED_TARGET_FORMATS = {"auto", "flac", "m4a", "mp3", "wav", "ogg"}
 
 
 def _subprocess_window_kwargs() -> dict[str, object]:
@@ -116,8 +116,6 @@ def resolve_ffprobe_path(paths: RuntimePaths | None = None) -> pathlib.Path | No
 
 def normalize_target_format(value: str) -> str:
     normalized = str(value or "auto").strip().lower()
-    if normalized == "ogg":
-        normalized = "m4a"
     if normalized not in SUPPORTED_TARGET_FORMATS:
         raise ValueError(f"unsupported target format: {value}")
     return normalized

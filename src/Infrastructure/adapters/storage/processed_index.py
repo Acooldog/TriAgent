@@ -74,6 +74,7 @@ def is_processed(
 
     去重维度：rel + size + mtime + output_dir + target_format(container)。
     只有输出目录和目标格式都匹配时才视为已处理。任一维度不同 → 允许重新解密。
+    如果索引记录的输出文件已被删除，也视为未处理（支持用户做实验时手动清理输出）。
 
     Args:
         output_dir: 本次调用的输出目录（绝对路径字符串）。
@@ -106,6 +107,14 @@ def is_processed(
             existing_container = str(rec.get("container", "")).lower().lstrip(".")
             if existing_container and existing_container != target_format.lower().lstrip("."):
                 return False  # 目标格式不同 → 未处理
+        # 检查输出文件是否还存在（用户可能已删除做实验）
+        existing_output = rec.get("output_path", "")
+        if existing_output:
+            try:
+                if not pathlib.Path(existing_output).exists():
+                    return False  # 输出文件已被删除 → 视为未处理
+            except OSError:
+                return False
         return True
     return False
 

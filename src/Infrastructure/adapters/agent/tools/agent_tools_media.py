@@ -24,11 +24,11 @@ def _emit_batch_event(event_type: str, payload: dict) -> None:
 
 @tool
 def transcode_audio(input_path: str, target_format: str, output_dir: str = "") -> str:
-    """将音频文件用 ffmpeg 转换为目标格式（mp3/m4a/flac/wav）。输入可以是单个文件或目录，会原地替换或输出到指定目录。
+    """将音频文件用 ffmpeg 转换为目标格式（mp3/m4a/flac/wav/ogg）。输入可以是单个文件或目录，会原地替换或输出到指定目录。
 
     Args:
         input_path: 源音频文件或目录路径
-        target_format: 目标格式，可选 mp3/m4a/flac/wav
+        target_format: 目标格式，可选 mp3/m4a/flac/wav/ogg
         output_dir: 可选输出目录，留空则输出到源文件同目录
     """
     try:

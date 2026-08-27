@@ -10,12 +10,14 @@ def _codec_args(target_format: str) -> list[str]:
         return ["-codec:a", "pcm_s16le"]
     if target_format == "flac":
         return ["-codec:a", "flac"]
+    if target_format == "ogg":
+        return ["-codec:a", "libvorbis", "-b:a", "192k"]
     return []
 
 
 def _stream_selection_args(target_format: str) -> list[str]:
     """选择音频流。用 -vn 彻底排除视频流（含 h264 等），避免音频容器尝试打包视频导致失败。"""
-    if target_format in {"mp3", "m4a", "flac"}:
+    if target_format in {"mp3", "m4a", "flac", "ogg"}:
         return ["-map", "0:a:0", "-vn", "-sn", "-dn"]
     if target_format == "wav":
         return ["-map", "0:a:0", "-vn", "-sn", "-dn"]
