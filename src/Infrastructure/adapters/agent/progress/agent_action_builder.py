@@ -25,13 +25,8 @@ TOOL_ACTION_MESSAGES: dict[str, str] = {
 
 
 def build_initial_action_message(user_message: str) -> str:
-    """根据用户消息生成初始行动描述。"""
-    normalized = user_message.lower()
-    if any(token in normalized for token in ("解密", "kgma", "kgm", "kgg", "vpr", "mflac", "mgg", "mmp4", "ncm", "kwm", "qq", "网易云", "酷我")):
-        return "我先核对输入和输出路径，再扫描目标目录里的可处理文件；确认格式后开始解密，并在完成后汇总结果。"
-    if any(token in normalized for token in ("扫描", "查找", "列出", "目录")):
-        return "我先检查目标目录和文件范围，再根据扫描结果决定下一步操作。"
-    return "我先梳理你的目标和限制，再检查可用工具；确认执行路径后逐步处理，并持续汇报进展。"
+    """Agent 启动时的模板化开场白，固定输出，不走模型生成。"""
+    return "好的，我会理解您的需求，进行您要求的操作"
 
 
 def build_tool_action_message(tool_name: str, tool_args: str = "") -> str:
