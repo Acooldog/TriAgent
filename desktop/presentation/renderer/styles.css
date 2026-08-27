@@ -4130,6 +4130,12 @@ select:focus {
     line-height: 26px;
 }
 
+.llm-chat-message > :not(.llm-avatar) {
+    min-width: 0;
+    min-height: 0;
+    overflow: visible;
+}
+
 .llm-chat-md {
     word-break: break-word;
     overflow-wrap: anywhere;

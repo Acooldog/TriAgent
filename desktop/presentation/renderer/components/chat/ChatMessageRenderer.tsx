@@ -47,7 +47,7 @@ export function ChatMessageRenderer({ message, index, segsAbove }: ChatMessagePr
     return (
       <div className="llm-chat-message assistant">
         <span className="llm-avatar">T</span>
-        <div dangerouslySetInnerHTML={{ __html: renderMarkdown(message.text) }} />
+        <div className="llm-chat-md" dangerouslySetInnerHTML={{ __html: renderMarkdown(message.text) }} />
       </div>
     );
   })();

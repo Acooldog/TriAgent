@@ -153,9 +153,7 @@ export function LlmChat(state: UseAppStateResult) {
           {llmStreaming && (
             <div className="llm-chat-message assistant streaming">
               <span className="llm-avatar">T</span>
-              <div>
-                <p>{esc(llmStreaming.text.slice(0, llmStreaming.index))}<span className="streaming-caret">▋</span></p>
-              </div>
+              <div className="llm-chat-md"><p>{esc(llmStreaming.text.slice(0, llmStreaming.index))}<span className="streaming-caret">▋</span></p></div>
             </div>
           )}
           {llmRetry && (
