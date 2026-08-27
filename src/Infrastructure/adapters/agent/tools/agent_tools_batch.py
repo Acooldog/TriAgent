@@ -2,7 +2,11 @@
 
 从 agent_tools_decrypt.py 拆出，提供：
 - _emit_batch_event: 批量事件上报
-- _run_decrypt_batch: 通用批量解密流程（plan → 循环解密 → 标记 → 保存索引）
+- run_decrypt_batch: 通用批量解密流程（plan → 循环解密 → 标记 → 保存索引）
+
+优化：
+- 返回值精简：成功只汇总数字，失败返回详情供模型处理
+- 支持 post_process 回调：单个文件解密后立即处理（格式转换/采样率调整等）
 """
 from __future__ import annotations
 
@@ -41,8 +45,12 @@ def run_decrypt_batch(
     input_path: str = "",
     output_dir: str = "",
     target_format: str | None = None,
+    post_process: Callable[[str, str, pathlib.Path], str | None] | None = None,
 ) -> str:
     """通用批量解密驱动：plan_files → 循环解密 → mark_processed → save_index。
+
+    优化：成功只返回摘要（数字），失败返回详情供模型处理。
+    支持 post_process 回调：单个文件解密后立即处理（格式转换/采样率调整等）。
 
     Args:
         files_to_decrypt: 已收集的待解密文件列表
@@ -53,6 +61,7 @@ def run_decrypt_batch(
         input_path: 输入路径（batch 事件上报用）
         output_dir: 输出目录（batch 事件上报用 + 去重判断）
         target_format: 目标输出格式（去重判断，允许同一源文件输出到不同格式）
+        post_process: 可选的后处理回调 (output_path, container, dst_root) -> new_output_path or None
     """
     if not files_to_decrypt:
         return empty_msg
@@ -80,7 +89,7 @@ def run_decrypt_batch(
         "kind": "decrypt",
     })
 
-    results: list[str] = []
+    failed_details: list[str] = []
     success = 0
     failed = 0
     for i, item in enumerate(pending, 1):
@@ -96,27 +105,34 @@ def run_decrypt_batch(
         })
         try:
             out_path, container = decrypt_one(file_path)
-            if out_path:
-                results.append(f"  成功: {file_path.name} -> {out_path} [{container}]")
-                success += 1
-                print(f"{log_prefix} 成功: {file_path.name} -> {container}")
-                mark_processed(index, file_path, index_dir, str(out_path), container)
-                save_index(index_path, index)
-                emit_batch_event("file_finished", {
-                    "index": i, "total": total,
-                    "input_path": str(file_path),
-                    "result": "ok",
-                })
-            else:
-                results.append(f"  失败: {file_path.name} - 未识别的音频容器")
+            if not out_path:
+                failed_details.append(f"  失败: {file_path.name} - 未识别的音频容器")
                 failed += 1
                 emit_batch_event("file_finished", {
                     "index": i, "total": total,
                     "input_path": str(file_path),
                     "result": "failed",
                 })
+                continue
+
+            # 后处理：解密成功后立即执行用户要求的格式转换/采样率调整等
+            final_out = out_path
+            if post_process is not None:
+                processed = post_process(out_path, container, pathlib.Path(output_dir) if output_dir else file_path.parent)
+                if processed:
+                    final_out = processed
+
+            success += 1
+            print(f"{log_prefix} 成功: {file_path.name} -> {container}" + (f" → 后处理完成" if post_process else ""))
+            mark_processed(index, file_path, index_dir, final_out, container)
+            save_index(index_path, index)
+            emit_batch_event("file_finished", {
+                "index": i, "total": total,
+                "input_path": str(file_path),
+                "result": "ok",
+            })
         except Exception as exc:
-            results.append(f"  失败: {file_path.name} - {exc}")
+            failed_details.append(f"  失败: {file_path.name} - {exc}")
             failed += 1
             print(f"{log_prefix} 失败: {file_path.name} - {exc}")
             emit_batch_event("file_finished", {
@@ -125,7 +141,8 @@ def run_decrypt_batch(
                 "result": "failed",
             })
 
-    header = f"解密完成：共 {len(pending)} 个待处理，成功 {success}，失败 {failed}，跳过 {len(skipped)}"
+    skipped_count = len(skipped)
+    header = f"解密完成：共 {total} 个待处理，成功 {success}，失败 {failed}，跳过 {skipped_count}"
     print(f"{log_prefix} {header}")
 
     emit_batch_event("batch_finished", {
@@ -133,12 +150,20 @@ def run_decrypt_batch(
         "candidate_count": total,
         "success_count": success,
         "failed_count": failed,
-        "skipped_count": len(skipped),
+        "skipped_count": skipped_count,
         "result_code": "ok" if failed == 0 else "partial",
         "kind": "decrypt",
     })
 
-    return header + "\n" + "\n".join(results)
+    # 精简返回：成功只摘要，失败全列出
+    parts = [header]
+    if failed_details:
+        parts.append("\n失败详情：")
+        parts.extend(failed_details)
+        parts.append("\n请分析以上失败原因，尝试调整参数或跳过失败文件继续处理。")
+    else:
+        parts.append("全部成功。")
+    return "\n".join(parts)
 
 
 __all__ = [

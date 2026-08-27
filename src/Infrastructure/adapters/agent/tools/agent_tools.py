@@ -18,6 +18,7 @@ from src.Infrastructure.adapters.agent.tools.agent_tools_file_ops import (
     sandbox_manage,
 )
 from src.Infrastructure.adapters.agent.tools.agent_tools_media import (
+    process_audio,
     rag_ingest,
     rag_retrieve,
     transcode_audio,
@@ -38,6 +39,7 @@ TOOL_DESCRIPTIONS = {
     "decrypt_netease": "解密网易云加密文件（ncm），输出原生格式，无需客户端。传目录可批量处理。需要特定格式时后续调用 transcode_audio。",
     "decrypt_kuwo": "解密酷我加密文件（kwm），输出原生格式，无需客户端。传目录可批量处理。需要特定格式时后续调用 transcode_audio。",
     "transcode_audio": "【首选】音频格式转换工具（mp3/m4a/flac/wav/ogg），支持单文件和目录批量。必须用此工具，禁止用 run_cli_safely 调用 ffmpeg 做转码。解密后如需特定格式（如 ogg）调用此工具。",
+    "process_audio": "音频精细化处理：格式转换+采样率调整+比特率调整+增益调整。支持单文件和目录批量。参数可组合：target_format(mp3/m4a/flac/wav/ogg)、sample_rate_hz(如44100)、bitrate_kbps(如192)、gain_db(如3.0放大/-3.0缩小)。",
     "verify_audio_integrity": "校验音频文件完整性，判断是否损坏。解密/转码后必须调用。",
     "copy_files": "复制文件到目标目录，支持按扩展名过滤。",
     "move_files": "移动文件到目标目录，支持按扩展名过滤。",
@@ -63,6 +65,7 @@ ALL_TOOLS = [
     rename_file,
     run_cli_safely,
     transcode_audio,
+    process_audio,
     verify_audio_integrity,
     detect_format,
     rag_retrieve,
@@ -92,6 +95,7 @@ __all__ = [
     "rename_file",
     "run_cli_safely",
     "transcode_audio",
+    "process_audio",
     "verify_audio_integrity",
     "detect_format",
     "rag_retrieve",

@@ -2,16 +2,17 @@ from __future__ import annotations
 
 
 def _codec_args(target_format: str) -> list[str]:
+    """设置编码器。bitrate 留给 _audio_option_args 处理，避免重复。"""
     if target_format == "mp3":
         return ["-codec:a", "libmp3lame", "-q:a", "2"]
     if target_format == "m4a":
-        return ["-codec:a", "aac", "-b:a", "256k"]
+        return ["-codec:a", "aac"]
     if target_format == "wav":
         return ["-codec:a", "pcm_s16le"]
     if target_format == "flac":
         return ["-codec:a", "flac"]
     if target_format == "ogg":
-        return ["-codec:a", "libvorbis", "-b:a", "192k"]
+        return ["-codec:a", "libvorbis"]
     return []
 
 
@@ -48,8 +49,33 @@ def _audio_option_args(
     args: list[str] = []
     if sample_rate_hz:
         args.extend(["-ar", str(int(sample_rate_hz))])
-    if bitrate_kbps and target_format in {"mp3", "m4a"}:
-        args.extend(["-b:a", f"{int(bitrate_kbps)}k"])
+    # 比特率：显式传则用传值；m4a/ogg 默认 256k/192k；mp3 用 -q:a 而非 -b:a
+    if target_format in {"mp3"}:
+        if bitrate_kbps:
+            args.extend(["-b:a", f"{int(bitrate_kbps)}k"])
+    elif target_format in {"m4a"}:
+        br = int(bitrate_kbps) if bitrate_kbps else 256
+        args.extend(["-b:a", f"{br}k"])
+    elif target_format in {"ogg"}:
+        br = int(bitrate_kbps) if bitrate_kbps else 192
+        args.extend(["-b:a", f"{br}k"])
+    return args
+
+
+def _filter_args(
+    *,
+    sample_rate_hz: int | None = None,
+    gain_db: float | None = None,
+) -> list[str]:
+    """音频滤镜参数（采样率转换、增益调整），用于 process_audio 工具。"""
+    args: list[str] = []
+    filters: list[str] = []
+    if gain_db is not None:
+        filters.append(f"volume={float(gain_db):.1f}dB")
+    if sample_rate_hz is not None:
+        filters.append(f"aresample={int(sample_rate_hz)}")
+    if filters:
+        args.extend(["-af", ",".join(filters)])
     return args
 
 
@@ -58,4 +84,5 @@ __all__ = [
     "_stream_selection_args",
     "_cover_metadata_args",
     "_audio_option_args",
+    "_filter_args",
 ]

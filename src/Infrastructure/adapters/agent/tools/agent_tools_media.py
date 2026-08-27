@@ -226,6 +226,135 @@ def verify_audio_integrity(input_path: str) -> str:
 
 
 @tool
+def process_audio(
+    input_path: str,
+    target_format: str = "",
+    sample_rate_hz: int = 0,
+    bitrate_kbps: int = 0,
+    gain_db: float = 0.0,
+    output_dir: str = "",
+) -> str:
+    """音频精细化处理：格式转换 + 采样率调整 + 比特率调整 + 增益调整。输入可以是单个文件或目录。
+    所有参数可选，按需组合使用。
+
+    Args:
+        input_path: 源音频文件或目录路径
+        target_format: 目标格式（mp3/m4a/flac/wav/ogg），留空保持原格式
+        sample_rate_hz: 目标采样率（如 44100, 48000, 32000, 22050），0 表示不调整
+        bitrate_kbps: 目标比特率（如 192, 256, 320），0 表示不调整
+        gain_db: 增益调整（dB），正数放大，负数缩小，0 表示不调整
+        output_dir: 可选输出目录，留空则输出到源文件同目录
+    """
+    try:
+        from src.Infrastructure.adapters.media.transcode.transcoder import (
+            process_audio_file,
+        )
+        from src.Infrastructure.adapters.media.probe.probe import (
+            normalize_target_format,
+        )
+
+        src = _to_path(input_path)
+        if not src.exists():
+            return f"错误：输入路径不存在 - {input_path}"
+
+        has_target_fmt = target_format.strip() != ""
+        has_sr = sample_rate_hz > 0
+        has_br = bitrate_kbps > 0
+        has_gain = abs(gain_db) > 0.001
+
+        if not has_target_fmt and not has_sr and not has_br and not has_gain:
+            return "错误：至少需要指定一项处理操作（target_format / sample_rate_hz / bitrate_kbps / gain_db）"
+
+        fmt = normalize_target_format(target_format) if has_target_fmt else None
+        if fmt == "auto":
+            fmt = None
+
+        dst_root = _to_path(output_dir) if output_dir.strip() else (src.parent if src.is_file() else src)
+        dst_root.mkdir(parents=True, exist_ok=True)
+        print(f"[process_audio] 输入: {src} | 格式: {fmt or '保持'} | 采样率: {sample_rate_hz or '保持'} | 比特率: {bitrate_kbps or '保持'} | 增益: {gain_db or '保持'} | 输出: {dst_root}")
+
+        files = [src] if src.is_file() else sorted(p for p in src.rglob("*") if p.is_file())
+        audio_exts = {".flac", ".mp3", ".m4a", ".wav", ".ogg", ".aac"}
+        targets = [p for p in files if p.suffix.lower() in audio_exts]
+        if not targets:
+            return f"未找到可处理的音频文件（支持 flac/mp3/m4a/wav/ogg/aac）"
+        total = len(targets)
+        print(f"[process_audio] 待处理文件 {total} 个")
+
+        _emit_batch_event("batch_started", {
+            "platform_id": f"process_{fmt or 'same'}",
+            "input_path": str(src),
+            "output_dir": str(dst_root),
+            "candidate_count": total,
+            "kind": "process",
+        })
+
+        results: list[str] = []
+        success = 0
+        failed = 0
+        for i, file_path in enumerate(targets, 1):
+            out_name = f"{file_path.stem}.{fmt}" if fmt else file_path.name
+            out_dir = dst_root if (output_dir.strip() or src.is_file()) else file_path.parent
+            out_path = out_dir / out_name
+            if out_path == file_path and not has_gain:
+                results.append(f"  跳过: {file_path.name} - 无变化（同格式同参数）")
+                success += 1
+                continue
+            if out_path.exists() and out_path != file_path:
+                out_path = out_path.with_name(f"{file_path.stem}_processed.{fmt or file_path.suffix.lstrip('.')}")
+            print(f"[process_audio] 开始: {file_path.name}")
+            _emit_batch_event("file_started", {
+                "index": i, "total": total,
+                "input_path": str(file_path),
+            })
+            try:
+                info = process_audio_file(
+                    file_path, out_path,
+                    target_format=fmt,
+                    sample_rate_hz=sample_rate_hz or None,
+                    bitrate_kbps=bitrate_kbps or None,
+                    gain_db=gain_db if has_gain else None,
+                )
+                results.append(f"  成功: {file_path.name} -> {info.get('output_path', out_path)}")
+                success += 1
+                _emit_batch_event("file_finished", {
+                    "index": i, "total": total,
+                    "input_path": str(file_path),
+                    "result": "ok",
+                })
+            except Exception as exc:
+                results.append(f"  失败: {file_path.name} - {exc}")
+                failed += 1
+                print(f"[process_audio] 失败: {file_path.name} - {exc}")
+                _emit_batch_event("file_finished", {
+                    "index": i, "total": total,
+                    "input_path": str(file_path),
+                    "result": "failed",
+                })
+
+        header = f"处理完成：共 {total} 个文件，成功 {success}，失败 {failed}"
+        print(f"[process_audio] {header}")
+
+        _emit_batch_event("batch_finished", {
+            "platform_id": f"process_{fmt or 'same'}",
+            "candidate_count": total,
+            "success_count": success,
+            "failed_count": failed,
+            "skipped_count": 0,
+            "result_code": "ok" if failed == 0 else "partial",
+            "kind": "process",
+        })
+
+        return header + "\n" + "\n".join(results)
+    except ValueError as exc:
+        return f"错误：{exc}"
+    except FileNotFoundError as exc:
+        return f"错误：{exc}"
+    except Exception as exc:
+        return f"处理失败：{exc}"
+
+
+@tool
 def rag_retrieve(query: str, top_k: int = 4) -> str:
     """在本地知识库检索与问题相关的已沉淀解决方案/经验。
 
@@ -275,6 +404,7 @@ def rag_ingest(text: str, source: str = "agent") -> str:
 
 __all__ = [
     "transcode_audio",
+    "process_audio",
     "verify_audio_integrity",
     "rag_retrieve",
     "rag_ingest",
