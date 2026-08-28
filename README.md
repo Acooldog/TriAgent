@@ -4,7 +4,7 @@
 
 **基于大语言模型的本地音乐处理智能体<br>一句话，替你完成所有操作**
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](LICENSE) ![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg) ![TypeScript](https://img.shields.io/badge/typescript-5.8%2B-blue.svg) ![Electron](https://img.shields.io/badge/electron-37%2B-blue.svg)
+[![License: GPL v3](https://img.shields.io/badge/License-GPL%20v3-blue.svg)](LICENSE) ![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg) ![TypeScript](https://img.shields.io/badge/typescript-5.8%2B-blue.svg) ![Electron](https://img.shields.io/badge/electron-37%2B-blue.svg) ![平台](https://img.shields.io/badge/平台-windows-blue)
 
 Agent 自动扫描、解密、转码、整理你的音乐库。支持 QQ 音乐、酷狗、酷我、网易云四大平台的加密格式。
 
@@ -47,6 +47,7 @@ Agent 自动扫描、解密、转码、整理你的音乐库。支持 QQ 音乐�
 - 如果要使用Ollama本地模型，请使用支持复杂任务、注意力高且工具调用出色的大语言模型，否则会导致agent工作出错
 - 如果使用云模型，请选择非深度思考且调用工具能力出色的大语言模型
     - 深度思考弊端: 费token
+- [bilibili演示视频](https://www.bilibili.com/video/BV1fv4f6qERH)
 
 ### 项目架构
 
